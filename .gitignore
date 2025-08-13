@@ -1,0 +1,32 @@
+# Dependency directories
+node_modules
+
+# Bun lockfile
+bun.lockb
+bun.lock
+
+# Demo app build output and database
+# We can ignore it here globally for simplicity
+packages/demo/dist
+packages/demo/*.db
+packages/demo/*.db-shm
+packages/demo/*.db-wal
+
+# Log files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Editor directories and files
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+

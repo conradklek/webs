@@ -1,0 +1,26 @@
+{
+  "name": "webs",
+  "version": "0.1.0",
+  "description": "A JavaScript framework.",
+  "bin": {
+    "webs": "bin/cli.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "*.js"
+  ],
+  "main": "index.js",
+  "module": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": "./index.js",
+    "./*": "./*.js"
+  },
+  "dependencies": {
+    "bun-plugin-tailwind": "^0.0.15"
+  },
+  "peerDependencies": {
+    "tailwindcss": "^4.0.0"
+  }
+}
