@@ -6,7 +6,7 @@
     "dev": "webs"
   },
   "dependencies": {
-    "@conradklek/webs": "latest"
+    "@conradklek/webs": "workspace:*"
   },
   "devDependencies": {
     "tailwindcss": "^4.1.11"
