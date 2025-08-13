@@ -1,7 +1,8 @@
+# Build
+dist
+
 # Dependency directories
 node_modules
-
-dist
 
 # Bun lockfile
 bun.lockb

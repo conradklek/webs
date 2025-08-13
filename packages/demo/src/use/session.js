@@ -1,7 +1,4 @@
-// packages/demo/src/use/session.js
-
-// This now imports directly from the 'webs' package, thanks to our "exports" map.
-import { create_store } from "webs/store.js";
+import { create_store } from "@conradklek/webs/store.js";
 
 const initial_user =
   typeof window !== "undefined" ? window.__INITIAL_USER__ : null;

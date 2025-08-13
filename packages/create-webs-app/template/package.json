@@ -1,5 +1,5 @@
 {
-  "name": "demo",
+  "name": "my-webs-app",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,7 +9,6 @@
     "@conradklek/webs": "latest"
   },
   "devDependencies": {
-    "tailwindcss": "^4.1.11"
+    "tailwindcss": "^4.0.0"
   }
 }
-

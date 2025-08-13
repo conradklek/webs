@@ -1,0 +1,9 @@
+{
+  "name": "create-webs-app",
+  "version": "0.1.0",
+  "private": true,
+  "bin": {
+    "create-webs-app": "bin/cli.js"
+  }
+}
+
