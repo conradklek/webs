@@ -2,6 +2,12 @@ import { is_function, is_object, is_string } from "./utils.js";
 import { effect, reactive, computed } from "./reactivity.js";
 import { compile } from "./compiler.js";
 
+/**
+ * Finds the longest increasing subsequence from an array of numbers.
+ * Used for optimizing keyed children patching.
+ * @param {number[]} arr - The input array of numbers.
+ * @returns {number[]} An array of indices representing the longest increasing subsequence.
+ */
 function get_sequence(arr) {
   const p = arr.slice();
   const result = [0];
@@ -43,6 +49,12 @@ function get_sequence(arr) {
   return result;
 }
 
+/**
+ * Creates a renderer object with a `patch` function.
+ * The renderer is configured with host-specific functions for DOM manipulation.
+ * @param {object} options - Host-specific implementation for DOM operations.
+ * @returns {{patch: Function}} The renderer object containing the patch function.
+ */
 export function create_renderer(options) {
   const {
     create_element: host_create_element,
@@ -54,6 +66,7 @@ export function create_renderer(options) {
     create_comment: host_create_comment,
     query_selector: host_query_selector,
   } = options;
+
   const unmount = (vnode) => {
     if (vnode.type === Fragment || vnode.type === Teleport) {
       return unmount_children(vnode.children);
@@ -64,9 +77,11 @@ export function create_renderer(options) {
     }
     host_remove(vnode.el);
   };
+
   const unmount_children = (children) => {
     children.forEach(unmount);
   };
+
   const patch_keyed_children = (c1, c2, container) => {
     let i = 0;
     const l2 = c2.length;
@@ -139,6 +154,7 @@ export function create_renderer(options) {
       }
     }
   };
+
   const patch_unkeyed_children = (c1, c2, container) => {
     const old_length = c1.length;
     const new_length = c2.length;
@@ -154,6 +170,7 @@ export function create_renderer(options) {
       unmount_children(c1.slice(common_length));
     }
   };
+
   const patch_children = (n1, n2, container) => {
     const c1 = n1?.children;
     let c2 = n2?.children;
@@ -174,6 +191,7 @@ export function create_renderer(options) {
       patch_unkeyed_children(c1, c2, container);
     }
   };
+
   const mount_component = (vnode, container, anchor, parent_component) => {
     const instance = (vnode.component = create_component(
       vnode,
@@ -227,6 +245,7 @@ export function create_renderer(options) {
       },
     );
   };
+
   const should_update_component = (n1, n2) => {
     const p1 = n1.props || {};
     const p2 = n2.props || {};
@@ -237,6 +256,7 @@ export function create_renderer(options) {
     }
     return false;
   };
+
   const update_component = (n1, n2) => {
     const instance = (n2.component = n1.component);
     if (should_update_component(n1, n2)) {
@@ -248,6 +268,7 @@ export function create_renderer(options) {
       instance.vnode = n2;
     }
   };
+
   const patch_element = (n1, n2, container, anchor) => {
     const el = (n2.el = n1 ? n1.el : host_create_element(n2.type));
     const old_props = n1?.props || {};
@@ -267,6 +288,7 @@ export function create_renderer(options) {
       host_insert(el, container, anchor);
     }
   };
+
   const patch = (n1, n2, container, anchor = null, parent_component = null) => {
     if (n1 === n2) return;
     if (n1 && (n1.type !== n2.type || n1.key !== n2.key)) {
@@ -339,6 +361,13 @@ const set_current_instance = (instance) => {
   current_instance = instance;
 };
 
+/**
+ * Creates and initializes a component instance.
+ * @param {object} vnode - The virtual node for the component.
+ * @param {object|null} parent - The parent component instance.
+ * @param {boolean} [is_ssr=false] - Flag indicating if it's a server-side rendering context.
+ * @returns {object} The created component instance.
+ */
 export function create_component(vnode, parent, is_ssr = false) {
   const parent_app_context = parent ? parent.app_context : null;
   const app_context = vnode.app_context || parent_app_context || {};
@@ -513,11 +542,8 @@ function camel_to_kebab(camel) {
 }
 
 export const Fragment = Symbol("Fragment");
-
 export const Comment = Symbol("Comment");
-
 export const Teleport = Symbol("Teleport");
-
 export const Text = Symbol("Text");
 
 class VNode {
@@ -535,10 +561,20 @@ class VNode {
   }
 }
 
+/**
+ * Creates a virtual DOM node (VNode).
+ * @param {string|object|symbol} type - The type of the VNode (e.g., 'div', a component object, or a symbol like Fragment).
+ * @param {object|null} [props] - The properties/attributes of the VNode.
+ * @param {Array|string|null} [children] - The children of the VNode.
+ * @returns {VNode} A new VNode instance.
+ */
 export function create_vnode(type, props, children) {
   return new VNode(type, props, children);
 }
 
+/**
+ * Alias for create_vnode. Commonly used in JSX-like syntax.
+ */
 export const h = create_vnode;
 
 const NODE_TYPES = {
@@ -547,6 +583,9 @@ const NODE_TYPES = {
   COMMENT_NODE: 8,
 };
 
+/**
+ * Base class for our virtual DOM nodes, mimicking the browser's Node API.
+ */
 class DOM_node {
   constructor(node_type) {
     this.node_type = node_type;
@@ -571,6 +610,9 @@ class DOM_node {
   }
 }
 
+/**
+ * Represents a text node in the virtual DOM.
+ */
 export class DOM_text_node extends DOM_node {
   constructor(text) {
     super(NODE_TYPES.TEXT_NODE);
@@ -587,6 +629,9 @@ export class DOM_text_node extends DOM_node {
   }
 }
 
+/**
+ * Represents a comment node in the virtual DOM.
+ */
 export class DOM_comment_node extends DOM_node {
   constructor(text) {
     super(NODE_TYPES.COMMENT_NODE);
@@ -611,6 +656,9 @@ function parse_selector(selector) {
   };
 }
 
+/**
+ * Represents an element node in the virtual DOM.
+ */
 export class DOM_element extends DOM_node {
   constructor(tag_name) {
     super(NODE_TYPES.ELEMENT_NODE);
@@ -738,6 +786,11 @@ export class DOM_element extends DOM_node {
   }
 }
 
+/**
+ * Factory function to create a new DOM_element.
+ * @param {string} tag_name - The tag name for the element.
+ * @returns {DOM_element} A new DOM_element instance.
+ */
 export function element_factory(tag_name) {
   return new DOM_element(tag_name);
 }

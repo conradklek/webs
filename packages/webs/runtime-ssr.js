@@ -2,6 +2,12 @@ import { create_vnode, create_component } from "./renderer.js";
 import { is_object, is_string } from "./utils.js";
 import { compile } from "./compiler.js";
 
+/**
+ * Renders a virtual DOM node to an HTML string.
+ * This function recursively traverses the vnode tree and constructs the corresponding HTML.
+ * @param {object} vnode - The virtual DOM node to render.
+ * @returns {string} The HTML string representation of the vnode.
+ */
 function render_vnode(vnode) {
   if (!vnode) return "";
   const { type, props, children } = vnode;
@@ -39,6 +45,13 @@ function render_vnode(vnode) {
   }
 }
 
+/**
+ * Renders a root component to an HTML string for server-side rendering (SSR).
+ * @param {object} root_component - The root component of the application.
+ * @param {object} [context={}] - An optional context object available to all components.
+ * Can be used to pass server-side data like user session or request params.
+ * @returns {string} The full HTML string for the application.
+ */
 export function render_to_string(root_component, context = {}) {
   const vnode = create_vnode(root_component);
   vnode.app_context = {

@@ -2,6 +2,12 @@ import { create_renderer, create_vnode } from "./renderer.js";
 import { reactive } from "./reactivity.js";
 import { compile } from "./compiler.js";
 
+/**
+ * Recursively compiles templates for a component and its sub-components.
+ * If a component has a template string but no render function, this will compile
+ * the template into a render function.
+ * @param {object} component_def - The component definition object.
+ */
 function compile_templates(component_def) {
   if (component_def.template && !component_def.render) {
     component_def.render = compile(component_def);
@@ -13,8 +19,20 @@ function compile_templates(component_def) {
   }
 }
 
+/**
+ * Creates a factory for generating app instances.
+ * @param {object} renderer_options - Configuration for the renderer.
+ * @returns {function} A function to create a new app instance.
+ */
 function create_app_api(renderer_options) {
   const renderer = create_renderer(renderer_options);
+
+  /**
+   * Creates a new application instance.
+   * @param {object} root_component - The root component for the application.
+   * @param {object} [root_props={}] - The initial props for the root component.
+   * @returns {object} The application instance with mount and update methods.
+   */
   return function create_app(root_component, root_props = {}) {
     compile_templates(root_component);
     let vnode;
@@ -27,6 +45,10 @@ function create_app_api(renderer_options) {
         patch: renderer.patch,
         params: root_props.params || {},
       },
+      /**
+       * Mounts the application to a container element.
+       * @param {Element} root_container - The DOM element to mount the app into.
+       */
       mount(root_container) {
         root_container.innerHTML = "";
         vnode = create_vnode(root_component);
@@ -34,6 +56,10 @@ function create_app_api(renderer_options) {
         app._context.patch(null, vnode, root_container);
         app._container = root_container;
       },
+      /**
+       * Updates the root component of the application.
+       * @param {object} new_root_component - The new root component.
+       */
       update(new_root_component) {
         compile_templates(new_root_component);
         const new_vnode = create_vnode(new_root_component);
@@ -48,6 +74,7 @@ function create_app_api(renderer_options) {
 
 const is_on = (key) => /^on[A-Z]/.test(key);
 
+// Renderer options specific to the browser DOM environment.
 const renderer_options = {
   create_element: (tag) => document.createElement(tag),
   create_text: (text) => document.createTextNode(text),
@@ -82,6 +109,12 @@ const renderer_options = {
 
 export const create_app = create_app_api(renderer_options);
 
+/**
+ * Parses a URL query string into a nested object.
+ * Supports nested keys like 'user[name]=John'.
+ * @param {string} queryString - The query string to parse (e.g., window.location.search).
+ * @returns {object} An object representation of the query string parameters.
+ */
 export function parse_query_string(queryString) {
   const params = {};
   const searchParams = new URLSearchParams(queryString);
@@ -106,6 +139,13 @@ export function parse_query_string(queryString) {
   return params;
 }
 
+/**
+ * Creates and manages a client-side router.
+ * Handles navigation, route loading, middleware, and component rendering.
+ * @param {object} routes - An object where keys are paths and values are component definitions.
+ * A route definition can also include middleware.
+ * e.g., { '/': { component: HomeComponent, middleware: [auth] } }
+ */
 export function create_router(routes) {
   if (typeof window === "undefined") return;
   const root = document.getElementById("root");
@@ -118,6 +158,7 @@ export function create_router(routes) {
   const params = reactive(initialParams);
   let app;
   let current_route = {};
+
   function updateParams(search) {
     const newParams = parse_query_string(search);
     for (const key in params) {
@@ -127,11 +168,13 @@ export function create_router(routes) {
       params[key] = newParams[key];
     }
   }
+
   async function navigate(path) {
     const url = new URL(path, window.location.origin);
     history.pushState({}, "", url);
     await loadRoute();
   }
+
   async function loadRoute() {
     const to_path = window.location.pathname;
     const from_route = current_route;
@@ -162,6 +205,7 @@ export function create_router(routes) {
     };
     next();
   }
+
   function renderComponent(PageComponent) {
     updateParams(window.location.search);
     current_route = { path: window.location.pathname };
@@ -172,6 +216,7 @@ export function create_router(routes) {
       app.update(PageComponent);
     }
   }
+
   function handleLocalNavigation(event) {
     const anchorElement = event.target.closest("a");
     if (anchorElement && anchorElement.host === window.location.host) {
@@ -179,6 +224,7 @@ export function create_router(routes) {
       navigate(anchorElement.href);
     }
   }
+
   window.addEventListener("popstate", loadRoute);
   document.addEventListener("click", handleLocalNavigation);
   loadRoute();

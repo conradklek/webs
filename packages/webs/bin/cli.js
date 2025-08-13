@@ -20,6 +20,11 @@ const CWD = process.cwd();
 const OUTDIR = resolve(CWD, "dist");
 const PORT = process.env.PORT || 3000;
 
+/**
+ * Loads all component files from the `src/app` directory and maps them to routes.
+ * @param {string} cwd - The current working directory.
+ * @returns {Promise<object>} An object mapping route paths to component definitions.
+ */
 export async function load_app_routes(cwd) {
   console.log("Loading application routes...");
   const routes = {};
@@ -51,6 +56,12 @@ export async function load_app_routes(cwd) {
   return routes;
 }
 
+/**
+ * Builds the client-side assets using Bun's build API.
+ * @param {string} cwd - The current working directory.
+ * @param {string} outdir - The output directory for the build artifacts.
+ * @returns {Promise<object|null>} The build result object from Bun, or null on failure.
+ */
 async function build_assets(cwd, outdir) {
   console.log("Building client assets...");
   const entrypoint = resolve(cwd, "src/app.js");
@@ -77,6 +88,11 @@ async function build_assets(cwd, outdir) {
   return build_result;
 }
 
+/**
+ * Compresses build outputs using Gzip.
+ * @param {Array<object>} outputs - An array of build output objects from Bun.
+ * @returns {Promise<object>} An object mapping original asset paths to their Gzipped sizes.
+ */
 async function compress_assets(outputs) {
   console.log("Compressing assets with Gzip...");
   const sizes = {};
@@ -91,7 +107,9 @@ async function compress_assets(outputs) {
           const gzipped_file = Bun.file(gzipped_path);
           sizes[output.path] = gzipped_file.size;
           console.log(
-            `  - Compressed ${basename(output.path)} (${(gzipped_file.size / 1024).toFixed(2)} KB)`,
+            `  - Compressed ${basename(output.path)} (${(
+              gzipped_file.size / 1024
+            ).toFixed(2)} KB)`,
           );
         } catch (e) {
           console.error(`Failed to compress ${output.path}:`, e);
@@ -103,6 +121,15 @@ async function compress_assets(outputs) {
   return sizes;
 }
 
+/**
+ * Sets up the initial asset build and watches for file changes to trigger rebuilds (HMR).
+ * @param {object} options - Configuration options.
+ * @param {string} options.cwd - The current working directory.
+ * @param {string} options.outdir - The output directory.
+ * @param {object} options.server - The Bun server instance.
+ * @param {Function} options.on_rebuild - Callback function to execute after a successful rebuild.
+ * @returns {Promise<object>} The initial asset manifest.
+ */
 export async function setup_build_and_hmr({ cwd, outdir, server, on_rebuild }) {
   let build_result = await build_assets(cwd, outdir);
   if (!build_result) process.exit(1);
@@ -138,6 +165,11 @@ export async function setup_build_and_hmr({ cwd, outdir, server, on_rebuild }) {
   return manifest;
 }
 
+/**
+ * Creates the main request handler function for the server.
+ * @param {object} context - The server context object containing db, routes, etc.
+ * @returns {Function} An async function that handles incoming requests.
+ */
 export function create_request_handler(context) {
   return async function(req) {
     const {
@@ -192,7 +224,10 @@ export function create_request_handler(context) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${component_to_render.name || "Webs App"}</title>
-    ${manifest.css ? `<link rel="stylesheet" href="/${basename(manifest.css)}">` : ""}
+    ${manifest.css
+          ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
+          : ""
+        }
   </head>
   <body>
     <div id="root" style="display: contents">${app_html}</div>
@@ -225,6 +260,12 @@ export function create_request_handler(context) {
   };
 }
 
+/**
+ * Handles authentication-related API requests.
+ * @param {Request} req - The incoming request.
+ * @param {object} db - The database instance.
+ * @returns {Promise<Response>} A response for the auth action.
+ */
 async function handle_auth_api(req, db) {
   const { pathname } = new URL(req.url);
   if (pathname === "/api/auth/register") return register_user(req, db);
@@ -233,6 +274,15 @@ async function handle_auth_api(req, db) {
   return new Response("Auth route not found", { status: 404 });
 }
 
+/**
+ * Handles server action requests initiated from the client.
+ * @param {Request} req - The incoming request.
+ * @param {object} db - The database instance.
+ * @param {object} fs - The filesystem utility object.
+ * @param {Function} get_user_from_session - Function to retrieve the current user.
+ * @param {object} app_routes - The application's routes.
+ * @returns {Promise<Response>} The result of the server action.
+ */
 async function handle_server_actions(
   req,
   db,
@@ -267,6 +317,14 @@ async function handle_server_actions(
   }
 }
 
+/**
+ * Serves static assets from the output directory. Handles Gzip compression.
+ * @param {Request} req - The incoming request.
+ * @param {string} pathname - The path of the requested asset.
+ * @param {string} outdir - The output directory.
+ * @param {object} manifest - The asset manifest.
+ * @returns {Promise<Response|null>} A response with the asset, or null if not found.
+ */
 async function handle_static_assets(req, pathname, outdir, manifest) {
   const asset_path = join(outdir, basename(pathname));
   const file = Bun.file(asset_path);
@@ -298,6 +356,10 @@ async function handle_static_assets(req, pathname, outdir, manifest) {
   return null;
 }
 
+/**
+ * The main entry point for the server.
+ * Initializes services, sets up the server, and starts listening.
+ */
 async function main() {
   const server_context = {
     fs,

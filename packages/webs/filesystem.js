@@ -8,6 +8,12 @@ import {
   stat as fs_stat,
 } from "node:fs/promises";
 
+/**
+ * Reads the content of a file. Equivalent to the 'cat' command.
+ * @param {string} path - The path to the file.
+ * @returns {Promise<File>} A Bun File object.
+ * @throws Will throw an error if the file is not found.
+ */
 export async function cat(path) {
   const file_ref = file(path);
   const file_exists = await file_ref.exists();
@@ -17,6 +23,13 @@ export async function cat(path) {
   return file_ref;
 }
 
+/**
+ * Copies a file or directory.
+ * @param {string} from - The source path.
+ * @param {string} to - The destination path.
+ * @param {boolean} [recursive=false] - If true, copies directories recursively.
+ * @throws Will throw an error if 'from' is a directory and 'recursive' is false.
+ */
 export async function copy(from, to, recursive = false) {
   if (!from || !to) {
     throw new Error("Missing 'from' or 'to' path");
@@ -33,6 +46,11 @@ export async function copy(from, to, recursive = false) {
   }
 }
 
+/**
+ * Checks if a path exists.
+ * @param {string} path - The path to check.
+ * @returns {Promise<boolean>} True if the path exists, false otherwise.
+ */
 export async function exists(path) {
   try {
     await fs_stat(path);
@@ -45,6 +63,12 @@ export async function exists(path) {
   }
 }
 
+/**
+ * Finds files matching a glob pattern.
+ * @param {string} pattern - The glob pattern to match.
+ * @param {string} cwd - The current working directory to scan from.
+ * @returns {Promise<string[]>} An array of matching file paths.
+ */
 export async function glob(pattern, cwd) {
   const globber = new Glob(pattern);
   const matches = [];
@@ -54,6 +78,13 @@ export async function glob(pattern, cwd) {
   return matches;
 }
 
+/**
+ * Lists the contents of a directory. Equivalent to 'ls'.
+ * @param {string} path - The path to the directory.
+ * @param {boolean} [recursive=false] - If true, lists contents recursively.
+ * @param {boolean} [stats=false] - If true, returns detailed stats for each item.
+ * @returns {Promise<Array<string|object>>} An array of file/directory names or stat objects.
+ */
 export async function ls(path, recursive = false, stats = false) {
   let dir = await readdir(path, { recursive });
 
@@ -110,10 +141,21 @@ export async function ls(path, recursive = false, stats = false) {
   return dir;
 }
 
+/**
+ * Creates a new directory.
+ * @param {string} path - The path of the directory to create.
+ * @param {boolean} [recursive=false] - If true, creates parent directories as needed.
+ * @returns {Promise<string|undefined>} The path of the first directory created if recursive.
+ */
 export async function mkdir(path, recursive = false) {
   return await fs_mkdir(path, { recursive });
 }
 
+/**
+ * Moves or renames a file or directory. Equivalent to 'mv'.
+ * @param {string} from - The source path.
+ * @param {string} to - The destination path.
+ */
 export async function mv(from, to) {
   if (!from || !to) {
     throw new Error("Missing 'from' or 'to' path");
@@ -126,6 +168,11 @@ export async function mv(from, to) {
   }
 }
 
+/**
+ * Removes a file or directory. Equivalent to 'rm'.
+ * @param {string} path - The path to remove.
+ * @param {boolean} [recursive=false] - If true, removes directories recursively.
+ */
 export async function rm(path, recursive = false) {
   if (!path) {
     throw new Error("Missing 'path'");
@@ -138,6 +185,11 @@ export async function rm(path, recursive = false) {
   }
 }
 
+/**
+ * Gets file system stats for a path.
+ * @param {string} path - The path to get stats for.
+ * @returns {Promise<object>} A stats object.
+ */
 export async function stat(path) {
   if (!path) {
     throw new Error("Missing 'path'");
@@ -163,6 +215,11 @@ export async function stat(path) {
   }
 }
 
+/**
+ * Creates a file at a given path, optionally with content. Equivalent to 'touch'.
+ * @param {string} path - The path of the file to create.
+ * @param {string|Blob|ArrayBuffer} [data=""] - The content to write to the file.
+ */
 export async function touch(path, data = "") {
   await write(path, data);
 }

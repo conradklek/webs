@@ -1,5 +1,13 @@
 import { resolve } from "path";
 
+/**
+ * Initializes a database connection, and applies any pending migrations.
+ * It looks for a `src/sql.js` file in the project's root for configuration,
+ * which should specify the database name and an array of migration scripts.
+ * @param {object} Database - The database driver constructor (e.g., from `better-sqlite3`).
+ * @param {string} cwd - The current working directory of the application.
+ * @returns {Promise<object|null>} A promise that resolves to the database instance, or null if setup is skipped.
+ */
 export async function create_database(Database, cwd) {
   console.log("Initializing database service...");
   const dbSchemaPath = resolve(cwd, "src/sql.js");

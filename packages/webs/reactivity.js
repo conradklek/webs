@@ -8,6 +8,12 @@ const target_map = new WeakMap();
 
 const RAW_SYMBOL = Symbol("raw");
 
+/**
+ * Creates a reactive effect that can be run and tracked.
+ * @param {Function} fn - The function to be executed as the effect.
+ * @param {object} scheduler - An optional scheduler to control when the effect is run.
+ * @returns {object} The reactive effect object with run and stop methods.
+ */
 const create_reactive_effect = (fn, scheduler) => {
   const effect = {
     fn,
@@ -37,6 +43,10 @@ const create_reactive_effect = (fn, scheduler) => {
   return effect;
 };
 
+/**
+ * Cleans up an effect by removing it from all its dependencies.
+ * @param {object} effect - The effect to clean up.
+ */
 function cleanup(effect) {
   const { deps } = effect;
   for (let i = 0; i < deps.length; i++) {
@@ -45,6 +55,11 @@ function cleanup(effect) {
   deps.length = 0;
 }
 
+/**
+ * Tracks a property as a dependency of the currently active effect.
+ * @param {object} target - The target object.
+ * @param {string|symbol} key - The property key to track.
+ */
 function track(target, key) {
   if (active_effect) {
     let deps_map = target_map.get(target);
@@ -56,6 +71,11 @@ function track(target, key) {
   }
 }
 
+/**
+ * Triggers all effects that depend on a specific property.
+ * @param {object} target - The target object.
+ * @param {string|symbol} key - The property key that has changed.
+ */
 function trigger(target, key) {
   const deps_map = target_map.get(target);
   if (!deps_map) return;
@@ -68,6 +88,12 @@ function trigger(target, key) {
   }
 }
 
+/**
+ * Creates a reactive effect that runs immediately and re-runs when its dependencies change.
+ * @param {Function} fn - The function to wrap in an effect.
+ * @param {object} [options={}] - Options for the effect, like a scheduler.
+ * @returns {Function} A runner function that can be used to manually trigger the effect.
+ */
 export function effect(fn, options = {}) {
   const _effect = create_reactive_effect(fn, options.scheduler);
   _effect.run();
@@ -78,6 +104,11 @@ export function effect(fn, options = {}) {
 
 const proxy_map = new WeakMap();
 
+/**
+ * Creates a reactive proxy for an object.
+ * @param {object} target - The object to make reactive.
+ * @returns {Proxy} A reactive proxy of the original object.
+ */
 export function reactive(target) {
   if (!is_object(target)) return target;
   if (proxy_map.has(target)) return proxy_map.get(target);
@@ -101,6 +132,11 @@ export function reactive(target) {
   return proxy;
 }
 
+/**
+ * Creates a computed property that caches its value and only re-computes when dependencies change.
+ * @param {Function} getter - The function to compute the value.
+ * @returns {object} A computed ref object with a `.value` property.
+ */
 export function computed(getter) {
   let _value;
   let _dirty = true;

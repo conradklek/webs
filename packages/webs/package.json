@@ -5,22 +5,32 @@
   "bin": {
     "webs": "bin/cli.js"
   },
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
   "files": [
     "bin",
-    "dist",
-    "*.js"
+    "dist"
   ],
-  "main": "index.js",
-  "module": "index.js",
-  "types": "index.d.ts",
   "exports": {
-    ".": "./index.js",
-    "./*": "./*.js"
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build:js": "bun build ./index.js --outfile=./dist/index.js --format=cjs && bun build ./index.js --outfile=./dist/index.mjs --format=esm",
+    "build:types": "tsc",
+    "build": "rm -rf dist && bun run build:js && bun run build:types"
   },
   "dependencies": {
     "bun-plugin-tailwind": "^0.0.15"
   },
   "peerDependencies": {
-    "tailwindcss": "^4.0.0"
+    "tailwindcss": "^4.1.11"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
   }
 }

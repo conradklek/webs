@@ -13,6 +13,7 @@ const camelize = cache_string_function((str) => {
   return str.replace(/-(\w)/g, (_, c) => (c ? c.toUpperCase() : ""));
 });
 
+// Enum for different types of nodes in the transformed AST.
 const NODE_TYPES = {
   ROOT: 0,
   ELEMENT: 1,
@@ -25,18 +26,25 @@ const NODE_TYPES = {
   FOR: 8,
 };
 
+// Enum for different types of attributes on an element.
 const ATTR_TYPES = {
   STATIC: 10,
   DIRECTIVE: 11,
   EVENT_HANDLER: 12,
 };
 
+// Constant strings for directive names.
 const DIR_IF = "w-if";
 const DIR_ELSE_IF = "w-else-if";
 const DIR_ELSE = "w-else";
 const DIR_FOR = "w-for";
 const DIR_MODEL = "w-model";
 
+/**
+ * Generates a render function from a transformed Abstract Syntax Tree (AST).
+ * @param {object} ast - The transformed AST of the component template.
+ * @returns {Function} A render function that takes the component context and returns a VNode tree.
+ */
 function generate_render_fn(ast) {
   const ctx = {
     scope: new Set(),
@@ -173,17 +181,26 @@ return ${generated_code || "null"};
   }
 }
 
+/**
+ * The main Compiler class that orchestrates the template compilation process.
+ */
 class Compiler {
   constructor(component_def, options = null) {
     this.definition = component_def;
     this.component_tags = new Set(Object.keys(component_def.components || {}));
     this.options = options;
   }
+
+  /**
+   * Compiles the component's template into a render function.
+   * @returns {Function} The generated render function.
+   */
   compile() {
     const raw_ast = parse_html(this.definition.template);
     const transformed_ast = this._transform_node(raw_ast);
     return generate_render_fn(transformed_ast);
   }
+
   _parse_expr(str) {
     if (!str) return null;
     const clean_str = str.replace(/\n/g, " ").trim();
@@ -194,6 +211,7 @@ class Compiler {
       return null;
     }
   }
+
   _transform_node(node) {
     switch (node.type) {
       case "root":
@@ -211,6 +229,7 @@ class Compiler {
         return null;
     }
   }
+
   _transform_text(node) {
     const unescape = (str) => {
       return str.replace(
@@ -267,6 +286,7 @@ class Compiler {
       ? tokens[0]
       : { type: NODE_TYPES.FRAGMENT, children: tokens };
   }
+
   _transform_children(children) {
     const transformed = [];
     for (let i = 0; i < children.length; i++) {
@@ -329,6 +349,7 @@ class Compiler {
     }
     return transformed;
   }
+
   _transform_element(el) {
     const for_attr = el.attributes.find((a) => a.name === DIR_FOR);
     if (for_attr) {
@@ -350,6 +371,7 @@ class Compiler {
     }
     return this._transform_native_element(el);
   }
+
   _transform_native_element(el) {
     const registered_comp_name = [...this.component_tags].find(
       (c) => c.toLowerCase() === el.tagName.toLowerCase(),
@@ -363,6 +385,7 @@ class Compiler {
     };
     return node;
   }
+
   _process_attributes(attrs) {
     const properties = [];
     for (const attr of attrs) {
@@ -403,6 +426,12 @@ class Compiler {
   }
 }
 
+/**
+ * Compiles a component definition object into a render function.
+ * This is the main entry point for the compiler.
+ * @param {object} component_def - The component definition object, which must include a `template` string.
+ * @returns {Function} A render function.
+ */
 export function compile(component_def) {
   if (!component_def.template) {
     console.warn("Component is missing a template option.");
@@ -412,10 +441,17 @@ export function compile(component_def) {
   return compiler.compile();
 }
 
+// --- CSS Parser ---
+
 const css_is_whitespace = (char) => /\s/.test(char);
 const css_is_ident_start = (char) => /[a-zA-Z]/.test(char);
 const css_is_ident_part = (char) => /[a-zA-Z0-9-_]/.test(char);
 
+/**
+ * Tokenizes a CSS string into an array of tokens.
+ * @param {string} css - The CSS string to tokenize.
+ * @returns {Array<object>} An array of token objects.
+ */
 export function tokenize_css(css) {
   const tokens = [];
   let i = 0;
@@ -514,6 +550,11 @@ export function tokenize_css(css) {
   return tokens;
 }
 
+/**
+ * Parses an array of CSS tokens into a stylesheet AST.
+ * @param {Array<object>} tokens - The array of tokens from `tokenize_css`.
+ * @returns {object} A stylesheet AST object.
+ */
 export function parse_css(tokens) {
   let i = 0;
   const peek = () => tokens[i];
@@ -619,6 +660,8 @@ export function parse_css(tokens) {
   return { type: "stylesheet", rules };
 }
 
+// --- HTML Parser ---
+
 const html_is_whitespace = (c) =>
   c === " " || c === "\n" || c === "\t" || c === "\r";
 
@@ -638,6 +681,11 @@ const State = {
   SELF_CLOSING: 11,
 };
 
+/**
+ * Tokenizes an HTML string.
+ * @param {string} html - The HTML string to tokenize.
+ * @returns {Array<object>} An array of token objects.
+ */
 export function tokenize_html(html) {
   let state = State.DATA;
   let i = 0;
@@ -762,6 +810,11 @@ export function tokenize_html(html) {
   return tokens;
 }
 
+/**
+ * Builds a parse tree from an array of HTML tokens.
+ * @param {Array<object>} tokens - The array of tokens from `tokenize_html`.
+ * @returns {object} A root node of the parsed tree.
+ */
 function build_tree(tokens) {
   const root = { type: "root", children: [] };
   const stack = [root];
@@ -798,6 +851,11 @@ function build_tree(tokens) {
   return root;
 }
 
+/**
+ * Parses an HTML string into a simplified AST. Caches the result.
+ * @param {string} html - The HTML string to parse.
+ * @returns {object} The root of the HTML AST.
+ */
 export function parse_html(html) {
   if (html_ast_cache.has(html)) {
     return html_ast_cache.get(html);
@@ -807,6 +865,8 @@ export function parse_html(html) {
   html_ast_cache.set(html, ast);
   return ast;
 }
+
+// --- JavaScript Expression Parser ---
 
 const js_is_whitespace = (c) =>
   c === " " || c === "\n" || c === "\t" || c === "\r";
@@ -829,6 +889,11 @@ const JS_KEYWORDS = {
   undefined: "UNDEFINED",
 };
 
+/**
+ * Tokenizes a JavaScript expression string.
+ * @param {string} expression - The expression string to tokenize.
+ * @returns {Array<object>} An array of token objects.
+ */
 export function tokenize_expression(expression) {
   if (js_token_cache.has(expression)) {
     return js_token_cache.get(expression);
@@ -924,6 +989,11 @@ export function tokenize_expression(expression) {
   return tokens;
 }
 
+/**
+ * Parses an array of JavaScript expression tokens into an AST.
+ * @param {Array<object>} tokens - The array of tokens from `tokenize_expression`.
+ * @returns {object} An expression AST object.
+ */
 export function parse_expression(tokens) {
   let i = 0;
   const peek = () => tokens[i];
