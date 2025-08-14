@@ -1,6 +1,6 @@
 {
   "name": "@conradklek/webs",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A JavaScript framework.",
   "bin": {
     "webs": "bin/cli.js"
@@ -22,7 +22,7 @@
     "./*": "./*.js"
   },
   "scripts": {
-    "build:js": "bun build ./index.js --outfile=./dist/index.js --format=cjs && bun build ./index.js --outfile=./dist/index.mjs --format=esm",
+    "build:js": "bun build ./src/index.js --outfile=./dist/index.js --format=cjs && bun build ./src/index.js --outfile=./dist/index.mjs --format=esm",
     "build:types": "tsc",
     "build": "rm -rf dist && bun run build:js && bun run build:types"
   },

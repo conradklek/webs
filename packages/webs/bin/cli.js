@@ -5,13 +5,13 @@ import {
   register_user,
   login_user,
   logout_user,
-} from "../auth.js";
-import { create_database } from "../database.js";
-import * as fs from "../filesystem.js";
+} from "../src/auth.js";
+import { create_database } from "../src/database.js";
+import * as fs from "../src/filesystem.js";
 import { Database } from "bun:sqlite";
 import tailwind from "bun-plugin-tailwind";
 import { resolve, join, basename } from "path";
-import { parse_query_string } from "../runtime.js";
+import { parse_query_string } from "../src/runtime.js";
 import { watch } from "fs";
 import { Glob } from "bun";
 
