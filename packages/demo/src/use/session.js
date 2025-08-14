@@ -1,4 +1,4 @@
-import { create_store } from "@conradklek/webs/store.js";
+import { create_store } from "@conradklek/webs";
 
 const initial_user =
   typeof window !== "undefined" ? window.__INITIAL_USER__ : null;

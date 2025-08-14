@@ -1,4 +1,4 @@
-import { create_router } from "@conradklek/webs/runtime-dom.js";
+import { create_router } from "@conradklek/webs";
 
 import Home from "./app/index.js";
 import About from "./app/about.js";

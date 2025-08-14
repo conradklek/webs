@@ -7,8 +7,7 @@
  */
 
 // --- Core Application & Routing ---
-export { create_app, create_router } from "./runtime-dom.js";
-export { render_to_string } from "./runtime-ssr.js";
+export { create_app, create_router } from "./runtime.js";
 
 // --- Reactivity System ---
 export { reactive, computed, effect } from "./reactivity.js";

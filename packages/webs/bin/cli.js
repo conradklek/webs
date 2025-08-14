@@ -11,14 +11,15 @@ import * as fs from "../filesystem.js";
 import { Database } from "bun:sqlite";
 import tailwind from "bun-plugin-tailwind";
 import { resolve, join, basename } from "path";
-import { parse_query_string } from "../runtime-dom.js";
-import { render_to_string } from "../runtime-ssr.js";
+import { parse_query_string } from "../runtime.js";
 import { watch } from "fs";
 import { Glob } from "bun";
 
 const CWD = process.cwd();
 const OUTDIR = resolve(CWD, "dist");
 const PORT = process.env.PORT || 3000;
+const HMR_WS_PATH = "/hmr-ws";
+const HMR_TOPIC = "reload";
 
 /**
  * Loads all component files from the `src/app` directory and maps them to routes.
@@ -155,7 +156,7 @@ export async function setup_build_and_hmr({ cwd, outdir, server, on_rebuild }) {
         )?.path;
         manifest.sizes = new_asset_sizes;
         await on_rebuild(manifest);
-        server.publish("reload", "refresh");
+        server.publish(HMR_TOPIC, "refresh");
         console.log("[HMR] Reload signal sent to clients.");
       } else {
         console.error("[HMR] Build failed. No reload signal sent.");
@@ -180,9 +181,18 @@ export function create_request_handler(context) {
       manifest,
       outdir,
       is_ready,
+      server,
     } = context;
     const url = new URL(req.url);
     const { pathname, search } = url;
+
+    if (pathname === HMR_WS_PATH) {
+      if (server.upgrade(req)) {
+        return;
+      }
+      return new Response("WebSocket upgrade failed", { status: 500 });
+    }
+
     if (pathname.startsWith("/api/auth/")) {
       return handle_auth_api(req, db);
     }
@@ -217,17 +227,18 @@ export function create_request_handler(context) {
         ?.match(/session_id=([^;]+)/)?.[1];
       const user = get_user_from_session(db, session_id);
       const params = parse_query_string(search);
-      const app_html = render_to_string(component_to_render, { user, params });
+      const app_html = "";
       const full_html = `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${component_to_render.name || "Webs App"}</title>
-    ${manifest.css
-          ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
-          : ""
-        }
+    ${
+      manifest.css
+        ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
+        : ""
+    }
   </head>
   <body>
     <div id="root" style="display: contents">${app_html}</div>
@@ -237,8 +248,21 @@ export function create_request_handler(context) {
     </script>
     <script type="module" src="/${basename(manifest.js)}"></script>
     <script>
-      // HMR client-side script
-      new EventSource('/sse').addEventListener('reload', () => location.reload());
+      const hmrSocket = new WebSocket(\`ws://\${location.host}${HMR_WS_PATH}\`);
+      hmrSocket.addEventListener('message', (event) => {
+        if (event.data === 'refresh') {
+          location.reload();
+        }
+      });
+      hmrSocket.addEventListener('open', () => {
+        console.log('[HMR] WebSocket connected.');
+      });
+      hmrSocket.addEventListener('close', () => {
+        console.log('[HMR] WebSocket disconnected. Attempting to reconnect in 1s...');
+        setTimeout(() => {
+            location.reload();
+        }, 1000);
+      });
     </script>
   </body>
 </html>`;
@@ -246,16 +270,7 @@ export function create_request_handler(context) {
         headers: { "Content-Type": "text/html;charset=utf-8" },
       });
     }
-    if (pathname === "/sse") {
-      const { readable } = new TransformStream();
-      context.server.publish("reload", "refresh");
-      return new Response(readable, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-        },
-      });
-    }
+
     return new Response("Not Found", { status: 404 });
   };
 }
@@ -376,8 +391,18 @@ async function main() {
 
   const server = Bun.serve({
     port: PORT,
-    development: true,
+    development: false,
     fetch: request_handler,
+    websocket: {
+      open(ws) {
+        console.log("[HMR] WebSocket client connected");
+        ws.subscribe(HMR_TOPIC);
+      },
+      close(ws) {
+        console.log("[HMR] WebSocket client disconnected");
+        ws.unsubscribe(HMR_TOPIC);
+      },
+    },
     error(error) {
       console.error(error);
       return new Response("Internal Server Error", { status: 500 });
@@ -404,3 +429,4 @@ async function main() {
 }
 
 main();
+

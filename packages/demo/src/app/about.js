@@ -1,9 +1,10 @@
 export default {
   name: "About",
-  state: () => ({
-    count: 0,
-    message: "This is a demonstration of client-side routing!",
-  }),
+  state() {
+    return {
+      message: "This is a demonstration of client-side routing!",
+    }
+  },
   actions: {
     async backendCall({ db }) {
       console.log("Hello on the server!");

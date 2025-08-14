@@ -148,6 +148,7 @@ export function parse_query_string(queryString) {
  */
 export function create_router(routes) {
   if (typeof window === "undefined") return;
+
   const root = document.getElementById("root");
   if (!root) {
     console.error("Router creation failed: Root element not provided.");
@@ -229,3 +230,4 @@ export function create_router(routes) {
   document.addEventListener("click", handleLocalNavigation);
   loadRoute();
 }
+
