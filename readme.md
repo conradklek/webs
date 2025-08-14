@@ -11,7 +11,6 @@ This constraint dictates that a payload exceeding approximately 14kB necessitate
 ## Features
 
 - **Performance:** A sub-14kb gzipped footprint, engineered for near-instant initial loads in accordance with TCP slow start principles.
-- **Server-Side Rendering (SSR):** Renders pages on the server for optimal SEO and perceived performance.
 - **Client-Side Hydration:** Seamlessly takes over on the client for a rich, interactive experience.
 - **Built-in Reactivity:** A simple, powerful reactivity system (reactive, computed) inspired by the best.
 - **Integrated Database:** Comes with a ready-to-use SQLite database layer with a built-in migration system.
@@ -25,7 +24,7 @@ The best way to start a new `webs` project is by using the official scaffolding 
 
 ```bash
 # Create a new project
-npx create-webs-app my-awesome-project
+bunx create-webs-app my-awesome-project
 
 # Navigate into your project
 cd my-awesome-project

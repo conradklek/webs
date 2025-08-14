@@ -175,8 +175,9 @@ export function create_renderer(options) {
   };
 
   const patch_children = (n1, n2, container) => {
-    let c1 = n1?.children;
-    let c2 = n2?.children;
+    const c1 = n1?.children;
+    const c2 = n2?.children;
+
     if (is_string(c2)) {
       if (Array.isArray(c1)) {
         unmount_children(c1);
@@ -184,22 +185,30 @@ export function create_renderer(options) {
       host_set_element_text(container, c2);
       return;
     }
-    if (is_string(c1)) {
-      host_set_element_text(container, "");
-      c1 = [];
-    }
-    if (!c2) {
-      if (c1) unmount_children(c1);
+
+    const old_children =
+      c1 && !is_string(c1) ? (Array.isArray(c1) ? c1 : [c1]) : [];
+    const new_children = c2 ? (Array.isArray(c2) ? c2 : [c2]) : [];
+
+    if (new_children.length === 0) {
+      if (old_children.length > 0) {
+        unmount_children(old_children);
+      }
+      if (is_string(c1)) {
+        host_set_element_text(container, "");
+      }
       return;
     }
-    if (!c1) {
-      c2.forEach((c) => patch(null, c, container));
+
+    if (old_children.length === 0) {
+      new_children.forEach((c) => patch(null, c, container));
       return;
     }
-    if (c2.some((child) => child.key != null)) {
-      patch_keyed_children(c1, c2, container);
+
+    if (new_children.some((child) => child.key != null)) {
+      patch_keyed_children(old_children, new_children, container);
     } else {
-      patch_unkeyed_children(c1, c2, container);
+      patch_unkeyed_children(old_children, new_children, container);
     }
   };
 
