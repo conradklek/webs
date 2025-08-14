@@ -1,6 +1,6 @@
-import { is_function, is_object, is_string } from "./utils.js";
-import { effect, reactive, computed } from "./reactivity.js";
-import { compile } from "./compiler.js";
+import { is_function, is_object, is_string } from "./utils";
+import { effect, reactive, computed } from "./reactivity";
+import { compile } from "./compiler";
 
 /**
  * Finds the longest increasing subsequence from an array of numbers.
@@ -8,8 +8,9 @@ import { compile } from "./compiler.js";
  * @param {number[]} arr - The input array of numbers.
  * @returns {number[]} An array of indices representing the longest increasing subsequence.
  */
-function get_sequence(arr) {
-  const p = arr.slice();
+export function get_sequence(arr) {
+  if (arr.length === 0) return [];
+  const p = new Array(arr.length);
   const result = [0];
   let i, j, u, v, c;
   const len = arr.length;
@@ -79,7 +80,9 @@ export function create_renderer(options) {
   };
 
   const unmount_children = (children) => {
-    children.forEach(unmount);
+    if (Array.isArray(children)) {
+      children.forEach(unmount);
+    }
   };
 
   const patch_keyed_children = (c1, c2, container) => {
@@ -172,10 +175,18 @@ export function create_renderer(options) {
   };
 
   const patch_children = (n1, n2, container) => {
-    const c1 = n1?.children;
+    let c1 = n1?.children;
     let c2 = n2?.children;
     if (is_string(c2)) {
-      c2 = [create_vnode(Text, null, c2)];
+      if (Array.isArray(c1)) {
+        unmount_children(c1);
+      }
+      host_set_element_text(container, c2);
+      return;
+    }
+    if (is_string(c1)) {
+      host_set_element_text(container, "");
+      c1 = [];
     }
     if (!c2) {
       if (c1) unmount_children(c1);
@@ -472,9 +483,7 @@ export function create_component(vnode, parent, is_ssr = false) {
   let setup_result = {};
   if (setup) {
     set_current_instance(instance);
-    const res = setup(instance.props, {
-      // TODO: expose emit, attrs, etc. here in the future
-    });
+    const res = setup(instance.props, {});
     set_current_instance(null);
     if (is_object(res)) {
       setup_result = res;
@@ -593,6 +602,10 @@ class DOM_node {
     this.child_nodes = [];
   }
   insert_before(new_child, ref_child) {
+    if (new_child.parent_node) {
+      new_child.parent_node.remove_child(new_child);
+    }
+
     new_child.parent_node = this;
     const index = ref_child ? this.child_nodes.indexOf(ref_child) : -1;
     if (index !== -1) {

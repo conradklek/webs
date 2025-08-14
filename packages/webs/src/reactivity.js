@@ -1,4 +1,4 @@
-import { is_object } from "./utils.js";
+import { is_object } from "./utils";
 
 let active_effect = null;
 
@@ -14,7 +14,7 @@ const RAW_SYMBOL = Symbol("raw");
  * @param {object} scheduler - An optional scheduler to control when the effect is run.
  * @returns {object} The reactive effect object with run and stop methods.
  */
-const create_reactive_effect = (fn, scheduler) => {
+export const create_reactive_effect = (fn, scheduler) => {
   const effect = {
     fn,
     scheduler,
@@ -47,7 +47,7 @@ const create_reactive_effect = (fn, scheduler) => {
  * Cleans up an effect by removing it from all its dependencies.
  * @param {object} effect - The effect to clean up.
  */
-function cleanup(effect) {
+export function cleanup(effect) {
   const { deps } = effect;
   for (let i = 0; i < deps.length; i++) {
     deps[i].delete(effect);
@@ -60,7 +60,7 @@ function cleanup(effect) {
  * @param {object} target - The target object.
  * @param {string|symbol} key - The property key to track.
  */
-function track(target, key) {
+export function track(target, key) {
   if (active_effect) {
     let deps_map = target_map.get(target);
     if (!deps_map) target_map.set(target, (deps_map = new Map()));
@@ -76,7 +76,7 @@ function track(target, key) {
  * @param {object} target - The target object.
  * @param {string|symbol} key - The property key that has changed.
  */
-function trigger(target, key) {
+export function trigger(target, key) {
   const deps_map = target_map.get(target);
   if (!deps_map) return;
   const deps = deps_map.get(key);
@@ -140,18 +140,21 @@ export function reactive(target) {
 export function computed(getter) {
   let _value;
   let _dirty = true;
-  const runner = effect(getter, {
-    scheduler: () => {
-      if (!_dirty) {
-        _dirty = true;
-        trigger(c, "value");
-      }
-    },
-  });
-  const c = {
+  let c;
+
+  const scheduler = () => {
+    if (!_dirty) {
+      _dirty = true;
+      trigger(c, "value");
+    }
+  };
+
+  const getter_effect = create_reactive_effect(getter, scheduler);
+
+  c = {
     get value() {
       if (_dirty) {
-        _value = runner();
+        _value = getter_effect.run();
         _dirty = false;
       }
       track(c, "value");

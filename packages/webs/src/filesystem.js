@@ -9,44 +9,6 @@ import {
 } from "node:fs/promises";
 
 /**
- * Reads the content of a file. Equivalent to the 'cat' command.
- * @param {string} path - The path to the file.
- * @returns {Promise<File>} A Bun File object.
- * @throws Will throw an error if the file is not found.
- */
-export async function cat(path) {
-  const file_ref = file(path);
-  const file_exists = await file_ref.exists();
-  if (!file_exists) {
-    throw new Error("File not found");
-  }
-  return file_ref;
-}
-
-/**
- * Copies a file or directory.
- * @param {string} from - The source path.
- * @param {string} to - The destination path.
- * @param {boolean} [recursive=false] - If true, copies directories recursively.
- * @throws Will throw an error if 'from' is a directory and 'recursive' is false.
- */
-export async function copy(from, to, recursive = false) {
-  if (!from || !to) {
-    throw new Error("Missing 'from' or 'to' path");
-  }
-  try {
-    const from_stats = await fs_stat(from);
-    if (from_stats.isDirectory() && !recursive) {
-      throw new Error("Source is a directory but 'recursive' flag is not set.");
-    }
-    await cp(from, to, { recursive });
-  } catch (error) {
-    console.error("Error in copy:", error);
-    throw error;
-  }
-}
-
-/**
  * Checks if a path exists.
  * @param {string} path - The path to check.
  * @returns {Promise<boolean>} True if the path exists, false otherwise.
@@ -61,6 +23,38 @@ export async function exists(path) {
     }
     throw error;
   }
+}
+
+/**
+ * Reads the content of a file. Equivalent to the 'cat' command.
+ * @param {string} path - The path to the file.
+ * @returns {Promise<File>} A Bun File object.
+ * @throws Will throw an error if the file is not found.
+ */
+export async function cat(path) {
+  const file_exists = await exists(path);
+  if (!file_exists) {
+    throw new Error("File not found");
+  }
+  return file(path);
+}
+
+/**
+ * Copies a file or directory.
+ * @param {string} from - The source path.
+ * @param {string} to - The destination path.
+ * @param {boolean} [recursive=false] - If true, copies directories recursively.
+ * @throws Will throw an error if 'from' is a directory and 'recursive' is false.
+ */
+export async function copy(from, to, recursive = false) {
+  if (!from || !to) {
+    throw new Error("Missing 'from' or 'to' path");
+  }
+  const from_stats = await fs_stat(from);
+  if (from_stats.isDirectory() && !recursive) {
+    throw new Error("Source is a directory but 'recursive' flag is not set.");
+  }
+  await cp(from, to, { recursive });
 }
 
 /**

@@ -1,4 +1,4 @@
-import { reactive, computed } from "./reactivity.js";
+import { reactive, computed } from "./reactivity";
 
 /**
  * Creates a centralized store for state management.

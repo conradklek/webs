@@ -234,11 +234,10 @@ export function create_request_handler(context) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${component_to_render.name || "Webs App"}</title>
-    ${
-      manifest.css
-        ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
-        : ""
-    }
+    ${manifest.css
+          ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
+          : ""
+        }
   </head>
   <body>
     <div id="root" style="display: contents">${app_html}</div>
@@ -429,4 +428,3 @@ async function main() {
 }
 
 main();
-

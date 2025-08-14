@@ -7,14 +7,13 @@
  */
 
 // --- Core Application & Routing ---
-export { create_app, create_router } from "./runtime.js";
+export { create_app, create_router } from "./runtime";
 
 // --- Reactivity System ---
-export { reactive, computed, effect } from "./reactivity.js";
+export { reactive, computed, effect } from "./reactivity";
 
 // --- State Management ---
-export { create_store } from "./store.js";
+export { create_store } from "./store";
 
 // --- Advanced Rendering & VDOM ---
-export { h, Fragment, Teleport } from "./renderer.js";
-
+export { h, Fragment, Teleport } from "./renderer";

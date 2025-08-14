@@ -1,11 +1,11 @@
-const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7;
 
 /**
  * Hashes a password using bcrypt.
  * @param {string} password - The plaintext password to hash.
  * @returns {Promise<string>} The hashed password.
  */
-async function hash_password(password) {
+export async function hash_password(password) {
   return Bun.password.hash(password, { algorithm: "bcrypt", cost: 10 });
 }
 
@@ -15,7 +15,7 @@ async function hash_password(password) {
  * @param {string} hash - The hash to compare against.
  * @returns {Promise<boolean>} True if the password is valid, false otherwise.
  */
-async function verify_password(password, hash) {
+export async function verify_password(password, hash) {
   return Bun.password.verify(password, hash);
 }
 
@@ -28,7 +28,7 @@ async function verify_password(password, hash) {
  * @param {string} userData.password - The user's plaintext password.
  * @returns {Promise<object>} The newly created user object (without password).
  */
-async function create_user(db, { email, username, password }) {
+export async function create_user(db, { email, username, password }) {
   const hashed_password = await hash_password(password);
   return db
     .query(
@@ -43,7 +43,7 @@ async function create_user(db, { email, username, password }) {
  * @param {number} user_id - The ID of the user to create the session for.
  * @returns {string} The newly created session ID.
  */
-function create_session(db, user_id) {
+export function create_session(db, user_id) {
   const session_id = crypto.randomUUID();
   const expires_at = new Date(Date.now() + SESSION_DURATION_MS);
   db.query(
@@ -57,7 +57,7 @@ function create_session(db, user_id) {
  * @param {object} db - The database instance.
  * @param {string} session_id - The ID of the session to delete.
  */
-function delete_session(db, session_id) {
+export function delete_session(db, session_id) {
   db.query("DELETE FROM sessions WHERE id = ?").run(session_id);
 }
 

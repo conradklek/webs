@@ -1,6 +1,6 @@
-import { create_renderer, create_vnode } from "./renderer.js";
-import { reactive } from "./reactivity.js";
-import { compile } from "./compiler.js";
+import { create_renderer, create_vnode } from "./renderer";
+import { reactive } from "./reactivity";
+import { compile } from "./compiler";
 
 /**
  * Recursively compiles templates for a component and its sub-components.
@@ -8,7 +8,7 @@ import { compile } from "./compiler.js";
  * the template into a render function.
  * @param {object} component_def - The component definition object.
  */
-function compile_templates(component_def) {
+export function compile_templates(component_def) {
   if (component_def.template && !component_def.render) {
     component_def.render = compile(component_def);
   }
@@ -24,7 +24,7 @@ function compile_templates(component_def) {
  * @param {object} renderer_options - Configuration for the renderer.
  * @returns {function} A function to create a new app instance.
  */
-function create_app_api(renderer_options) {
+export function create_app_api(renderer_options) {
   const renderer = create_renderer(renderer_options);
 
   /**
@@ -74,8 +74,7 @@ function create_app_api(renderer_options) {
 
 const is_on = (key) => /^on[A-Z]/.test(key);
 
-// Renderer options specific to the browser DOM environment.
-const renderer_options = {
+export const renderer_options = {
   create_element: (tag) => document.createElement(tag),
   create_text: (text) => document.createTextNode(text),
   create_comment: (text) => document.createComment(text),
@@ -230,4 +229,3 @@ export function create_router(routes) {
   document.addEventListener("click", handleLocalNavigation);
   loadRoute();
 }
-

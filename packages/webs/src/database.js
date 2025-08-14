@@ -65,4 +65,3 @@ export async function create_database(Database, cwd) {
   console.log("Database service initialized.");
   return db;
 }
-
