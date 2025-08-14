@@ -1,6 +1,6 @@
 {
   "name": "@conradklek/webs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A JavaScript framework.",
   "bin": {
     "webs": "bin/cli.js"
@@ -10,14 +10,16 @@
   "types": "dist/index.d.ts",
   "files": [
     "bin",
-    "dist"
+    "dist",
+    "*.js"
   ],
   "exports": {
     ".": {
       "import": "./dist/index.mjs",
       "require": "./dist/index.js",
       "types": "./dist/index.d.ts"
-    }
+    },
+    "./*": "./*.js"
   },
   "scripts": {
     "build:js": "bun build ./index.js --outfile=./dist/index.js --format=cjs && bun build ./index.js --outfile=./dist/index.mjs --format=esm",
@@ -28,9 +30,10 @@
     "bun-plugin-tailwind": "^0.0.15"
   },
   "peerDependencies": {
-    "tailwindcss": "^4.1.11"
+    "tailwindcss": "^4.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.9.2"
+    "typescript": "^5.4.5"
   }
 }
+

@@ -5,14 +5,15 @@ import {
   register_user,
   login_user,
   logout_user,
-} from "../auth.js";
-import { create_database } from "../database.js";
-import * as fs from "../filesystem.js";
+} from "@conradklek/webs/auth.js";
+import { create_database } from "@conradklek/webs/database.js";
+import * as fs from "@conradklek/webs/filesystem.js";
+import { render_to_string } from "@conradklek/webs/runtime-ssr.js";
+import { parse_query_string } from "@conradklek/webs/runtime-dom.js";
+
 import { Database } from "bun:sqlite";
 import tailwind from "bun-plugin-tailwind";
 import { resolve, join, basename } from "path";
-import { parse_query_string } from "../runtime-dom.js";
-import { render_to_string } from "../runtime-ssr.js";
 import { watch } from "fs";
 import { Glob } from "bun";
 
@@ -78,7 +79,7 @@ async function build_assets(cwd, outdir) {
     splitting: true,
     minify: true,
     naming: "[name]-[hash].[ext]",
-    plugins: [tailwind],
+    plugins: [tailwind()],
   });
   if (!build_result.success) {
     console.error("Client build failed:", build_result.logs);
@@ -404,3 +405,4 @@ async function main() {
 }
 
 main();
+
