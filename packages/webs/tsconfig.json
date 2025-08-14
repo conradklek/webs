@@ -4,11 +4,14 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "dist",
-    "strict": true
+    "strict": true,
+    "rootDir": "."
   },
   "include": ["./**/*.js"],
   "exclude": [
-    "bin"
+    "bin",
+    "dist",
+    "node_modules"
   ]
 }
 
