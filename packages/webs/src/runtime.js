@@ -43,21 +43,27 @@ export function create_app_api(renderer_options) {
         components: root_component.components || {},
         provides: {},
         patch: renderer.patch,
+        hydrate: renderer.hydrate,
         params: root_props.params || {},
       },
       /**
        * Mounts the application to a container element.
        * @param {Element} root_container - The DOM element to mount the app into.
+       * @param {boolean} is_hydrating - Whether to hydrate existing SSR content.
        */
-      mount(root_container) {
-        root_container.innerHTML = "";
+      mount(root_container, is_hydrating = false) {
         vnode = create_vnode(root_component);
         vnode.app_context = app._context;
-        app._context.patch(null, vnode, root_container);
+
+        if (is_hydrating) {
+          app._context.hydrate(vnode, root_container);
+        } else {
+          root_container.innerHTML = "";
+          app._context.patch(null, vnode, root_container);
+        }
+
         app._container = root_container;
       },
-      // The `update` method was removed as it was only used for the
-      // custom HMR implementation. Bun's HMR handles this with a full reload.
     };
     return app;
   };
@@ -149,6 +155,7 @@ export function create_router(routes) {
   const params = reactive(initialParams);
   let app;
   let current_route = {};
+  let is_initial_load = true;
 
   function updateParams(search) {
     const newParams = parse_query_string(search);
@@ -200,15 +207,17 @@ export function create_router(routes) {
   function renderComponent(PageComponent) {
     updateParams(window.location.search);
     current_route = { path: window.location.pathname };
-    if (!app) {
-      app = create_app(PageComponent, { params });
-      app.mount(root);
-    } else {
-      app = create_app(PageComponent, { params });
-      app.mount(root);
+
+    const should_hydrate = is_initial_load;
+    is_initial_load = false;
+
+    app = create_app(PageComponent, { params });
+    app.mount(root, should_hydrate);
+
+    if (should_hydrate && window.__INITIAL_STATE__) {
+      window.__INITIAL_STATE__ = null;
     }
   }
-
   function handleLocalNavigation(event) {
     const anchorElement = event.target.closest("a");
     if (anchorElement && anchorElement.host === window.location.host) {

@@ -1,5 +1,5 @@
-import fs from "fs";
 import path from "path";
+import fs from "fs";
 
 /**
  * Checks if a value is an object (and not null).
@@ -42,6 +42,14 @@ export const void_elements = new Set([
   "track",
   "wbr",
 ]);
+
+export const Fragment = Symbol("Fragment");
+
+export const Comment = Symbol("Comment");
+
+export const Teleport = Symbol("Teleport");
+
+export const Text = Symbol("Text");
 
 export const cache_string_function = (fn) => {
   const cache = Object.create(null);

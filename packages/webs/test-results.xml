@@ -1,81 +1,98 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="bun test" tests="98" assertions="253" failures="0" skipped="0" time="0.561125">
+<testsuites name="bun test" tests="100" assertions="214" failures="0" skipped="0" time="0.366713">
   <testsuite name="src/reactivity.test.js" file="src/reactivity.test.js" tests="15" assertions="31" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
     <testsuite name="Reactivity System" file="src/reactivity.test.js" line="12" tests="15" assertions="31" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-      <testsuite name="reactive()" file="src/reactivity.test.js" line="13" tests="3" assertions="7" failures="0" skipped="0" time="0.004" hostname="Conrads-MacBook-Pro.local">
-        <testcase name="should return a proxy for an object" classname="reactive() &amp;gt; Reactivity System" time="0.003189" file="src/reactivity.test.js" line="14" assertions="2" />
-        <testcase name="should handle nested objects" classname="reactive() &amp;gt; Reactivity System" time="0.001319" file="src/reactivity.test.js" line="21" assertions="2" />
-        <testcase name="should not wrap non-objects" classname="reactive() &amp;gt; Reactivity System" time="0" file="src/reactivity.test.js" line="34" assertions="3" />
+      <testsuite name="reactive()" file="src/reactivity.test.js" line="13" tests="3" assertions="7" failures="0" skipped="0" time="0.003" hostname="Conrads-MacBook-Pro.local">
+        <testcase name="should return a proxy for an object" classname="reactive() &amp;gt; Reactivity System" time="0.002626" file="src/reactivity.test.js" line="14" assertions="2" />
+        <testcase name="should handle nested objects" classname="reactive() &amp;gt; Reactivity System" time="0.00118" file="src/reactivity.test.js" line="21" assertions="2" />
+        <testcase name="should not wrap non-objects" classname="reactive() &amp;gt; Reactivity System" time="0.000047" file="src/reactivity.test.js" line="34" assertions="3" />
       </testsuite>
       <testsuite name="effect()" file="src/reactivity.test.js" line="44" tests="3" assertions="7" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-        <testcase name="should run and track dependencies" classname="effect() &amp;gt; Reactivity System" time="0.000141" file="src/reactivity.test.js" line="45" assertions="2" />
-        <testcase name="should not trigger for unrelated property changes" classname="effect() &amp;gt; Reactivity System" time="0.000051" file="src/reactivity.test.js" line="58" assertions="3" />
-        <testcase name="should allow stopping the effect" classname="effect() &amp;gt; Reactivity System" time="0.000099" file="src/reactivity.test.js" line="74" assertions="2" />
+        <testcase name="should run and track dependencies" classname="effect() &amp;gt; Reactivity System" time="0.00003" file="src/reactivity.test.js" line="45" assertions="2" />
+        <testcase name="should not trigger for unrelated property changes" classname="effect() &amp;gt; Reactivity System" time="0.00013" file="src/reactivity.test.js" line="58" assertions="3" />
+        <testcase name="should allow stopping the effect" classname="effect() &amp;gt; Reactivity System" time="0.000063" file="src/reactivity.test.js" line="74" assertions="2" />
       </testsuite>
       <testsuite name="computed()" file="src/reactivity.test.js" line="88" tests="2" assertions="7" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-        <testcase name="should cache its value" classname="computed() &amp;gt; Reactivity System" time="0.000204" file="src/reactivity.test.js" line="89" assertions="5" />
-        <testcase name="should work with effects" classname="computed() &amp;gt; Reactivity System" time="0.000081" file="src/reactivity.test.js" line="107" assertions="2" />
+        <testcase name="should cache its value" classname="computed() &amp;gt; Reactivity System" time="0.000209" file="src/reactivity.test.js" line="89" assertions="5" />
+        <testcase name="should work with effects" classname="computed() &amp;gt; Reactivity System" time="0.000108" file="src/reactivity.test.js" line="107" assertions="2" />
       </testsuite>
       <testsuite name="Core Internals: track(), trigger(), cleanup()" file="src/reactivity.test.js" line="120" tests="3" assertions="10" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-        <testcase name="track() and trigger() should work together" classname="Core Internals: track(), trigger(), cleanup() &amp;gt; Reactivity System" time="0.000057" file="src/reactivity.test.js" line="121" assertions="2" />
-        <testcase name="cleanup() should remove an effect from its dependencies" classname="Core Internals: track(), trigger(), cleanup() &amp;gt; Reactivity System" time="0.000072" file="src/reactivity.test.js" line="136" assertions="4" />
-        <testcase name="create_reactive_effect() should respect the scheduler" classname="Core Internals: track(), trigger(), cleanup() &amp;gt; Reactivity System" time="0.000084" file="src/reactivity.test.js" line="157" assertions="4" />
+        <testcase name="track() and trigger() should work together" classname="Core Internals: track(), trigger(), cleanup() &amp;gt; Reactivity System" time="0.000046" file="src/reactivity.test.js" line="121" assertions="2" />
+        <testcase name="cleanup() should remove an effect from its dependencies" classname="Core Internals: track(), trigger(), cleanup() &amp;gt; Reactivity System" time="0.000059" file="src/reactivity.test.js" line="136" assertions="4" />
+        <testcase name="create_reactive_effect() should respect the scheduler" classname="Core Internals: track(), trigger(), cleanup() &amp;gt; Reactivity System" time="0.000128" file="src/reactivity.test.js" line="157" assertions="4" />
       </testsuite>
       <testsuite name="Performance Benchmarks" file="src/reactivity.test.js" line="184" tests="4" assertions="0" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-        <testcase name="creating a reactive proxy" classname="Performance Benchmarks &amp;gt; Reactivity System" time="0.000029" file="src/reactivity.test.js" line="185" assertions="0" />
-        <testcase name="running an effect with a simple dependency" classname="Performance Benchmarks &amp;gt; Reactivity System" time="0.000073" file="src/reactivity.test.js" line="189" assertions="0" />
-        <testcase name="running an effect with multiple dependencies" classname="Performance Benchmarks &amp;gt; Reactivity System" time="0.000078" file="src/reactivity.test.js" line="197" assertions="0" />
-        <testcase name="using a computed property" classname="Performance Benchmarks &amp;gt; Reactivity System" time="0.000092" file="src/reactivity.test.js" line="207" assertions="0" />
+        <testcase name="creating a reactive proxy" classname="Performance Benchmarks &amp;gt; Reactivity System" time="0.000037" file="src/reactivity.test.js" line="185" assertions="0" />
+        <testcase name="running an effect with a simple dependency" classname="Performance Benchmarks &amp;gt; Reactivity System" time="0.00004" file="src/reactivity.test.js" line="189" assertions="0" />
+        <testcase name="running an effect with multiple dependencies" classname="Performance Benchmarks &amp;gt; Reactivity System" time="0.000074" file="src/reactivity.test.js" line="197" assertions="0" />
+        <testcase name="using a computed property" classname="Performance Benchmarks &amp;gt; Reactivity System" time="0.000109" file="src/reactivity.test.js" line="207" assertions="0" />
       </testsuite>
+    </testsuite>
+  </testsuite>
+  <testsuite name="src/ssr-renderer.test.js" file="src/ssr-renderer.test.js" tests="13" assertions="14" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
+    <testsuite name="SSR Renderer: render_to_string" file="src/ssr-renderer.test.js" line="26" tests="13" assertions="14" failures="0" skipped="0" time="0.004" hostname="Conrads-MacBook-Pro.local">
+      <testcase name="should render a simple element" classname="SSR Renderer: render_to_string" time="0.00239" file="src/ssr-renderer.test.js" line="27" assertions="1" />
+      <testcase name="should render nested elements" classname="SSR Renderer: render_to_string" time="0.000161" file="src/ssr-renderer.test.js" line="33" assertions="1" />
+      <testcase name="should handle void elements like &lt;img&gt; and &lt;br&gt;" classname="SSR Renderer: render_to_string" time="0.000135" file="src/ssr-renderer.test.js" line="42" assertions="1" />
+      <testcase name="should handle Text, Comment, and Fragment nodes" classname="SSR Renderer: render_to_string" time="0.000036" file="src/ssr-renderer.test.js" line="48" assertions="1" />
+      <testcase name="should escape HTML in text content" classname="SSR Renderer: render_to_string" time="0.000382" file="src/ssr-renderer.test.js" line="57" assertions="1" />
+      <testcase name="should escape HTML in attributes" classname="SSR Renderer: render_to_string" time="0.000017" file="src/ssr-renderer.test.js" line="65" assertions="1" />
+      <testcase name="should ignore event handler props (e.g., onClick)" classname="SSR Renderer: render_to_string" time="0.001057" file="src/ssr-renderer.test.js" line="71" assertions="1" />
+      <testcase name="should render a simple functional component" classname="SSR Renderer: render_to_string" time="0.000482" file="src/ssr-renderer.test.js" line="77" assertions="1" />
+      <testcase name="should render a component with props" classname="SSR Renderer: render_to_string" time="0.000296" file="src/ssr-renderer.test.js" line="87" assertions="1" />
+      <testcase name="should render a component with state and return the state" classname="SSR Renderer: render_to_string" time="0.000511" file="src/ssr-renderer.test.js" line="102" assertions="2" />
+      <testcase name="should render a component that uses a template string (with mocked compiler)" classname="SSR Renderer: render_to_string" time="0.001537" file="src/ssr-renderer.test.js" line="116" assertions="1" />
+      <testcase name="should handle nested components" classname="SSR Renderer: render_to_string" time="0.000228" file="src/ssr-renderer.test.js" line="127" assertions="1" />
+      <testcase name="should render Teleport children in place on the server" classname="SSR Renderer: render_to_string" time="0.000136" file="src/ssr-renderer.test.js" line="144" assertions="1" />
     </testsuite>
   </testsuite>
   <testsuite name="src/filesystem.test.js" file="src/filesystem.test.js" tests="10" assertions="15" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-    <testsuite name="Filesystem API" file="src/filesystem.test.js" line="18" tests="10" assertions="15" failures="0" skipped="0" time="0.009" hostname="Conrads-MacBook-Pro.local">
-      <testcase name="exists should check for files and directories" classname="Filesystem API" time="0.003049" file="src/filesystem.test.js" line="27" assertions="2" />
-      <testcase name="touch and cat should create and read files" classname="Filesystem API" time="0.002178" file="src/filesystem.test.js" line="34" assertions="1" />
-      <testcase name="cat should throw if file not found" classname="Filesystem API" time="0.000882" file="src/filesystem.test.js" line="43" assertions="1" />
-      <testcase name="mkdir and ls should create and list directories" classname="Filesystem API" time="0.001308" file="src/filesystem.test.js" line="49" assertions="1" />
-      <testcase name="rm should remove files and directories" classname="Filesystem API" time="0.000437" file="src/filesystem.test.js" line="57" assertions="2" />
-      <testcase name="stat should get file stats" classname="Filesystem API" time="0.000457" file="src/filesystem.test.js" line="65" assertions="2" />
-      <testcase name="copy should copy files and directories recursively" classname="Filesystem API" time="0.002587" file="src/filesystem.test.js" line="73" assertions="2" />
-      <testcase name="copy should throw on non-recursive directory copy" classname="Filesystem API" time="0.000266" file="src/filesystem.test.js" line="88" assertions="1" />
-      <testcase name="mv should move/rename files" classname="Filesystem API" time="0.000777" file="src/filesystem.test.js" line="96" assertions="2" />
-      <testcase name="glob should find matching files" classname="Filesystem API" time="0.001773" file="src/filesystem.test.js" line="105" assertions="1" />
+    <testsuite name="Filesystem API" file="src/filesystem.test.js" line="18" tests="10" assertions="15" failures="0" skipped="0" time="0.006" hostname="Conrads-MacBook-Pro.local">
+      <testcase name="exists should check for files and directories" classname="Filesystem API" time="0.002881" file="src/filesystem.test.js" line="27" assertions="2" />
+      <testcase name="touch and cat should create and read files" classname="Filesystem API" time="0.001797" file="src/filesystem.test.js" line="34" assertions="1" />
+      <testcase name="cat should throw if file not found" classname="Filesystem API" time="0.00083" file="src/filesystem.test.js" line="43" assertions="1" />
+      <testcase name="mkdir and ls should create and list directories" classname="Filesystem API" time="0.000898" file="src/filesystem.test.js" line="49" assertions="1" />
+      <testcase name="rm should remove files and directories" classname="Filesystem API" time="0.000403" file="src/filesystem.test.js" line="57" assertions="2" />
+      <testcase name="stat should get file stats" classname="Filesystem API" time="0.000415" file="src/filesystem.test.js" line="65" assertions="2" />
+      <testcase name="copy should copy files and directories recursively" classname="Filesystem API" time="0.001429" file="src/filesystem.test.js" line="73" assertions="2" />
+      <testcase name="copy should throw on non-recursive directory copy" classname="Filesystem API" time="0.000185" file="src/filesystem.test.js" line="88" assertions="1" />
+      <testcase name="mv should move/rename files" classname="Filesystem API" time="0.000571" file="src/filesystem.test.js" line="96" assertions="2" />
+      <testcase name="glob should find matching files" classname="Filesystem API" time="0.00225" file="src/filesystem.test.js" line="105" assertions="1" />
     </testsuite>
   </testsuite>
   <testsuite name="src/renderer.perf.test.js" file="src/renderer.perf.test.js" tests="1" assertions="1" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-    <testsuite name="Renderer Performance" file="src/renderer.perf.test.js" line="25" tests="1" assertions="1" failures="0" skipped="0" time="0.093" hostname="Conrads-MacBook-Pro.local">
-      <testcase name="benchmarks" classname="Renderer Performance" time="0.093584" file="src/renderer.perf.test.js" line="26" assertions="1" />
+    <testsuite name="Renderer Performance" file="src/renderer.perf.test.js" line="25" tests="1" assertions="1" failures="0" skipped="0" time="0.078" hostname="Conrads-MacBook-Pro.local">
+      <testcase name="benchmarks" classname="Renderer Performance" time="0.078173" file="src/renderer.perf.test.js" line="26" assertions="1" />
     </testsuite>
   </testsuite>
   <testsuite name="src/store.test.js" file="src/store.test.js" tests="6" assertions="15" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-    <testsuite name="Store" file="src/store.test.js" line="5" tests="6" assertions="15" failures="0" skipped="0" time="0.001" hostname="Conrads-MacBook-Pro.local">
-      <testcase name="should create a store with initial state" classname="Store" time="0.001188" file="src/store.test.js" line="6" assertions="2" />
-      <testcase name="state should be reactive" classname="Store" time="0.000364" file="src/store.test.js" line="14" assertions="2" />
-      <testcase name="actions should mutate state" classname="Store" time="0.000158" file="src/store.test.js" line="26" assertions="2" />
-      <testcase name="getters should compute derived state and be reactive" classname="Store" time="0.000183" file="src/store.test.js" line="45" assertions="4" />
-      <testcase name="store should handle a combination of state, actions, and getters" classname="Store" time="0.000146" file="src/store.test.js" line="68" assertions="2" />
-      <testcase name="getters and actions should have priority over state properties with the same name" classname="Store" time="0.000068" file="src/store.test.js" line="88" assertions="3" />
+    <testsuite name="Store" file="src/store.test.js" line="5" tests="6" assertions="15" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
+      <testcase name="should create a store with initial state" classname="Store" time="0.000919" file="src/store.test.js" line="6" assertions="2" />
+      <testcase name="state should be reactive" classname="Store" time="0.000138" file="src/store.test.js" line="14" assertions="2" />
+      <testcase name="actions should mutate state" classname="Store" time="0.000138" file="src/store.test.js" line="26" assertions="2" />
+      <testcase name="getters should compute derived state and be reactive" classname="Store" time="0.000107" file="src/store.test.js" line="45" assertions="4" />
+      <testcase name="store should handle a combination of state, actions, and getters" classname="Store" time="0.000229" file="src/store.test.js" line="68" assertions="2" />
+      <testcase name="getters and actions should have priority over state properties with the same name" classname="Store" time="0.00003" file="src/store.test.js" line="88" assertions="3" />
     </testsuite>
   </testsuite>
   <testsuite name="src/utils.test.js" file="src/utils.test.js" tests="10" assertions="26" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
     <testsuite name="Utility Functions" file="src/utils.test.js" line="4" tests="10" assertions="26" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
       <testsuite name="is_object" file="src/utils.test.js" line="5" tests="3" assertions="8" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
         <testcase name="should return true for objects and arrays" classname="is_object &amp;gt; Utility Functions" time="0" file="src/utils.test.js" line="6" assertions="3" />
-        <testcase name="should return false for null" classname="is_object &amp;gt; Utility Functions" time="0.000066" file="src/utils.test.js" line="12" assertions="1" />
-        <testcase name="should return false for primitives" classname="is_object &amp;gt; Utility Functions" time="0.000053" file="src/utils.test.js" line="16" assertions="4" />
+        <testcase name="should return false for null" classname="is_object &amp;gt; Utility Functions" time="0" file="src/utils.test.js" line="12" assertions="1" />
+        <testcase name="should return false for primitives" classname="is_object &amp;gt; Utility Functions" time="0.00048" file="src/utils.test.js" line="16" assertions="4" />
       </testsuite>
       <testsuite name="is_string" file="src/utils.test.js" line="24" tests="2" assertions="6" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-        <testcase name="should return true for strings" classname="is_string &amp;gt; Utility Functions" time="0.000056" file="src/utils.test.js" line="25" assertions="2" />
-        <testcase name="should return false for non-strings" classname="is_string &amp;gt; Utility Functions" time="0.000053" file="src/utils.test.js" line="30" assertions="4" />
+        <testcase name="should return true for strings" classname="is_string &amp;gt; Utility Functions" time="0" file="src/utils.test.js" line="25" assertions="2" />
+        <testcase name="should return false for non-strings" classname="is_string &amp;gt; Utility Functions" time="0.000025" file="src/utils.test.js" line="30" assertions="4" />
       </testsuite>
       <testsuite name="is_function" file="src/utils.test.js" line="38" tests="2" assertions="5" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-        <testcase name="should return true for functions" classname="is_function &amp;gt; Utility Functions" time="0.000068" file="src/utils.test.js" line="39" assertions="2" />
-        <testcase name="should return false for non-functions" classname="is_function &amp;gt; Utility Functions" time="0.000126" file="src/utils.test.js" line="44" assertions="3" />
+        <testcase name="should return true for functions" classname="is_function &amp;gt; Utility Functions" time="0" file="src/utils.test.js" line="39" assertions="2" />
+        <testcase name="should return false for non-functions" classname="is_function &amp;gt; Utility Functions" time="0" file="src/utils.test.js" line="44" assertions="3" />
       </testsuite>
       <testsuite name="void_elements" file="src/utils.test.js" line="51" tests="3" assertions="7" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-        <testcase name="should be a Set" classname="void_elements &amp;gt; Utility Functions" time="0.00059" file="src/utils.test.js" line="52" assertions="1" />
-        <testcase name="should contain common void elements" classname="void_elements &amp;gt; Utility Functions" time="0.000053" file="src/utils.test.js" line="56" assertions="4" />
+        <testcase name="should be a Set" classname="void_elements &amp;gt; Utility Functions" time="0.000429" file="src/utils.test.js" line="52" assertions="1" />
+        <testcase name="should contain common void elements" classname="void_elements &amp;gt; Utility Functions" time="0.000048" file="src/utils.test.js" line="56" assertions="4" />
         <testcase name="should not contain non-void elements" classname="void_elements &amp;gt; Utility Functions" time="0" file="src/utils.test.js" line="63" assertions="2" />
       </testsuite>
     </testsuite>
@@ -83,115 +100,98 @@
   <testsuite name="src/renderer.test.js" file="src/renderer.test.js" tests="13" assertions="49" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
     <testsuite name="Renderer Internals" file="src/renderer.test.js" line="52" tests="6" assertions="17" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
       <testsuite name="get_sequence()" file="src/renderer.test.js" line="53" tests="2" assertions="6" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-        <testcase name="should return the longest increasing subsequence of INDICES" classname="get_sequence() &amp;gt; Renderer Internals" time="0.000015" file="src/renderer.test.js" line="54" assertions="4" />
-        <testcase name="should handle empty and single-element arrays" classname="get_sequence() &amp;gt; Renderer Internals" time="0.000133" file="src/renderer.test.js" line="62" assertions="2" />
+        <testcase name="should return the longest increasing subsequence of INDICES" classname="get_sequence() &amp;gt; Renderer Internals" time="0" file="src/renderer.test.js" line="54" assertions="4" />
+        <testcase name="should handle empty and single-element arrays" classname="get_sequence() &amp;gt; Renderer Internals" time="0.000382" file="src/renderer.test.js" line="62" assertions="2" />
       </testsuite>
       <testsuite name="create_component()" file="src/renderer.test.js" line="68" tests="2" assertions="6" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-        <testcase name="should initialize instance with props, state, and methods" classname="create_component() &amp;gt; Renderer Internals" time="0.000303" file="src/renderer.test.js" line="69" assertions="4" />
-        <testcase name="should call setup and merge its results" classname="create_component() &amp;gt; Renderer Internals" time="0.000936" file="src/renderer.test.js" line="92" assertions="2" />
+        <testcase name="should initialize instance with props, state, and methods" classname="create_component() &amp;gt; Renderer Internals" time="0.000131" file="src/renderer.test.js" line="69" assertions="4" />
+        <testcase name="should call setup and merge its results" classname="create_component() &amp;gt; Renderer Internals" time="0.000416" file="src/renderer.test.js" line="92" assertions="2" />
       </testsuite>
-      <testsuite name="DOM Helpers" file="src/renderer.test.js" line="106" tests="2" assertions="5" failures="0" skipped="0" time="0.003" hostname="Conrads-MacBook-Pro.local">
-        <testcase name="DOM_element should manage attributes and children" classname="DOM Helpers &amp;gt; Renderer Internals" time="0.000821" file="src/renderer.test.js" line="107" assertions="3" />
-        <testcase name="DOM_element.query_selector should find matching children" classname="DOM Helpers &amp;gt; Renderer Internals" time="0.003123" file="src/renderer.test.js" line="119" assertions="2" />
+      <testsuite name="DOM Helpers" file="src/renderer.test.js" line="106" tests="2" assertions="5" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
+        <testcase name="DOM_element should manage attributes and children" classname="DOM Helpers &amp;gt; Renderer Internals" time="0.00037" file="src/renderer.test.js" line="107" assertions="3" />
+        <testcase name="DOM_element.query_selector should find matching children" classname="DOM Helpers &amp;gt; Renderer Internals" time="0.00036" file="src/renderer.test.js" line="119" assertions="2" />
       </testsuite>
     </testsuite>
     <testsuite name="Renderer Patching Logic" file="src/renderer.test.js" line="131" tests="7" assertions="32" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
       <testsuite name="Unkeyed Children" file="src/renderer.test.js" line="231" tests="1" assertions="6" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-        <testcase name="should mount new children and unmount extra old children" classname="Unkeyed Children &amp;gt; Renderer Patching Logic" time="0.000217" file="src/renderer.test.js" line="232" assertions="6" />
+        <testcase name="should mount new children and unmount extra old children" classname="Unkeyed Children &amp;gt; Renderer Patching Logic" time="0.000027" file="src/renderer.test.js" line="232" assertions="6" />
       </testsuite>
       <testsuite name="Keyed Children" file="src/renderer.test.js" line="254" tests="1" assertions="7" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-        <testcase name="should correctly reorder, mount, and unmount keyed children" classname="Keyed Children &amp;gt; Renderer Patching Logic" time="0.000991" file="src/renderer.test.js" line="255" assertions="7" />
+        <testcase name="should correctly reorder, mount, and unmount keyed children" classname="Keyed Children &amp;gt; Renderer Patching Logic" time="0.000671" file="src/renderer.test.js" line="255" assertions="7" />
       </testsuite>
-      <testcase name="h() should be an alias for create_vnode()" classname="Renderer Patching Logic" time="0.000076" file="src/renderer.test.js" line="132" assertions="1" />
-      <testcase name="should create and mount a simple element" classname="Renderer Patching Logic" time="0.000181" file="src/renderer.test.js" line="138" assertions="7" />
-      <testcase name="should patch element props and remove old ones" classname="Renderer Patching Logic" time="0.000246" file="src/renderer.test.js" line="164" assertions="3" />
-      <testcase name="should handle Text, Comment, and Fragment nodes" classname="Renderer Patching Logic" time="0.00011" file="src/renderer.test.js" line="194" assertions="5" />
-      <testcase name="should handle Teleport" classname="Renderer Patching Logic" time="0.000271" file="src/renderer.test.js" line="212" assertions="3" />
+      <testcase name="h() should be an alias for create_vnode()" classname="Renderer Patching Logic" time="0.000057" file="src/renderer.test.js" line="132" assertions="1" />
+      <testcase name="should create and mount a simple element" classname="Renderer Patching Logic" time="0.000091" file="src/renderer.test.js" line="138" assertions="7" />
+      <testcase name="should patch element props and remove old ones" classname="Renderer Patching Logic" time="0.000013" file="src/renderer.test.js" line="164" assertions="3" />
+      <testcase name="should handle Text, Comment, and Fragment nodes" classname="Renderer Patching Logic" time="0.000313" file="src/renderer.test.js" line="194" assertions="5" />
+      <testcase name="should handle Teleport" classname="Renderer Patching Logic" time="0.000077" file="src/renderer.test.js" line="212" assertions="3" />
     </testsuite>
   </testsuite>
   <testsuite name="src/reactivity.perf.test.js" file="src/reactivity.perf.test.js" tests="1" assertions="1" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-    <testsuite name="Renderer Performance" file="src/reactivity.perf.test.js" line="21" tests="1" assertions="1" failures="0" skipped="0" time="0.043" hostname="Conrads-MacBook-Pro.local">
-      <testcase name="benchmarks" classname="Renderer Performance" time="0.043954" file="src/reactivity.perf.test.js" line="22" assertions="1" />
+    <testsuite name="Renderer Performance" file="src/reactivity.perf.test.js" line="21" tests="1" assertions="1" failures="0" skipped="0" time="0.035" hostname="Conrads-MacBook-Pro.local">
+      <testcase name="benchmarks" classname="Renderer Performance" time="0.035474" file="src/reactivity.perf.test.js" line="22" assertions="1" />
     </testsuite>
   </testsuite>
   <testsuite name="src/compiler/html-parser.test.js" file="src/compiler/html-parser.test.js" tests="5" assertions="16" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
     <testsuite name="HTML Parser" file="src/compiler/html-parser.test.js" line="4" tests="5" assertions="16" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-      <testcase name="should tokenize basic HTML" classname="HTML Parser" time="0.00018" file="src/compiler/html-parser.test.js" line="5" assertions="1" />
-      <testcase name="should build a tree from tokens" classname="HTML Parser" time="0.000582" file="src/compiler/html-parser.test.js" line="18" assertions="5" />
-      <testcase name="should handle self-closing and void elements" classname="HTML Parser" time="0.000255" file="src/compiler/html-parser.test.js" line="28" assertions="4" />
-      <testcase name="should handle comments" classname="HTML Parser" time="0.00007" file="src/compiler/html-parser.test.js" line="36" assertions="3" />
-      <testcase name="should handle unclosed tags gracefully" classname="HTML Parser" time="0.000104" file="src/compiler/html-parser.test.js" line="43" assertions="3" />
+      <testcase name="should tokenize basic HTML" classname="HTML Parser" time="0" file="src/compiler/html-parser.test.js" line="5" assertions="1" />
+      <testcase name="should build a tree from tokens" classname="HTML Parser" time="0.000473" file="src/compiler/html-parser.test.js" line="18" assertions="5" />
+      <testcase name="should handle self-closing and void elements" classname="HTML Parser" time="0.000155" file="src/compiler/html-parser.test.js" line="28" assertions="4" />
+      <testcase name="should handle comments" classname="HTML Parser" time="0.000069" file="src/compiler/html-parser.test.js" line="36" assertions="3" />
+      <testcase name="should handle unclosed tags gracefully" classname="HTML Parser" time="0.000064" file="src/compiler/html-parser.test.js" line="43" assertions="3" />
     </testsuite>
   </testsuite>
   <testsuite name="src/compiler/markdown-parser.test.js" file="src/compiler/markdown-parser.test.js" tests="7" assertions="13" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-    <testsuite name="Markdown Parser" file="src/compiler/markdown-parser.test.js" line="4" tests="7" assertions="13" failures="0" skipped="0" time="0.002" hostname="Conrads-MacBook-Pro.local">
-      <testcase name="should parse headings and paragraphs" classname="Markdown Parser" time="0.002359" file="src/compiler/markdown-parser.test.js" line="5" assertions="1" />
-      <testcase name="should parse inline styles: bold, italic, del" classname="Markdown Parser" time="0.000914" file="src/compiler/markdown-parser.test.js" line="11" assertions="1" />
-      <testcase name="should parse lists (ul, ol, task)" classname="Markdown Parser" time="0.000356" file="src/compiler/markdown-parser.test.js" line="19" assertions="3" />
-      <testcase name="should parse links and images" classname="Markdown Parser" time="0.000179" file="src/compiler/markdown-parser.test.js" line="29" assertions="1" />
-      <testcase name="should parse fenced code blocks" classname="Markdown Parser" time="0.000063" file="src/compiler/markdown-parser.test.js" line="37" assertions="1" />
-      <testcase name="should parse tables" classname="Markdown Parser" time="0.00007" file="src/compiler/markdown-parser.test.js" line="45" assertions="4" />
-      <testcase name="should parse footnotes" classname="Markdown Parser" time="0.000316" file="src/compiler/markdown-parser.test.js" line="54" assertions="2" />
+    <testsuite name="Markdown Parser" file="src/compiler/markdown-parser.test.js" line="4" tests="7" assertions="13" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
+      <testcase name="should parse headings and paragraphs" classname="Markdown Parser" time="0.000964" file="src/compiler/markdown-parser.test.js" line="5" assertions="1" />
+      <testcase name="should parse inline styles: bold, italic, del" classname="Markdown Parser" time="0.000095" file="src/compiler/markdown-parser.test.js" line="11" assertions="1" />
+      <testcase name="should parse lists (ul, ol, task)" classname="Markdown Parser" time="0.000273" file="src/compiler/markdown-parser.test.js" line="19" assertions="3" />
+      <testcase name="should parse links and images" classname="Markdown Parser" time="0.000121" file="src/compiler/markdown-parser.test.js" line="29" assertions="1" />
+      <testcase name="should parse fenced code blocks" classname="Markdown Parser" time="0.000065" file="src/compiler/markdown-parser.test.js" line="37" assertions="1" />
+      <testcase name="should parse tables" classname="Markdown Parser" time="0.000055" file="src/compiler/markdown-parser.test.js" line="45" assertions="4" />
+      <testcase name="should parse footnotes" classname="Markdown Parser" time="0.000197" file="src/compiler/markdown-parser.test.js" line="54" assertions="2" />
     </testsuite>
   </testsuite>
   <testsuite name="src/compiler/js-parser.test.js" file="src/compiler/js-parser.test.js" tests="7" assertions="13" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
     <testsuite name="JavaScript Expression Parser" file="src/compiler/js-parser.test.js" line="4" tests="7" assertions="13" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-      <testcase name="should tokenize a simple expression" classname="JavaScript Expression Parser" time="0" file="src/compiler/js-parser.test.js" line="5" assertions="1" />
-      <testcase name="should parse a complex expression with correct precedence" classname="JavaScript Expression Parser" time="0.000736" file="src/compiler/js-parser.test.js" line="14" assertions="1" />
-      <testcase name="should parse member access and call expressions" classname="JavaScript Expression Parser" time="0.000081" file="src/compiler/js-parser.test.js" line="34" assertions="1" />
-      <testcase name="should parse a ternary expression" classname="JavaScript Expression Parser" time="0.000122" file="src/compiler/js-parser.test.js" line="49" assertions="4" />
-      <testcase name="should parse an assignment expression" classname="JavaScript Expression Parser" time="0.00006" file="src/compiler/js-parser.test.js" line="57" assertions="3" />
-      <testcase name="should throw on unrecognized characters" classname="JavaScript Expression Parser" time="0.000039" file="src/compiler/js-parser.test.js" line="64" assertions="1" />
-      <testcase name="should throw on syntax errors" classname="JavaScript Expression Parser" time="0.000084" file="src/compiler/js-parser.test.js" line="68" assertions="2" />
+      <testcase name="should tokenize a simple expression" classname="JavaScript Expression Parser" time="0.000077" file="src/compiler/js-parser.test.js" line="5" assertions="1" />
+      <testcase name="should parse a complex expression with correct precedence" classname="JavaScript Expression Parser" time="0.000505" file="src/compiler/js-parser.test.js" line="14" assertions="1" />
+      <testcase name="should parse member access and call expressions" classname="JavaScript Expression Parser" time="0.00002" file="src/compiler/js-parser.test.js" line="34" assertions="1" />
+      <testcase name="should parse a ternary expression" classname="JavaScript Expression Parser" time="0.000078" file="src/compiler/js-parser.test.js" line="49" assertions="4" />
+      <testcase name="should parse an assignment expression" classname="JavaScript Expression Parser" time="0.000038" file="src/compiler/js-parser.test.js" line="57" assertions="3" />
+      <testcase name="should throw on unrecognized characters" classname="JavaScript Expression Parser" time="0.000014" file="src/compiler/js-parser.test.js" line="64" assertions="1" />
+      <testcase name="should throw on syntax errors" classname="JavaScript Expression Parser" time="0.0001" file="src/compiler/js-parser.test.js" line="68" assertions="2" />
     </testsuite>
   </testsuite>
   <testsuite name="src/compiler/html-parser.perf.test.js" file="src/compiler/html-parser.perf.test.js" tests="1" assertions="1" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-    <testsuite name="HTML Parser Performance" file="src/compiler/html-parser.perf.test.js" line="12" tests="1" assertions="1" failures="0" skipped="0" time="0.038" hostname="Conrads-MacBook-Pro.local">
-      <testcase name="benchmarks" classname="HTML Parser Performance" time="0.038223" file="src/compiler/html-parser.perf.test.js" line="14" assertions="1" />
+    <testsuite name="HTML Parser Performance" file="src/compiler/html-parser.perf.test.js" line="12" tests="1" assertions="1" failures="0" skipped="0" time="0.027" hostname="Conrads-MacBook-Pro.local">
+      <testcase name="benchmarks" classname="HTML Parser Performance" time="0.027529" file="src/compiler/html-parser.perf.test.js" line="14" assertions="1" />
     </testsuite>
   </testsuite>
   <testsuite name="src/compiler/pug-parser.test.js" file="src/compiler/pug-parser.test.js" tests="6" assertions="6" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
     <testsuite name="Pug Parser" file="src/compiler/pug-parser.test.js" line="6" tests="6" assertions="6" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-      <testcase name="should parse a single element with id and classes" classname="Pug Parser" time="0.000806" file="src/compiler/pug-parser.test.js" line="7" assertions="1" />
-      <testcase name="should parse nested elements based on indentation" classname="Pug Parser" time="0.000105" file="src/compiler/pug-parser.test.js" line="12" assertions="1" />
-      <testcase name="should parse attributes in parentheses" classname="Pug Parser" time="0.000163" file="src/compiler/pug-parser.test.js" line="22" assertions="1" />
-      <testcase name="should handle a mix of id, class, and attributes" classname="Pug Parser" time="0.000081" file="src/compiler/pug-parser.test.js" line="27" assertions="1" />
-      <testcase name="should handle multi-line piped text" classname="Pug Parser" time="0.000048" file="src/compiler/pug-parser.test.js" line="34" assertions="1" />
-      <testcase name="should parse a more complex component-like structure" classname="Pug Parser" time="0.000177" file="src/compiler/pug-parser.test.js" line="46" assertions="1" />
+      <testcase name="should parse a single element with id and classes" classname="Pug Parser" time="0.000728" file="src/compiler/pug-parser.test.js" line="7" assertions="1" />
+      <testcase name="should parse nested elements based on indentation" classname="Pug Parser" time="0.000078" file="src/compiler/pug-parser.test.js" line="12" assertions="1" />
+      <testcase name="should parse attributes in parentheses" classname="Pug Parser" time="0.00014" file="src/compiler/pug-parser.test.js" line="22" assertions="1" />
+      <testcase name="should handle a mix of id, class, and attributes" classname="Pug Parser" time="0.000057" file="src/compiler/pug-parser.test.js" line="27" assertions="1" />
+      <testcase name="should handle multi-line piped text" classname="Pug Parser" time="0.000052" file="src/compiler/pug-parser.test.js" line="34" assertions="1" />
+      <testcase name="should parse a more complex component-like structure" classname="Pug Parser" time="0.000258" file="src/compiler/pug-parser.test.js" line="46" assertions="1" />
     </testsuite>
   </testsuite>
   <testsuite name="src/compiler/compiler.perf.test.js" file="src/compiler/compiler.perf.test.js" tests="1" assertions="1" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-    <testsuite name="Compiler Performance" file="src/compiler/compiler.perf.test.js" line="12" tests="1" assertions="1" failures="0" skipped="0" time="0.118" hostname="Conrads-MacBook-Pro.local">
-      <testcase name="benchmarks" classname="Compiler Performance" time="0.118711" file="src/compiler/compiler.perf.test.js" line="13" assertions="1" />
-    </testsuite>
-  </testsuite>
-  <testsuite name="src/compiler/compiler.test.js" file="src/compiler/compiler.test.js" tests="11" assertions="53" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-    <testsuite name="Template Compiler" file="src/compiler/compiler.test.js" line="6" tests="7" assertions="37" failures="0" skipped="0" time="0.001" hostname="Conrads-MacBook-Pro.local">
-      <testcase name="should transform element with static and dynamic attributes" classname="Template Compiler" time="0" file="src/compiler/compiler.test.js" line="12" assertions="3" />
-      <testcase name="should transform text and interpolations" classname="Template Compiler" time="0.000616" file="src/compiler/compiler.test.js" line="33" assertions="9" />
-      <testcase name="should transform w-if, w-else-if, w-else" classname="Template Compiler" time="0.001435" file="src/compiler/compiler.test.js" line="50" assertions="8" />
-      <testcase name="should transform w-for" classname="Template Compiler" time="0.00021" file="src/compiler/compiler.test.js" line="70" assertions="5" />
-      <testcase name="should transform w-for with (value, key)" classname="Template Compiler" time="0.000155" file="src/compiler/compiler.test.js" line="83" assertions="4" />
-      <testcase name="should transform w-model" classname="Template Compiler" time="0.000186" file="src/compiler/compiler.test.js" line="95" assertions="6" />
-      <testcase name="should identify and transform components" classname="Template Compiler" time="0.000213" file="src/compiler/compiler.test.js" line="111" assertions="2" />
-    </testsuite>
-    <testsuite name="Render Function Generation" file="src/compiler/compiler.test.js" line="123" tests="4" assertions="16" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-      <testcase name="should generate a function that returns a VNode tree" classname="Render Function Generation" time="0.000227" file="src/compiler/compiler.test.js" line="124" assertions="4" />
-      <testcase name="should correctly render w-if logic" classname="Render Function Generation" time="0.000269" file="src/compiler/compiler.test.js" line="136" assertions="4" />
-      <testcase name="should correctly render w-for logic" classname="Render Function Generation" time="0.000313" file="src/compiler/compiler.test.js" line="150" assertions="5" />
-      <testcase name="should handle event handlers with modifiers" classname="Render Function Generation" time="0.000105" file="src/compiler/compiler.test.js" line="163" assertions="3" />
+    <testsuite name="Compiler Performance" file="src/compiler/compiler.perf.test.js" line="12" tests="1" assertions="1" failures="0" skipped="0" time="0.002" hostname="Conrads-MacBook-Pro.local">
+      <testcase name="benchmarks" classname="Compiler Performance" time="0.002058" file="src/compiler/compiler.perf.test.js" line="13" assertions="1" />
     </testsuite>
   </testsuite>
   <testsuite name="src/compiler/js-parser.perf.test.js" file="src/compiler/js-parser.perf.test.js" tests="1" assertions="1" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-    <testsuite name="JS Expression Parser Performance" file="src/compiler/js-parser.perf.test.js" line="16" tests="1" assertions="1" failures="0" skipped="0" time="0.039" hostname="Conrads-MacBook-Pro.local">
-      <testcase name="benchmarks" classname="JS Expression Parser Performance" time="0.039425" file="src/compiler/js-parser.perf.test.js" line="17" assertions="1" />
+    <testsuite name="JS Expression Parser Performance" file="src/compiler/js-parser.perf.test.js" line="16" tests="1" assertions="1" failures="0" skipped="0" time="0.034" hostname="Conrads-MacBook-Pro.local">
+      <testcase name="benchmarks" classname="JS Expression Parser Performance" time="0.034549" file="src/compiler/js-parser.perf.test.js" line="17" assertions="1" />
     </testsuite>
   </testsuite>
   <testsuite name="src/compiler/css-parser.test.js" file="src/compiler/css-parser.test.js" tests="3" assertions="11" failures="0" skipped="0" time="0" hostname="Conrads-MacBook-Pro.local">
-    <testsuite name="CSS Parser" file="src/compiler/css-parser.test.js" line="4" tests="3" assertions="11" failures="0" skipped="0" time="0.003" hostname="Conrads-MacBook-Pro.local">
-      <testcase name="should tokenize a simple CSS rule" classname="CSS Parser" time="0.00112" file="src/compiler/css-parser.test.js" line="5" assertions="1" />
-      <testcase name="should parse a CSS rule with multiple selectors" classname="CSS Parser" time="0.001876" file="src/compiler/css-parser.test.js" line="23" assertions="5" />
-      <testcase name="should parse attribute selectors and !important" classname="CSS Parser" time="0.001019" file="src/compiler/css-parser.test.js" line="32" assertions="5" />
+    <testsuite name="CSS Parser" file="src/compiler/css-parser.test.js" line="4" tests="3" assertions="11" failures="0" skipped="0" time="0.001" hostname="Conrads-MacBook-Pro.local">
+      <testcase name="should tokenize a simple CSS rule" classname="CSS Parser" time="0.000974" file="src/compiler/css-parser.test.js" line="5" assertions="1" />
+      <testcase name="should parse a CSS rule with multiple selectors" classname="CSS Parser" time="0.001344" file="src/compiler/css-parser.test.js" line="23" assertions="5" />
+      <testcase name="should parse attribute selectors and !important" classname="CSS Parser" time="0.000537" file="src/compiler/css-parser.test.js" line="32" assertions="5" />
     </testsuite>
   </testsuite>
 </testsuites>

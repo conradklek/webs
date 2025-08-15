@@ -1,7 +1,7 @@
 import { parse_expression, tokenize_expression } from "./js-parser";
-import { h, Text, Fragment, Comment, Teleport } from "../renderer";
+import { Text, Fragment, Comment, camelize } from "../utils";
 import { parse_html } from "./html-parser";
-import { camelize } from "../utils";
+import * as Webs from "../renderer";
 import { pug } from "./pug-parser";
 
 export const NODE_TYPES = {
@@ -103,43 +103,36 @@ export function generate_render_fn(ast) {
         .join(",")}}`;
     },
     gen_children(children) {
-      return `[${children
+      const child_nodes = children
         .map((c) => this.gen_node(c))
-        .filter(Boolean)
-        .join(",")}]`;
+        .filter((c) => c && c !== "null");
+      return `[${child_nodes.join(",")}]`;
     },
     gen_node(node) {
       if (!node) return "null";
       switch (node.type) {
-        case NODE_TYPES.ROOT:
+        case NODE_TYPES.ROOT: {
           if (node.children.length === 1) {
-            const child = node.children[0];
-            if (
-              child.type === NODE_TYPES.ELEMENT ||
-              child.type === NODE_TYPES.COMPONENT ||
-              child.type === NODE_TYPES.FOR ||
-              child.type === NODE_TYPES.IF
-            ) {
-              return this.gen_node(child);
-            }
+            return this.gen_node(node.children[0]);
           }
-          return `_h(_Fragment,null,${this.gen_children(node.children)})`;
+          return `_h(_Fragment, null, ${this.gen_children(node.children)})`;
+        }
         case NODE_TYPES.FRAGMENT:
-          return `_h(_Fragment,null,${this.gen_children(node.children)})`;
+          return `_h(_Fragment, null, ${this.gen_children(node.children)})`;
         case NODE_TYPES.COMPONENT:
-          return `_h(_ctx.${node.tag_name},${this.gen_props(
+          return `_h(_ctx.${node.tag_name}, ${this.gen_props(
             node.properties,
-          )},${this.gen_children(node.children)})`;
+          )}, ${this.gen_children(node.children)})`;
         case NODE_TYPES.ELEMENT:
-          return `_h('${node.tag_name}',${this.gen_props(
+          return `_h('${node.tag_name}', ${this.gen_props(
             node.properties,
-          )},${this.gen_children(node.children)})`;
+          )}, ${this.gen_children(node.children)})`;
         case NODE_TYPES.TEXT:
-          return `_h(_Text,null,${JSON.stringify(node.value)})`;
+          return `_h(_Text, null, ${JSON.stringify(node.value)})`;
         case NODE_TYPES.INTERPOLATION:
-          return `_h(_Text,null,String(${this.gen_expr(node.expression)}))`;
+          return `_h(_Text, null, String(${this.gen_expr(node.expression)}))`;
         case NODE_TYPES.COMMENT:
-          return `_h(_Comment,null,${JSON.stringify(node.value)})`;
+          return `_h(_Comment, null, ${JSON.stringify(node.value)})`;
         case NODE_TYPES.IF: {
           const gen_branch = (branch) => {
             if (branch.condition) {
@@ -176,23 +169,25 @@ export function generate_render_fn(ast) {
 
   const generated_code = ctx.gen_node(ast);
   const function_body = `
-const { h: _h, Text: _Text, Fragment: _Fragment, Comment: _Comment } = Webs;
+const { h: _h } = Webs;
+const _Text = Webs.Text;
+const _Fragment = Webs.Fragment;
+const _Comment = Webs.Comment;
 return ${generated_code || "null"};
 `;
   try {
     const fn = new Function("Webs", "_ctx", function_body).bind(null, {
-      h,
+      ...Webs,
       Text,
       Fragment,
       Comment,
-      Teleport,
     });
     fn.toString = () => function_body;
     return fn;
   } catch (e) {
     console.error("Error compiling render function:", e);
     console.log("Generated code:\n", function_body);
-    return () => h(Comment, null, "Render function compile error");
+    return () => Webs.h(Webs.Comment, null, "Render function compile error");
   }
 }
 
@@ -269,10 +264,11 @@ export class Compiler {
       );
     };
     const text = unescape(node.content);
-    const mustache_regex = /\{\{([^}]+)\}\}/g;
-    if (!mustache_regex.test(text)) {
+    if (!text.includes("{{")) {
       return text.trim() ? { type: NODE_TYPES.TEXT, value: text } : null;
     }
+
+    const mustache_regex = /\{\{([^}]+)\}\}/g;
     const tokens = [];
     let last_index = 0;
     let match;
@@ -472,7 +468,7 @@ export function compile(component_def) {
 
   if (!template_string && typeof template_string !== "string") {
     console.warn("Component is missing a valid template option.");
-    return () => h(Comment, null, "Component missing template");
+    return () => Webs.h(Webs.Comment, null, "Component missing template");
   }
 
   const final_component_def = { ...component_def, template: template_string };

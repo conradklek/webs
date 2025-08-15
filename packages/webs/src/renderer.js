@@ -1,13 +1,6 @@
-import { is_function, is_object, is_string } from "./utils";
+import { Fragment, Comment, Teleport, Text, is_function, is_object, is_string } from "./utils";
 import { effect, reactive, computed } from "./reactivity";
-import { compile } from "./compiler";
 
-/**
- * Finds the longest increasing subsequence from an array of numbers.
- * Used for optimizing keyed children patching.
- * @param {number[]} arr - The input array of numbers.
- * @returns {number[]} An array of indices representing the longest increasing subsequence.
- */
 export function get_sequence(arr) {
   if (arr.length === 0) return [];
   const p = new Array(arr.length);
@@ -50,12 +43,6 @@ export function get_sequence(arr) {
   return result;
 }
 
-/**
- * Creates a renderer object with a `patch` function.
- * The renderer is configured with host-specific functions for DOM manipulation.
- * @param {object} options - Host-specific implementation for DOM operations.
- * @returns {{patch: Function}} The renderer object containing the patch function.
- */
 export function create_renderer(options) {
   const {
     create_element: host_create_element,
@@ -67,6 +54,76 @@ export function create_renderer(options) {
     create_comment: host_create_comment,
     query_selector: host_query_selector,
   } = options;
+
+  const hydrate = (vnode, container) => {
+    hydrate_node(vnode, container.firstChild);
+    if (typeof window !== "undefined" && window.__INITIAL_STATE__) {
+      window.__INITIAL_STATE__ = null;
+    }
+  };
+
+  const hydrate_node = (vnode, dom_node) => {
+    if (!dom_node) {
+      console.warn("DOM Mismatch during hydration.");
+      return null;
+    }
+
+    const { type, props, children } = vnode;
+    vnode.el = dom_node;
+
+    switch (type) {
+      case Fragment:
+      case Teleport:
+        return hydrate_children(children, dom_node.parentElement, dom_node);
+      case Text: {
+        const vnode_text = String(children);
+        if (dom_node.nodeType === 3 /* TEXT_NODE */) {
+          const dom_text = dom_node.textContent;
+          if (dom_text.startsWith(vnode_text)) {
+            if (dom_text.length > vnode_text.length) {
+              dom_node.splitText(vnode_text.length);
+            }
+            return dom_node.nextSibling;
+          }
+        }
+        console.warn(
+          "Hydration text mismatch:",
+          `"${vnode_text}"`,
+          `vs DOM: "${dom_node.textContent}"`,
+        );
+        return dom_node.nextSibling;
+      }
+      case Comment:
+        return dom_node.nextSibling;
+
+      default:
+        if (is_object(type)) {
+          mount_component(vnode, null, null, null, true);
+          return dom_node.nextSibling;
+        } else if (is_string(type)) {
+          if (props) {
+            for (const key in props) {
+              host_patch_prop(dom_node, key, null, props[key]);
+            }
+          }
+          if (children) {
+            hydrate_children(children, dom_node, dom_node.firstChild);
+          }
+          return dom_node.nextSibling;
+        }
+    }
+    return dom_node.nextSibling;
+  };
+
+  const hydrate_children = (children, parent, start_node) => {
+    let next_dom_node = start_node;
+    const child_vnodes = Array.isArray(children) ? children : [children];
+    for (const child_vnode of child_vnodes) {
+      if (!next_dom_node) break;
+      next_dom_node = hydrate_node(child_vnode, next_dom_node);
+    }
+    return next_dom_node;
+  };
 
   const unmount = (vnode) => {
     if (vnode.type === Fragment || vnode.type === Teleport) {
@@ -212,22 +269,23 @@ export function create_renderer(options) {
     }
   };
 
-  const mount_component = (vnode, container, anchor, parent_component) => {
+  const mount_component = (
+    vnode,
+    container,
+    anchor,
+    parent_component,
+    is_hydrating = false,
+  ) => {
     const instance = (vnode.component = create_component(
       vnode,
       parent_component,
+      false,
+      is_hydrating,
     ));
     const component = instance.type;
     if (!component.render) {
-      if (component.template) {
-        component.render = compile(component);
-      } else {
-        console.warn(
-          `Component is missing a render function or template.`,
-          component,
-        );
-        component.render = () => create_vnode(Comment, null, "missing render");
-      }
+      console.warn(`Component is missing a render function.`, component);
+      component.render = () => create_vnode(Comment, null, "missing render");
     }
     instance.render = component.render;
     instance.update = effect(
@@ -238,7 +296,13 @@ export function create_renderer(options) {
             instance.ctx,
             instance.ctx,
           ));
-          patch(null, sub_tree, container, anchor, instance);
+
+          if (is_hydrating) {
+            hydrate_node(sub_tree, vnode.el);
+          } else {
+            patch(null, sub_tree, container, anchor, instance);
+          }
+
           vnode.el = sub_tree.el;
           instance.is_mounted = true;
           instance.hooks.onMounted?.forEach((h) => h());
@@ -354,7 +418,7 @@ export function create_renderer(options) {
         }
     }
   };
-  return { patch };
+  return { patch, hydrate };
 }
 
 let current_instance = null;
@@ -363,14 +427,12 @@ const set_current_instance = (instance) => {
   current_instance = instance;
 };
 
-/**
- * Creates and initializes a component instance.
- * @param {object} vnode - The virtual node for the component.
- * @param {object|null} parent - The parent component instance.
- * @param {boolean} [is_ssr=false] - Flag indicating if it's a server-side rendering context.
- * @returns {object} The created component instance.
- */
-export function create_component(vnode, parent, is_ssr = false) {
+export function create_component(
+  vnode,
+  parent,
+  is_ssr = false,
+  is_hydrating = false,
+) {
   const parent_app_context = parent ? parent.app_context : null;
   const app_context = vnode.app_context || parent_app_context || {};
   const instance = {
@@ -408,19 +470,13 @@ export function create_component(vnode, parent, is_ssr = false) {
         key in instance.props ||
         key in instance.app_context.globals,
       get: (_, key) => {
-        if (key === "$params") {
-          return instance.app_context.params;
-        }
-        if (key === "actions") {
-          return instance.actions;
-        }
+        if (key === "$params") return instance.app_context.params;
+        if (key === "actions") return instance.actions;
         if (key in instance.internal_ctx) {
           const val = instance.internal_ctx[key];
           return val && val.__is_ref && !is_ssr ? val.value : val;
         }
-        if (key in instance.actions) {
-          return instance.actions[key];
-        }
+        if (key in instance.actions) return instance.actions[key];
         if (key in instance.methods) return instance.methods[key];
         if (key in instance.props) return instance.props[key];
         const component =
@@ -451,6 +507,7 @@ export function create_component(vnode, parent, is_ssr = false) {
       },
     },
   );
+
   const {
     props: props_options,
     state,
@@ -471,6 +528,7 @@ export function create_component(vnode, parent, is_ssr = false) {
       }
     }
   }
+
   let setup_result = {};
   if (setup) {
     set_current_instance(instance);
@@ -480,10 +538,26 @@ export function create_component(vnode, parent, is_ssr = false) {
       setup_result = res;
     }
   }
-  const state_result = state ? state.call(instance.ctx) : {};
-  instance.internal_ctx = is_ssr
-    ? { ...setup_result, ...state_result }
-    : reactive({ ...setup_result, ...state_result });
+
+  let state_from_server;
+  if (
+    is_hydrating &&
+    typeof window !== "undefined" &&
+    window.__INITIAL_STATE__
+  ) {
+    state_from_server = window.__INITIAL_STATE__;
+  }
+
+  const initial_state =
+    state_from_server || (state ? state.call(instance.ctx) : {});
+  const combined_state = { ...setup_result, ...initial_state };
+
+  if (is_ssr) {
+    instance.internal_ctx = combined_state;
+  } else {
+    instance.internal_ctx = reactive(combined_state);
+  }
+
   if (methods) {
     for (const key in methods) {
       instance.methods[key] = methods[key].bind(instance.ctx);
@@ -492,32 +566,23 @@ export function create_component(vnode, parent, is_ssr = false) {
   if (!is_ssr && actions) {
     for (const key in actions) {
       instance.actions[key] = async (...args) => {
-        console.log(
-          `Calling action "${key}" on component "${instance.type.name}" with args:`,
-          args,
-        );
         try {
           const response = await fetch(
             `/__actions__/${instance.type.name}/${key}`,
             {
               method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify(args),
             },
           );
-          if (!response.ok) {
+          if (!response.ok)
             throw new Error(
               `Server action failed with status: ${response.status}`,
             );
-          }
           const contentType = response.headers.get("content-type");
-          if (contentType && contentType.indexOf("application/json") !== -1) {
-            return response.json();
-          } else {
-            return response.text();
-          }
+          return contentType?.includes("application/json")
+            ? response.json()
+            : response.text();
         } catch (error) {
           console.error(`Error calling action "${key}":`, error);
           throw error;
@@ -541,10 +606,7 @@ export function camel_to_kebab(camel) {
   return camel.replace(/([a-z0-9]|(?=[A-Z]))([A-Z])/g, "$1-$2").toLowerCase();
 }
 
-export const Fragment = Symbol("Fragment");
-export const Comment = Symbol("Comment");
-export const Teleport = Symbol("Teleport");
-export const Text = Symbol("Text");
+export { Fragment, Comment, Teleport, Text };
 
 export class VNode {
   constructor(type, props, children) {
@@ -561,20 +623,10 @@ export class VNode {
   }
 }
 
-/**
- * Creates a virtual DOM node (VNode).
- * @param {string|object|symbol} type - The type of the VNode (e.g., 'div', a component object, or a symbol like Fragment).
- * @param {object|null} [props] - The properties/attributes of the VNode.
- * @param {Array|string|null} [children] - The children of the VNode.
- * @returns {VNode} A new VNode instance.
- */
 export function create_vnode(type, props, children) {
   return new VNode(type, props, children);
 }
 
-/**
- * Alias for create_vnode. Commonly used in JSX-like syntax.
- */
 export const h = create_vnode;
 
 export const NODE_TYPES = {
@@ -583,9 +635,6 @@ export const NODE_TYPES = {
   COMMENT_NODE: 8,
 };
 
-/**
- * Base class for our virtual DOM nodes, mimicking the browser's Node API.
- */
 export class DOM_node {
   constructor(node_type) {
     this.node_type = node_type;
@@ -614,9 +663,6 @@ export class DOM_node {
   }
 }
 
-/**
- * Represents a text node in the virtual DOM.
- */
 export class DOM_text_node extends DOM_node {
   constructor(text) {
     super(NODE_TYPES.TEXT_NODE);
@@ -633,9 +679,6 @@ export class DOM_text_node extends DOM_node {
   }
 }
 
-/**
- * Represents a comment node in the virtual DOM.
- */
 export class DOM_comment_node extends DOM_node {
   constructor(text) {
     super(NODE_TYPES.COMMENT_NODE);
@@ -660,9 +703,6 @@ export function parse_selector(selector) {
   };
 }
 
-/**
- * Represents an element node in the virtual DOM.
- */
 export class DOM_element extends DOM_node {
   constructor(tag_name) {
     super(NODE_TYPES.ELEMENT_NODE);
@@ -790,11 +830,6 @@ export class DOM_element extends DOM_node {
   }
 }
 
-/**
- * Factory function to create a new DOM_element.
- * @param {string} tag_name - The tag name for the element.
- * @returns {DOM_element} A new DOM_element instance.
- */
 export function element_factory(tag_name) {
   return new DOM_element(tag_name);
 }
