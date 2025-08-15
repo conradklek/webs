@@ -14,6 +14,24 @@ export const use_session = create_store({
     },
   },
   actions: {
+    async register({ email, username, password }) {
+      this.auth_error = null;
+      try {
+        const response = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, username, password }),
+        });
+        if (!response.ok) {
+          const error_text = await response.text();
+          throw new Error(error_text || "Registration failed");
+        }
+        window.location.href = "/login";
+      } catch (err) {
+        this.auth_error = err.message;
+        console.error("Registration failed:", err);
+      }
+    },
     async login(email, password) {
       this.auth_error = null;
       try {
@@ -22,10 +40,11 @@ export const use_session = create_store({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
         });
-        const data = await response.json();
         if (!response.ok) {
-          throw new Error(data.message || "Login failed");
+          const error_text = await response.text();
+          throw new Error(error_text || "Login failed");
         }
+        const data = await response.json();
         this.current_user = data;
         window.location.href = "/";
       } catch (err) {
@@ -45,4 +64,3 @@ export const use_session = create_store({
     },
   },
 });
-

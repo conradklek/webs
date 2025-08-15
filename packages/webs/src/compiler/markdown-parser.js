@@ -181,9 +181,8 @@ export function parse_markdown(md_str) {
       const task_match = content_lns[0].match(/^\[([x ])\]\s+(.*)/);
       let li_content;
       if (task_match) {
-        const checkbox = `<input type="checkbox" ${
-          task_match[1] === "x" ? "checked" : ""
-        } disabled> `;
+        const checkbox = `<input type="checkbox" ${task_match[1] === "x" ? "checked" : ""
+          } disabled> `;
         const text_to_parse = content_lns
           .join("\n")
           .substring(content_lns[0].indexOf(task_match[2]));
@@ -261,7 +260,7 @@ export function parse_markdown(md_str) {
 
   const _parse_blocks = (lns, ctx) => {
     const html_blocks = [];
-    for (let i = 0; i < lns.length; ) {
+    for (let i = 0; i < lns.length;) {
       if (lns[i].trim() === "") {
         i++;
         continue;
@@ -283,7 +282,7 @@ export function parse_markdown(md_str) {
 
   let lines = md_str.replace(/\r\n?/g, "\n").split("\n");
   const remaining_lines = [];
-  for (let i = 0; i < lines.length; ) {
+  for (let i = 0; i < lines.length;) {
     const result = _parse_footnote_def(lines.slice(i), ctx);
     if (result) {
       i += result.consumed;
@@ -311,4 +310,14 @@ export function parse_markdown(md_str) {
   }
 
   return final_html;
+}
+
+/**
+ * A tagged template literal function for Markdown.
+ * @param {Array<string>} strings - The string parts of the template literal.
+ * @returns {string} The compiled HTML string.
+ */
+export function md(strings) {
+  const mdStr = (strings.raw ? strings.raw[0] : strings[0]).trim();
+  return `<div>${parse_markdown(mdStr)}</div>`;
 }

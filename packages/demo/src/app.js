@@ -3,6 +3,7 @@ import { create_router } from "@conradklek/webs";
 import Home from "./app/index.js";
 import About from "./app/about.js";
 import Login from "./app/login.js";
+import Signup from "./app/signup.js";
 import Profile from "./app/profile.js";
 
 import "./app.css";
@@ -21,6 +22,10 @@ const routes = {
   },
   "/login": {
     component: Login,
+    middleware: [use_logger],
+  },
+  "/signup": {
+    component: Signup,
     middleware: [use_logger],
   },
   "/profile": {

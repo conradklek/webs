@@ -2,6 +2,7 @@ import { parse_expression, tokenize_expression } from "./js-parser";
 import { h, Text, Fragment, Comment, Teleport } from "../renderer";
 import { parse_html } from "./html-parser";
 import { camelize } from "./utils";
+import { pug } from "./pug-parser";
 
 export const NODE_TYPES = {
   ROOT: 0,
@@ -463,10 +464,18 @@ export class Compiler {
  * @returns {Function} A render function.
  */
 export function compile(component_def) {
-  if (!component_def.template) {
-    console.warn("Component is missing a template option.");
+  let template_string = component_def.template;
+  if (typeof template_string === "function") {
+    const parsers = { pug };
+    template_string = template_string(parsers);
+  }
+
+  if (!template_string && typeof template_string !== "string") {
+    console.warn("Component is missing a valid template option.");
     return () => h(Comment, null, "Component missing template");
   }
-  const compiler = new Compiler(component_def);
+
+  const final_component_def = { ...component_def, template: template_string };
+  const compiler = new Compiler(final_component_def);
   return compiler.compile();
 }

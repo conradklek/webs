@@ -165,10 +165,10 @@ describe("Render Function Generation", () => {
       template: '<button @click.prevent="doSomething"></button>',
     });
 
-    const mockHandler = mock(() => { });
+    const mockHandler = mock(() => {});
     const mockEvent = {
-      preventDefault: mock(() => { }),
-      stopPropagation: mock(() => { }),
+      preventDefault: mock(() => {}),
+      stopPropagation: mock(() => {}),
     };
 
     const vnode = renderFn({ doSomething: mockHandler });
@@ -179,3 +179,5 @@ describe("Render Function Generation", () => {
     expect(mockHandler).toHaveBeenCalledWith(mockEvent);
   });
 });
+
+
