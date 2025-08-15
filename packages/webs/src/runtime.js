@@ -31,7 +31,7 @@ export function create_app_api(renderer_options) {
    * Creates a new application instance.
    * @param {object} root_component - The root component for the application.
    * @param {object} [root_props={}] - The initial props for the root component.
-   * @returns {object} The application instance with mount and update methods.
+   * @returns {object} The application instance with a mount method.
    */
   return function create_app(root_component, root_props = {}) {
     compile_templates(root_component);
@@ -56,17 +56,8 @@ export function create_app_api(renderer_options) {
         app._context.patch(null, vnode, root_container);
         app._container = root_container;
       },
-      /**
-       * Updates the root component of the application.
-       * @param {object} new_root_component - The new root component.
-       */
-      update(new_root_component) {
-        compile_templates(new_root_component);
-        const new_vnode = create_vnode(new_root_component);
-        new_vnode.app_context = app._context;
-        app._context.patch(vnode, new_vnode, app._container);
-        vnode = new_vnode;
-      },
+      // The `update` method was removed as it was only used for the
+      // custom HMR implementation. Bun's HMR handles this with a full reload.
     };
     return app;
   };
@@ -148,6 +139,8 @@ export function parse_query_string(queryString) {
 export function create_router(routes) {
   if (typeof window === "undefined") return;
 
+  // Removed setting window.__APP_ROUTES__ as it was for the custom HMR.
+
   const root = document.getElementById("root");
   if (!root) {
     console.error("Router creation failed: Root element not provided.");
@@ -212,8 +205,14 @@ export function create_router(routes) {
     if (!app) {
       app = create_app(PageComponent, { params });
       app.mount(root);
+      // Removed setting window.__APP_INSTANCE__ as it was for the custom HMR.
     } else {
-      app.update(PageComponent);
+      // With the custom HMR gone, the app is re-created on page load,
+      // so an in-place update is no longer necessary.
+      // For client-side navigation, we still need to replace the component.
+      // Re-creating the app is the simplest approach here.
+      app = create_app(PageComponent, { params });
+      app.mount(root);
     }
   }
 

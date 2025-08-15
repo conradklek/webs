@@ -14,66 +14,174 @@ import { resolve, join, basename } from "path";
 import { parse_query_string } from "../src/runtime.js";
 import { watch } from "fs";
 import { Glob } from "bun";
+import { readFileSync } from "fs";
+import { rm, mkdir, exists } from "fs/promises";
 
 const CWD = process.cwd();
 const OUTDIR = resolve(CWD, "dist");
+const TMPDIR = resolve(CWD, ".tmp");
+const TMP_CSS = resolve(TMPDIR, "tmp.css");
+const TMP_APP_JS = resolve(TMPDIR, "app.js");
 const PORT = process.env.PORT || 3000;
 const HMR_WS_PATH = "/hmr-ws";
 const HMR_TOPIC = "reload";
 
 /**
- * Loads all component files from the `src/app` directory and maps them to routes.
- * @param {string} cwd - The current working directory.
- * @returns {Promise<object>} An object mapping route paths to component definitions.
+ * Cleans the specified directory by removing it and recreating it.
+ * This prevents the accumulation of old, hashed build artifacts.
+ * @param {string} dirPath - The absolute path to the directory to clean.
  */
-export async function load_app_routes(cwd) {
-  console.log("Loading application routes...");
+async function clean_directory(dirPath) {
+  try {
+    console.log(`Cleaning directory: ${dirPath}`);
+    await rm(dirPath, { recursive: true, force: true });
+    await mkdir(dirPath, { recursive: true });
+    console.log("Directory cleaned successfully.");
+  } catch (error) {
+    console.error(`Error cleaning directory ${dirPath}:`, error);
+    process.exit(1);
+  }
+}
+
+/**
+ * Extracts the styles block from a component file.
+ */
+function extractStyles(src) {
+  const regex =
+    /styles\s*:\s*`([\s\S]*?)`|export\s+const\s+styles\s*=\s*`([\s\S]*?)`/;
+  const match = src.match(regex);
+  return match ? match[1] || match[2] : "";
+}
+
+/**
+ * Collects all `styles` from component files into a single CSS string.
+ */
+async function collectComponentStyles() {
+  const glob = new Glob("*.js");
+  let cssChunks = [];
+
+  const appDir = resolve(CWD, "src/app");
+  if (!(await exists(appDir))) return "";
+
+  for await (const file of glob.scan(appDir)) {
+    const filePath = join(appDir, file);
+    const src = readFileSync(filePath, "utf8");
+    const css = extractStyles(src);
+    if (css) cssChunks.push(css);
+  }
+
+  return cssChunks.join("\n");
+}
+
+/**
+ * Ensures the temp directory exists safely.
+ */
+async function ensureTmpDir() {
+  try {
+    await mkdir(TMPDIR, { recursive: true });
+  } catch (err) {
+    if (err.code !== "EEXIST") throw err;
+  }
+}
+
+/**
+ * Scans the `src/app` directory to load server-side routes
+ * and generate the source code for the client-side entrypoint.
+ * It looks for a default export (the component) and named exports
+ * like `middleware`.
+ * @param {string} cwd - The current working directory.
+ * @returns {Promise<{routes: object, client_entry_code: string}>}
+ */
+export async function load_and_generate_routes(cwd) {
+  console.log("Loading application routes and generating client entrypoint...");
   const routes = {};
   const app_dir = resolve(cwd, "src/app");
   const glob = new Glob("*.js");
 
-  if (!(await fs.exists(app_dir))) {
+  if (!(await exists(app_dir))) {
     console.warn(
       `[Warning] Route directory not found at ${app_dir}. No routes loaded.`,
     );
-    return routes;
+    return { routes: {}, client_entry_code: "" };
   }
+
+  let client_entry_code = `import { create_router } from "@conradklek/webs";\n`;
+  client_entry_code += `import { use_logger } from "../src/use/logger.js";\n`;
+  client_entry_code += `import { use_auth } from "../src/use/auth.js";\n`;
+
+  const routeEntries = [];
+  const componentImports = [];
 
   for await (const file of glob.scan(app_dir)) {
     const component_path = `${join(app_dir, file)}?t=${Date.now()}`;
     try {
       const module = await import(component_path);
       const component = module.default;
+
       if (component && component.name) {
         const route_name = file === "index.js" ? "" : file.replace(".js", "");
         const route_path = `/${route_name}`;
-        routes[route_path] = component;
+
+        const route_definition = {
+          component: component,
+          middleware: module.middleware || [],
+        };
+        routes[route_path] = route_definition;
         console.log(`  - Mapped ${file} to route ${route_path}`);
+
+        const componentName = component.name.replace(/[^a-zA-Z0-9_$]/g, "_");
+        componentImports.push(
+          `import ${componentName} from "../src/app/${file}";`,
+        );
+
+        const middlewareNames = (module.middleware || [])
+          .map((mw) => mw.name)
+          .filter(Boolean);
+        let routeObjectStr = `{ component: ${componentName}`;
+        if (middlewareNames.length > 0) {
+          routeObjectStr += `, middleware: [${middlewareNames.join(", ")}]`;
+        }
+        routeObjectStr += ` }`;
+        routeEntries.push(`"${route_path}": ${routeObjectStr}`);
       }
     } catch (e) {
       console.error(`Failed to load component ${file}:`, e);
     }
   }
-  return routes;
+
+  client_entry_code += componentImports.join("\n") + "\n";
+  client_entry_code += `\nconst routes = { ${routeEntries.join(",\n  ")} };\n`;
+  client_entry_code += `\ncreate_router(routes);\n`;
+
+  console.log("Client entrypoint generated.");
+  return { routes, client_entry_code };
 }
 
 /**
- * Builds the client-side assets using Bun's build API.
- * @param {string} cwd - The current working directory.
+ * Builds the client-side assets using Bun.build.
  * @param {string} outdir - The output directory for the build artifacts.
- * @returns {Promise<object|null>} The build result object from Bun, or null on failure.
+ * @param {string} entrypoint - The path to the entrypoint file.
+ * @returns {Promise<BuildOutput | null>}
  */
-async function build_assets(cwd, outdir) {
+async function build_assets(outdir, entrypoint) {
   console.log("Building client assets...");
-  const entrypoint = resolve(cwd, "src/app.js");
-  if (!(await fs.exists(entrypoint))) {
+
+  await clean_directory(outdir);
+
+  if (!(await exists(entrypoint))) {
     console.error(
       `[Error] Entrypoint not found at ${entrypoint}. Cannot build.`,
     );
     return null;
   }
+
+  await ensureTmpDir();
+  const cssContent = await collectComponentStyles();
+  const fullCSS = `@import "tailwindcss";\n${cssContent}`;
+  await Bun.write(TMP_CSS, fullCSS);
+
   const build_result = await Bun.build({
-    entrypoints: [entrypoint],
+    entrypoints: [entrypoint, TMP_CSS],
     outdir: outdir,
     target: "browser",
     splitting: true,
@@ -81,18 +189,20 @@ async function build_assets(cwd, outdir) {
     naming: "[name]-[hash].[ext]",
     plugins: [tailwind],
   });
+
   if (!build_result.success) {
     console.error("Client build failed:", build_result.logs);
     return null;
   }
+
   console.log("Client assets built successfully.");
   return build_result;
 }
 
 /**
- * Compresses build outputs using Gzip.
- * @param {Array<object>} outputs - An array of build output objects from Bun.
- * @returns {Promise<object>} An object mapping original asset paths to their Gzipped sizes.
+ * Compresses build artifacts using Gzip.
+ * @param {Array<BuildArtifact>} outputs - The build outputs from Bun.build.
+ * @returns {Promise<object>} A map of original paths to gzipped sizes.
  */
 async function compress_assets(outputs) {
   console.log("Compressing assets with Gzip...");
@@ -123,53 +233,73 @@ async function compress_assets(outputs) {
 }
 
 /**
- * Sets up the initial asset build and watches for file changes to trigger rebuilds (HMR).
+ * Sets up the initial build and watches for file changes for HMR.
  * @param {object} options - Configuration options.
- * @param {string} options.cwd - The current working directory.
- * @param {string} options.outdir - The output directory.
- * @param {object} options.server - The Bun server instance.
- * @param {Function} options.on_rebuild - Callback function to execute after a successful rebuild.
  * @returns {Promise<object>} The initial asset manifest.
  */
-export async function setup_build_and_hmr({ cwd, outdir, server, on_rebuild }) {
-  let build_result = await build_assets(cwd, outdir);
+export async function setup_build_and_hmr({
+  cwd,
+  outdir,
+  server,
+  on_rebuild,
+  entrypoint,
+}) {
+  let build_result = await build_assets(outdir, entrypoint);
   if (!build_result) process.exit(1);
+
   const asset_sizes = await compress_assets(build_result.outputs);
   let manifest = {
     js: build_result.outputs.find((o) => o.path.endsWith(".js"))?.path,
     css: build_result.outputs.find((o) => o.path.endsWith(".css"))?.path,
     sizes: asset_sizes,
   };
+
   const srcDir = resolve(cwd, "src");
   console.log(`[HMR] Watching for changes in ${srcDir}`);
+
+  let isRebuilding = false;
   watch(srcDir, { recursive: true }, async (event, filename) => {
-    if (filename) {
-      console.log(`[HMR] Detected ${event} in ${filename}. Rebuilding...`);
-      const new_build_result = await build_assets(cwd, outdir);
-      if (new_build_result) {
-        const new_asset_sizes = await compress_assets(new_build_result.outputs);
-        manifest.js = new_build_result.outputs.find((o) =>
-          o.path.endsWith(".js"),
-        )?.path;
-        manifest.css = new_build_result.outputs.find((o) =>
-          o.path.endsWith(".css"),
-        )?.path;
-        manifest.sizes = new_asset_sizes;
-        await on_rebuild(manifest);
-        server.publish(HMR_TOPIC, "refresh");
-        console.log("[HMR] Reload signal sent to clients.");
-      } else {
-        console.error("[HMR] Build failed. No reload signal sent.");
-      }
+    if (
+      !filename ||
+      filename.includes(".tmp") ||
+      filename.endsWith("~") ||
+      isRebuilding
+    ) {
+      return;
     }
+
+    isRebuilding = true;
+    console.log(`[HMR] Detected ${event} in ${filename}. Rebuilding...`);
+
+    const { routes: new_routes, client_entry_code: new_client_code } =
+      await load_and_generate_routes(cwd);
+    await Bun.write(entrypoint, new_client_code);
+
+    const new_build_result = await build_assets(outdir, entrypoint);
+    if (new_build_result) {
+      const new_asset_sizes = await compress_assets(new_build_result.outputs);
+      manifest.js = new_build_result.outputs.find((o) =>
+        o.path.endsWith(".js"),
+      )?.path;
+      manifest.css = new_build_result.outputs.find((o) =>
+        o.path.endsWith(".css"),
+      )?.path;
+      manifest.sizes = new_asset_sizes;
+      await on_rebuild({ manifest, routes: new_routes });
+      server.publish(HMR_TOPIC, "reload");
+    }
+
+    setTimeout(() => {
+      isRebuilding = false;
+    }, 100);
   });
   return manifest;
 }
 
 /**
- * Creates the main request handler function for the server.
- * @param {object} context - The server context object containing db, routes, etc.
- * @returns {Function} An async function that handles incoming requests.
+ * Creates the main request handler for the server.
+ * @param {object} context - The server context.
+ * @returns {function} The request handler function.
  */
 export function create_request_handler(context) {
   return async function(req) {
@@ -187,9 +317,7 @@ export function create_request_handler(context) {
     const { pathname, search } = url;
 
     if (pathname === HMR_WS_PATH) {
-      if (server.upgrade(req)) {
-        return;
-      }
+      if (server.upgrade(req)) return;
       return new Response("WebSocket upgrade failed", { status: 500 });
     }
 
@@ -211,17 +339,17 @@ export function create_request_handler(context) {
       outdir,
       manifest,
     );
-    if (asset_response) {
-      return asset_response;
-    }
+    if (asset_response) return asset_response;
+
     if (!is_ready) {
       return new Response("Server is starting, please wait...", {
         status: 503,
         headers: { Refresh: "1" },
       });
     }
-    const component_to_render = app_routes[pathname];
-    if (component_to_render) {
+    const route_definition = app_routes[pathname];
+    if (route_definition) {
+      const component_to_render = route_definition.component;
       const session_id = req.headers
         .get("cookie")
         ?.match(/session_id=([^;]+)/)?.[1];
@@ -242,24 +370,27 @@ export function create_request_handler(context) {
   <body>
     <div id="root" style="display: contents">${app_html}</div>
     <script>
-        window.__INITIAL_USER__ = ${JSON.stringify(user)};
-        window.__INITIAL_PARAMS__ = ${JSON.stringify(params)};
+      window.__INITIAL_USER__ = ${JSON.stringify(user)};
+      window.__INITIAL_PARAMS__ = ${JSON.stringify(params)};
     </script>
     <script type="module" src="/${basename(manifest.js)}"></script>
     <script>
       const hmrSocket = new WebSocket(\`ws://\${location.host}${HMR_WS_PATH}\`);
       hmrSocket.addEventListener('message', (event) => {
-        if (event.data === 'refresh') {
+        if (event.data === 'reload') {
+          console.log('[HMR] Reloading page...');
           location.reload();
         }
       });
-      hmrSocket.addEventListener('open', () => {
-        console.log('[HMR] WebSocket connected.');
-      });
+      hmrSocket.addEventListener('open', () => console.log('[HMR] Connected.'));
       hmrSocket.addEventListener('close', () => {
-        console.log('[HMR] WebSocket disconnected. Attempting to reconnect in 1s...');
-        setTimeout(() => {
-            location.reload();
+        console.log('[HMR] Disconnected. Attempting to reconnect...');
+        const interval = setInterval(() => {
+            const ws = new WebSocket(\`ws://\${location.host}${HMR_WS_PATH}\`);
+            ws.onopen = () => {
+                clearInterval(interval);
+                location.reload();
+            };
         }, 1000);
       });
     </script>
@@ -274,12 +405,6 @@ export function create_request_handler(context) {
   };
 }
 
-/**
- * Handles authentication-related API requests.
- * @param {Request} req - The incoming request.
- * @param {object} db - The database instance.
- * @returns {Promise<Response>} A response for the auth action.
- */
 async function handle_auth_api(req, db) {
   const { pathname } = new URL(req.url);
   if (pathname === "/api/auth/register") return register_user(req, db);
@@ -288,15 +413,6 @@ async function handle_auth_api(req, db) {
   return new Response("Auth route not found", { status: 404 });
 }
 
-/**
- * Handles server action requests initiated from the client.
- * @param {Request} req - The incoming request.
- * @param {object} db - The database instance.
- * @param {object} fs - The filesystem utility object.
- * @param {Function} get_user_from_session - Function to retrieve the current user.
- * @param {object} app_routes - The application's routes.
- * @returns {Promise<Response>} The result of the server action.
- */
 async function handle_server_actions(
   req,
   db,
@@ -309,18 +425,20 @@ async function handle_server_actions(
     .get("cookie")
     ?.match(/session_id=([^;]+)/)?.[1];
   const user = get_user_from_session(db, session_id);
-  if (!user) {
-    return new Response("Unauthorized", { status: 401 });
-  }
+  if (!user) return new Response("Unauthorized", { status: 401 });
+
   const [, , componentName, actionName] = pathname.split("/");
-  const component = Object.values(app_routes).find(
-    (r) => r.name === componentName,
+  const route_definition = Object.values(app_routes).find(
+    (r) => r.component.name === componentName,
   );
-  if (!component || typeof component.actions?.[actionName] !== "function") {
+  if (
+    !route_definition ||
+    typeof route_definition.component.actions?.[actionName] !== "function"
+  ) {
     return new Response("Action not found", { status: 404 });
   }
   try {
-    const action = component.actions[actionName];
+    const action = route_definition.component.actions[actionName];
     const args = req.method === "POST" ? await req.json() : [];
     const result = await action({ req, db, fs, user }, ...args);
     if (result instanceof Response) return result;
@@ -331,14 +449,6 @@ async function handle_server_actions(
   }
 }
 
-/**
- * Serves static assets from the output directory. Handles Gzip compression.
- * @param {Request} req - The incoming request.
- * @param {string} pathname - The path of the requested asset.
- * @param {string} outdir - The output directory.
- * @param {object} manifest - The asset manifest.
- * @returns {Promise<Response|null>} A response with the asset, or null if not found.
- */
 async function handle_static_assets(req, pathname, outdir, manifest) {
   const asset_path = join(outdir, basename(pathname));
   const file = Bun.file(asset_path);
@@ -371,14 +481,19 @@ async function handle_static_assets(req, pathname, outdir, manifest) {
 }
 
 /**
- * The main entry point for the server.
- * Initializes services, sets up the server, and starts listening.
+ * Main function to start the development server.
  */
 async function main() {
+  await ensureTmpDir();
+
+  const { routes: initial_routes, client_entry_code } =
+    await load_and_generate_routes(CWD);
+  await Bun.write(TMP_APP_JS, client_entry_code);
+
   const server_context = {
     fs,
     db: await create_database(Database, CWD),
-    app_routes: await load_app_routes(CWD),
+    app_routes: initial_routes,
     get_user_from_session: get_user_from_session,
     outdir: OUTDIR,
     manifest: {},
@@ -390,7 +505,7 @@ async function main() {
 
   const server = Bun.serve({
     port: PORT,
-    development: false,
+    development: true,
     fetch: request_handler,
     websocket: {
       open(ws) {
@@ -401,6 +516,7 @@ async function main() {
         console.log("[HMR] WebSocket client disconnected");
         ws.unsubscribe(HMR_TOPIC);
       },
+      // message(ws, message) { },
     },
     error(error) {
       console.error(error);
@@ -414,17 +530,16 @@ async function main() {
     cwd: CWD,
     outdir: OUTDIR,
     server: server,
-    on_rebuild: async (new_manifest) => {
+    entrypoint: TMP_APP_JS,
+    on_rebuild: async ({ manifest: new_manifest, routes: new_routes }) => {
       server_context.manifest = new_manifest;
-      server_context.app_routes = await load_app_routes(CWD);
+      server_context.app_routes = new_routes;
     },
   });
 
   server_context.manifest = initial_manifest;
   server_context.is_ready = true;
-  console.log(
-    `--- Server is ready and listening on http://localhost:${PORT} ---`,
-  );
+  console.log(`--- Server ready at http://localhost:${PORT} ---`);
 }
 
-main();
+main().catch(console.error);

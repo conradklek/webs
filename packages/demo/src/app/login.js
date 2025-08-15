@@ -1,4 +1,7 @@
 import { use_session } from "../use/session.js";
+import { use_logger } from "../use/logger.js";
+
+export const middleware = [use_logger];
 
 export default {
   name: "Login",
@@ -17,7 +20,7 @@ export default {
     <div class="w-full p-8 flex flex-col items-start justify-start gap-4">
       <div class="w-full flex flex-row items-center justify-start gap-4">
         <a href="/" class="underline active:opacity-50 cursor-pointer">&larr; Back</a>
-        <h1 class="ml-auto">Login</h1>
+        <h1 class="ml-auto font-medium">Login</h1>
         <span>|</span>
         <a href="/signup" class="underline active:opacity-50 cursor-pointer">Signup</a>
       </div>

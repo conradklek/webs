@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+    @theme {
+      --color-primary: #1e40af;
+    }
+    @layer components {
+      .btn { @apply bg-primary text-white px-2 py-0.5 rounded-md cursor-pointer active:opacity-50; }
+    }
+  
