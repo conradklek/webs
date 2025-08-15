@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "target": "es2016",
+    "lib": ["es2016", "dom"],
     "allowJs": true,
     "declaration": true,
     "emitDeclarationOnly": true,
@@ -8,10 +10,5 @@
     "rootDir": "."
   },
   "include": ["./**/*.js"],
-  "exclude": [
-    "bin",
-    "dist",
-    "node_modules"
-  ]
+  "exclude": ["bin", "dist", "node_modules"]
 }
-

@@ -1,18 +1,18 @@
-export const js_is_whitespace = (c) =>
+const js_is_whitespace = (c) =>
   c === " " || c === "\n" || c === "\t" || c === "\r";
 
-export const is_digit = (c) => c >= "0" && c <= "9";
+const is_digit = (c) => c >= "0" && c <= "9";
 
-export const is_ident_start = (c) =>
+const is_ident_start = (c) =>
   (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c === "$" || c === "_";
 
-export const is_ident_part = (c) => is_ident_start(c) || is_digit(c);
+const is_ident_part = (c) => is_ident_start(c) || is_digit(c);
 
 export const js_token_cache = new Map();
 
-export const JS_ESCAPE_MAP = { n: "\n", t: "\t", r: "\r" };
+const JS_ESCAPE_MAP = { n: "\n", t: "\t", r: "\r" };
 
-export const JS_KEYWORDS = {
+const JS_KEYWORDS = {
   true: "BOOLEAN",
   false: "BOOLEAN",
   null: "NULL",

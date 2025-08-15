@@ -1,11 +1,11 @@
 import { void_elements } from "../utils";
 
-export const html_is_whitespace = (c) =>
+const html_is_whitespace = (c) =>
   c === " " || c === "\n" || c === "\t" || c === "\r";
 
 export const html_ast_cache = new Map();
 
-export const State = {
+const State = {
   DATA: 1,
   TAG_OPEN: 2,
   TAG_NAME: 3,

@@ -357,24 +357,6 @@ export function create_renderer(options) {
   return { patch };
 }
 
-const cache_string_function = (fn) => {
-  const cache = Object.create(null);
-  return (str) => {
-    const hit = cache[str];
-    return hit || (cache[str] = fn(str));
-  };
-};
-
-const camelize = cache_string_function((str) => {
-  return str.replace(/-(\w)/g, (_, c) => (c ? c.toUpperCase() : ""));
-});
-
-const to_pascal_case = (str) => {
-  if (!is_string(str)) return str;
-  const cameled = camelize(str);
-  return cameled.charAt(0).toUpperCase() + cameled.slice(1);
-};
-
 let current_instance = null;
 
 const set_current_instance = (instance) => {
@@ -555,7 +537,7 @@ export function create_component(vnode, parent, is_ssr = false) {
   return instance;
 }
 
-function camel_to_kebab(camel) {
+export function camel_to_kebab(camel) {
   return camel.replace(/([a-z0-9]|(?=[A-Z]))([A-Z])/g, "$1-$2").toLowerCase();
 }
 
@@ -564,7 +546,7 @@ export const Comment = Symbol("Comment");
 export const Teleport = Symbol("Teleport");
 export const Text = Symbol("Text");
 
-class VNode {
+export class VNode {
   constructor(type, props, children) {
     if (props && (Array.isArray(props) || typeof props !== "object")) {
       children = props;
@@ -595,7 +577,7 @@ export function create_vnode(type, props, children) {
  */
 export const h = create_vnode;
 
-const NODE_TYPES = {
+export const NODE_TYPES = {
   ELEMENT_NODE: 1,
   TEXT_NODE: 3,
   COMMENT_NODE: 8,
@@ -604,7 +586,7 @@ const NODE_TYPES = {
 /**
  * Base class for our virtual DOM nodes, mimicking the browser's Node API.
  */
-class DOM_node {
+export class DOM_node {
   constructor(node_type) {
     this.node_type = node_type;
     this.parent_node = null;
@@ -667,7 +649,7 @@ export class DOM_comment_node extends DOM_node {
   }
 }
 
-function parse_selector(selector) {
+export function parse_selector(selector) {
   const tag_match = selector.match(/^[a-zA-Z0-9\-]+/);
   const id_match = selector.match(/#([a-zA-Z0-9\-_]+)/);
   const class_matches = selector.match(/\.([a-zA-Z0-9\-_]+)/g) || [];

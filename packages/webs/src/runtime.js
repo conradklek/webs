@@ -8,7 +8,7 @@ import { compile } from "./compiler";
  * the template into a render function.
  * @param {object} component_def - The component definition object.
  */
-export function compile_templates(component_def) {
+function compile_templates(component_def) {
   if (component_def.template && !component_def.render) {
     component_def.render = compile(component_def);
   }
@@ -65,7 +65,7 @@ export function create_app_api(renderer_options) {
 
 const is_on = (key) => /^on[A-Z]/.test(key);
 
-export const renderer_options = {
+const renderer_options = {
   create_element: (tag) => document.createElement(tag),
   create_text: (text) => document.createTextNode(text),
   create_comment: (text) => document.createComment(text),
@@ -139,8 +139,6 @@ export function parse_query_string(queryString) {
 export function create_router(routes) {
   if (typeof window === "undefined") return;
 
-  // Removed setting window.__APP_ROUTES__ as it was for the custom HMR.
-
   const root = document.getElementById("root");
   if (!root) {
     console.error("Router creation failed: Root element not provided.");
@@ -205,12 +203,7 @@ export function create_router(routes) {
     if (!app) {
       app = create_app(PageComponent, { params });
       app.mount(root);
-      // Removed setting window.__APP_INSTANCE__ as it was for the custom HMR.
     } else {
-      // With the custom HMR gone, the app is re-created on page load,
-      // so an in-place update is no longer necessary.
-      // For client-side navigation, we still need to replace the component.
-      // Re-creating the app is the simplest approach here.
       app = create_app(PageComponent, { params });
       app.mount(root);
     }

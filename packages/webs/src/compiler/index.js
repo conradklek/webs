@@ -1,7 +1,7 @@
 import { parse_expression, tokenize_expression } from "./js-parser";
 import { h, Text, Fragment, Comment, Teleport } from "../renderer";
 import { parse_html } from "./html-parser";
-import { camelize } from "./utils";
+import { camelize } from "../utils";
 import { pug } from "./pug-parser";
 
 export const NODE_TYPES = {
@@ -22,11 +22,11 @@ export const ATTR_TYPES = {
   EVENT_HANDLER: 12,
 };
 
-export const DIR_IF = "w-if";
-export const DIR_ELSE_IF = "w-else-if";
-export const DIR_ELSE = "w-else";
-export const DIR_FOR = "w-for";
-export const DIR_MODEL = "w-model";
+const DIR_IF = "w-if";
+const DIR_ELSE_IF = "w-else-if";
+const DIR_ELSE = "w-else";
+const DIR_FOR = "w-for";
+const DIR_MODEL = "w-model";
 
 /**
  * Generates a render function from a transformed Abstract Syntax Tree (AST).

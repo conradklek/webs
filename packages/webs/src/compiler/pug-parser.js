@@ -6,18 +6,13 @@
  * @param  {...any} values - Interpolated values (not used in this basic version).
  * @returns {string} The resulting HTML string.
  */
-export function pug(strings, ...values) {
-  // --- Start of Fix ---
-  // Handle both tagged template literal calls (which have a .raw property)
-  // and direct string calls from tests (which are just a plain array).
+export function pug(strings, ..._) {
   const pugStr = (strings.raw ? strings.raw[0] : strings[0]).trim();
-  // --- End of Fix ---
 
   const lines = pugStr.split("\n");
 
   let html = "";
   const tagStack = [];
-  let currentIndent = -1;
 
   /**
    * Parses a single line of Pug to extract its components.
@@ -46,7 +41,6 @@ export function pug(strings, ...values) {
       while ((match = attrRegex.exec(attrString)) !== null) {
         attrs[match[1]] = match[2];
       }
-      // Remove the attribute part from the line to not confuse it with text
       trimmedLine = trimmedLine.replace(attrsMatch[0], "").trim();
     }
 
@@ -70,7 +64,6 @@ export function pug(strings, ...values) {
     if (!parsed) continue;
 
     if (parsed.isPiped) {
-      // Correctly append piped text without an extra leading space if not needed.
       html += (html.endsWith(">") ? "" : " ") + parsed.text;
       continue;
     }
@@ -104,4 +97,3 @@ export function pug(strings, ...values) {
 
   return html;
 }
-

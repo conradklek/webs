@@ -43,6 +43,24 @@ export const void_elements = new Set([
   "wbr",
 ]);
 
+export const cache_string_function = (fn) => {
+  const cache = Object.create(null);
+  return (str) => {
+    const hit = cache[str];
+    return hit || (cache[str] = fn(str));
+  };
+};
+
+export const camelize = cache_string_function((str) => {
+  return str.replace(/-(\w)/g, (_, c) => (c ? c.toUpperCase() : ""));
+});
+
+export const to_pascal_case = (str) => {
+  if (!is_string(str)) return str;
+  const cameled = camelize(str);
+  return cameled.charAt(0).toUpperCase() + cameled.slice(1);
+};
+
 export const benchmark_results = {};
 
 export function run_benchmark(name, fn, iterations = 1000) {

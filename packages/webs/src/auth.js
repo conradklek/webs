@@ -5,7 +5,7 @@ const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7;
  * @param {string} password - The plaintext password to hash.
  * @returns {Promise<string>} The hashed password.
  */
-export async function hash_password(password) {
+async function hash_password(password) {
   return Bun.password.hash(password, { algorithm: "bcrypt", cost: 10 });
 }
 
@@ -15,7 +15,7 @@ export async function hash_password(password) {
  * @param {string} hash - The hash to compare against.
  * @returns {Promise<boolean>} True if the password is valid, false otherwise.
  */
-export async function verify_password(password, hash) {
+async function verify_password(password, hash) {
   return Bun.password.verify(password, hash);
 }
 
