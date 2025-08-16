@@ -1,6 +1,6 @@
 {
   "name": "@conradklek/webs",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "A JavaScript framework.",
   "bin": {
     "webs": "bin/cli.js"
@@ -11,7 +11,8 @@
   "files": [
     "bin",
     "dist",
-    "*.js"
+    "*.js",
+    ".prettierrc.json"
   ],
   "exports": {
     ".": {
@@ -25,7 +26,7 @@
     "build:js": "bun build ./src/index.js --outfile=./dist/index.js --format=cjs && bun build ./src/index.js --outfile=./dist/index.mjs --format=esm",
     "build:types": "tsc",
     "build": "rm -rf dist && bun run build:js && bun run build:types",
-    "test" : "bun test --reporter=junit --reporter-outfile=./test-results.xml"
+    "format": "prettier --write ."
   },
   "dependencies": {
     "bun-plugin-tailwind": "^0.0.15"
@@ -34,7 +35,7 @@
     "tailwindcss": "^4.0.0"
   },
   "devDependencies": {
+    "prettier": "^3.3.2",
     "typescript": "^5.4.5"
   }
 }
-

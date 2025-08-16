@@ -1,6 +1,6 @@
 import { use_session } from "../use/session.js";
-import { use_auth } from "../use/auth.js";
 import { use_logger } from "../use/logger.js";
+import { use_auth } from "../use/auth.js";
 
 export const middleware = [use_logger, use_auth];
 
@@ -12,18 +12,20 @@ export default {
     };
   },
   template: `
-    <div class="w-full p-8 flex flex-col items-start justify-start gap-4">
+    <div class="w-full p-8 flex flex-col items-start justify-start gap-8">
       <div class="w-full flex flex-row items-center justify-start gap-4">
-        <a href="/" class="underline active:opacity-50 cursor-pointer">&larr; Back</a>
-        <h1 class="ml-auto font-medium">Profile</h1>
-        <span>|</span>
-        <button type="button" @click="session.logout()" class="btn">Logout</button>
+        <a href="/" class="font-medium">webs</a>
+        <div class="w-full flex flex-row items-center justify-end gap-4">
+          <h1>Profile</h1>
+          <span>|</span>
+          <button type="button" @click="session.logout()" class="button-primary">Logout</button>
+        </div>
       </div>
-      <div w-if="session.is_logged_in" class="w-full mt-4 flex flex-col items-start justify-start gap-2">
-        <p>This is the profile page for @{{ session.current_user.username }}.</p>
-        <p>Your email is: {{ session.current_user.email }}</p>
+      <div w-if="session.user.username" class="flex-1 flex flex-col items-start justify-start gap-2">
+        <p>This is the profile page for @{{ session.user.username }}.</p>
+        <p>Your email is: {{ session.user.email }}</p>
       </div>
-      <div w-else>
+      <div w-else class="flex-1 flex flex-col items-start justify-start gap-2">
         <p>You must be logged in to see this page.</p>
       </div>
     </div>

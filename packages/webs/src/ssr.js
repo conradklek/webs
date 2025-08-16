@@ -4,8 +4,8 @@ import {
   Text,
   Comment,
   Teleport,
-} from "./renderer.js";
-import { is_string, is_object, is_function } from "./utils.js";
+} from "./renderer";
+import { is_string, is_object, is_function } from "./utils";
 
 const VOID_ELEMENTS = new Set([
   "area",
@@ -104,11 +104,11 @@ async function render_vnode(vnode, parent_component, context) {
         );
 
         if (!parent_component && context) {
-          context.root_state = instance.internal_ctx;
+          context.component_state = instance.internal_ctx;
         }
 
         if (!instance.render && type.template) {
-          const { compile } = await import("./compiler/index.js");
+          const { compile } = await import("./compiler.js");
           instance.render = compile(type);
         }
         if (is_function(instance.render)) {
@@ -129,17 +129,17 @@ async function render_vnode(vnode, parent_component, context) {
 /**
  * The main entry point for server-side rendering.
  * @param {VNode} vnode The root VNode of the application.
- * @returns {Promise<{html: string, state: object}>} A promise that resolves to the HTML and initial state.
+ * @returns {Promise<{html: string, componentState: object}>} A promise that resolves to the HTML and initial component state.
  */
 export async function render_to_string(vnode) {
   try {
-    const context = { root_state: {} };
+    const context = { component_state: {} };
     const html = await render_vnode(vnode, null, context);
-    return { html, state: context.root_state };
+    return { html, componentState: context.component_state };
   } catch (e) {
     console.error(`[SSR Error] ${e.message}`);
     console.error(e.stack);
     const html = `<div style="color:red; background:lightyellow; border: 1px solid red; padding: 1rem;">SSR Error: ${escape_html(e.message)}</div>`;
-    return { html, state: {} };
+    return { html, componentState: {} };
   }
 }

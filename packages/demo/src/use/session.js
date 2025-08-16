@@ -1,21 +1,21 @@
 import { create_store } from "@conradklek/webs";
 
 const initial_user =
-  typeof window !== "undefined" ? window.__INITIAL_USER__ : null;
+  typeof window !== "undefined" ? window.__WEBS_STATE__?.user : null;
 
 export const use_session = create_store({
   state: () => ({
-    current_user: initial_user,
-    auth_error: null,
+    user: initial_user,
+    error: null,
   }),
   getters: {
     is_logged_in() {
-      return !!this.current_user;
+      return !!this.user;
     },
   },
   actions: {
     async register({ email, username, password }) {
-      this.auth_error = null;
+      this.error = null;
       try {
         const response = await fetch("/api/auth/register", {
           method: "POST",
@@ -28,12 +28,12 @@ export const use_session = create_store({
         }
         window.location.href = "/login";
       } catch (err) {
-        this.auth_error = err.message;
+        this.error = err.message;
         console.error("Registration failed:", err);
       }
     },
     async login(email, password) {
-      this.auth_error = null;
+      this.error = null;
       try {
         const response = await fetch("/api/auth/login", {
           method: "POST",
@@ -45,18 +45,19 @@ export const use_session = create_store({
           throw new Error(error_text || "Login failed");
         }
         const data = await response.json();
-        this.current_user = data;
+        console.log({ data });
+        this.user = data;
         window.location.href = "/";
       } catch (err) {
-        this.auth_error = err.message;
+        this.error = err.message;
         console.error("Login failed:", err);
       }
     },
     async logout() {
       try {
         await fetch("/api/auth/logout", { method: "POST" });
-        this.current_user = null;
-        this.auth_error = null;
+        this.user = null;
+        this.error = null;
         window.location.href = "/login";
       } catch (err) {
         console.error("Logout failed:", err);

@@ -1,23 +1,13 @@
 #!/usr/bin/env bun
 
-import {
-  get_user_from_session,
-  register_user,
-  login_user,
-  logout_user,
-} from "../src/auth.js";
-import { create_database } from "../src/database.js";
-import * as fs from "../src/filesystem.js";
-import { Database } from "bun:sqlite";
-import tailwind from "bun-plugin-tailwind";
+import { rm, mkdir, exists } from "fs/promises";
 import { resolve, join, basename } from "path";
-import { parse_query_string } from "../src/runtime.js";
+import tailwind from "bun-plugin-tailwind";
+import { Database } from "bun:sqlite";
+import { readFileSync } from "fs";
+import * as Webs from "../src";
 import { watch } from "fs";
 import { Glob } from "bun";
-import { readFileSync } from "fs";
-import { rm, mkdir, exists } from "fs/promises";
-import { render_to_string } from "../src/ssr-renderer.js";
-import { h } from "../src/renderer.js";
 
 const CWD = process.cwd();
 const OUTDIR = resolve(CWD, "dist");
@@ -27,7 +17,6 @@ const TMP_APP_JS = resolve(TMPDIR, "app.js");
 const PORT = process.env.PORT || 3000;
 const HMR_WS_PATH = "/hmr-ws";
 const HMR_TOPIC = "reload";
-
 
 export async function load_and_generate_routes(cwd) {
   console.log("Loading application routes and generating client entrypoint...");
@@ -307,11 +296,19 @@ export function create_request_handler(context) {
       const session_id = req.headers
         .get("cookie")
         ?.match(/session_id=([^;]+)/)?.[1];
-      const user = get_user_from_session(db, session_id);
-      const params = parse_query_string(search);
-      const component_vnode = h(component_to_render, { user, params });
-      const { html: app_html, state: initial_state } =
-        await render_to_string(component_vnode);
+      const user = Webs.get_user_from_session(db, session_id);
+      const params = Webs.parse_query_string(search);
+      const component_vnode = Webs.h(component_to_render, { user, params });
+
+      const { html: app_html, componentState } =
+        await Webs.render_to_string(component_vnode);
+
+      const webs_state = {
+        user,
+        params,
+        componentState
+      };
+
       const full_html = `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -326,9 +323,7 @@ export function create_request_handler(context) {
   <body>
     <div id="root" style="display: contents">${app_html}</div>
     <script>
-      window.__INITIAL_USER__ = ${JSON.stringify(user)};
-      window.__INITIAL_PARAMS__ = ${JSON.stringify(params)};
-      window.__INITIAL_STATE__ = ${JSON.stringify(initial_state)};
+      window.__WEBS_STATE__ = ${JSON.stringify(webs_state)};
     </script>
     <script type="module" src="/${basename(manifest.js)}"></script>
     <script>
@@ -362,9 +357,9 @@ export function create_request_handler(context) {
 }
 async function handle_auth_api(req, db) {
   const { pathname } = new URL(req.url);
-  if (pathname === "/api/auth/register") return register_user(req, db);
-  if (pathname === "/api/auth/login") return login_user(req, db);
-  if (pathname === "/api/auth/logout") return logout_user(req, db);
+  if (pathname === "/api/auth/register") return Webs.register_user(req, db);
+  if (pathname === "/api/auth/login") return Webs.login_user(req, db);
+  if (pathname === "/api/auth/logout") return Webs.logout_user(req, db);
   return new Response("Auth route not found", { status: 404 });
 }
 async function handle_server_actions(
@@ -437,10 +432,10 @@ async function main() {
     await load_and_generate_routes(CWD);
   await Bun.write(TMP_APP_JS, client_entry_code);
   const server_context = {
-    fs,
-    db: await create_database(Database, CWD),
+    fs: Webs.fs,
+    db: await Webs.create_database(Database, CWD),
     app_routes: initial_routes,
-    get_user_from_session: get_user_from_session,
+    get_user_from_session: Webs.get_user_from_session,
     outdir: OUTDIR,
     manifest: {},
     is_ready: false,

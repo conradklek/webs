@@ -1,8 +1,6 @@
-import { parse_expression, tokenize_expression } from "./js-parser";
-import { Text, Fragment, Comment, camelize } from "../utils";
-import { parse_html } from "./html-parser";
-import * as Webs from "../renderer";
-import { pug } from "./pug-parser";
+import { parse_html, parse_js, tokenize_js } from "./parser";
+import { Text, Fragment, Comment, camelize } from "./utils";
+import * as Webs from "./renderer";
 
 export const NODE_TYPES = {
   ROOT: 0,
@@ -215,7 +213,7 @@ export class Compiler {
     if (!str) return null;
     const clean_str = str.replace(/\n/g, " ").trim();
     try {
-      return parse_expression(tokenize_expression(clean_str));
+      return parse_js(tokenize_js(clean_str));
     } catch (e) {
       console.warn(`Expression parse error: "${str}"`, e);
       return null;
@@ -461,10 +459,6 @@ export class Compiler {
  */
 export function compile(component_def) {
   let template_string = component_def.template;
-  if (typeof template_string === "function") {
-    const parsers = { pug };
-    template_string = template_string(parsers);
-  }
 
   if (!template_string && typeof template_string !== "string") {
     console.warn("Component is missing a valid template option.");

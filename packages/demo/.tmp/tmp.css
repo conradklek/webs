@@ -3,7 +3,12 @@
     @theme {
       --color-primary: #1e40af;
     }
+    @layer base {
+      h1     { @apply font-medium; }
+      button { @apply cursor-pointer active:opacity-50 whitespace-nowrap; }
+      a      { @apply underline cursor-pointer active:opacity-50 whitespace-nowrap; }
+    }
     @layer components {
-      .btn { @apply bg-primary text-white px-2 py-0.5 rounded-md cursor-pointer active:opacity-50; }
+      .button-primary { @apply bg-primary text-white px-1.5 rounded-md cursor-pointer active:opacity-50; }
     }
   

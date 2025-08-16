@@ -1,6 +1,5 @@
-import { file, Glob, write } from "bun";
 import {
-  cp,
+  cp as copy,
   mkdir as fs_mkdir,
   readdir,
   rename,
@@ -13,7 +12,7 @@ import {
  * @param {string} path - The path to check.
  * @returns {Promise<boolean>} True if the path exists, false otherwise.
  */
-export async function exists(path) {
+async function exists(path) {
   try {
     await fs_stat(path);
     return true;
@@ -31,12 +30,12 @@ export async function exists(path) {
  * @returns {Promise<File>} A Bun File object.
  * @throws Will throw an error if the file is not found.
  */
-export async function cat(path) {
+async function cat(path) {
   const file_exists = await exists(path);
   if (!file_exists) {
     throw new Error("File not found");
   }
-  return file(path);
+  return Bun.file(path);
 }
 
 /**
@@ -46,7 +45,7 @@ export async function cat(path) {
  * @param {boolean} [recursive=false] - If true, copies directories recursively.
  * @throws Will throw an error if 'from' is a directory and 'recursive' is false.
  */
-export async function copy(from, to, recursive = false) {
+async function cp(from, to, recursive = false) {
   if (!from || !to) {
     throw new Error("Missing 'from' or 'to' path");
   }
@@ -54,7 +53,7 @@ export async function copy(from, to, recursive = false) {
   if (from_stats.isDirectory() && !recursive) {
     throw new Error("Source is a directory but 'recursive' flag is not set.");
   }
-  await cp(from, to, { recursive });
+  await copy(from, to, { recursive });
 }
 
 /**
@@ -63,8 +62,8 @@ export async function copy(from, to, recursive = false) {
  * @param {string} cwd - The current working directory to scan from.
  * @returns {Promise<string[]>} An array of matching file paths.
  */
-export async function glob(pattern, cwd) {
-  const globber = new Glob(pattern);
+async function glob(pattern, cwd) {
+  const globber = new Bun.Glob(pattern);
   const matches = [];
   for await (const file of globber.scan(cwd)) {
     matches.push(file);
@@ -79,7 +78,7 @@ export async function glob(pattern, cwd) {
  * @param {boolean} [stats=false] - If true, returns detailed stats for each item.
  * @returns {Promise<Array<string|object>>} An array of file/directory names or stat objects.
  */
-export async function ls(path, recursive = false, stats = false) {
+async function ls(path, recursive = false, stats = false) {
   let dir = await readdir(path, { recursive });
 
   if (stats) {
@@ -105,7 +104,7 @@ export async function ls(path, recursive = false, stats = false) {
         ) {
           return null;
         }
-        const ref = file(name);
+        const ref = Bun.file(name);
         return {
           path: name,
           size: ref.size,
@@ -141,7 +140,7 @@ export async function ls(path, recursive = false, stats = false) {
  * @param {boolean} [recursive=false] - If true, creates parent directories as needed.
  * @returns {Promise<string|undefined>} The path of the first directory created if recursive.
  */
-export async function mkdir(path, recursive = false) {
+async function mkdir(path, recursive = false) {
   return await fs_mkdir(path, { recursive });
 }
 
@@ -150,7 +149,7 @@ export async function mkdir(path, recursive = false) {
  * @param {string} from - The source path.
  * @param {string} to - The destination path.
  */
-export async function mv(from, to) {
+async function mv(from, to) {
   if (!from || !to) {
     throw new Error("Missing 'from' or 'to' path");
   }
@@ -167,7 +166,7 @@ export async function mv(from, to) {
  * @param {string} path - The path to remove.
  * @param {boolean} [recursive=false] - If true, removes directories recursively.
  */
-export async function rm(path, recursive = false) {
+async function rm(path, recursive = false) {
   if (!path) {
     throw new Error("Missing 'path'");
   }
@@ -184,7 +183,7 @@ export async function rm(path, recursive = false) {
  * @param {string} path - The path to get stats for.
  * @returns {Promise<object>} A stats object.
  */
-export async function stat(path) {
+async function stat(path) {
   if (!path) {
     throw new Error("Missing 'path'");
   }
@@ -214,6 +213,18 @@ export async function stat(path) {
  * @param {string} path - The path of the file to create.
  * @param {string|Blob|ArrayBuffer} [data=""] - The content to write to the file.
  */
-export async function touch(path, data = "") {
-  await write(path, data);
+async function touch(path, data = "") {
+  await Bun.write(path, data);
 }
+
+export const fs = {
+  touch,
+  stat,
+  rm,
+  mkdir,
+  mv,
+  ls,
+  glob,
+  cp,
+  cat,
+};

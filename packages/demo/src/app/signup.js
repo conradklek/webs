@@ -22,21 +22,23 @@ export default {
     },
   },
   template: `
-    <div class="w-full p-8 flex flex-col items-start justify-start gap-4">
+    <div class="w-full p-8 flex flex-col items-start justify-start gap-8">
       <div class="w-full flex flex-row items-center justify-start gap-4">
-        <a href="/" class="underline active:opacity-50 cursor-pointer">&larr; Back</a>
-        <h1 class="ml-auto font-medium">Signup</h1>
-        <span>|</span>
-        <a href="/login" class="underline active:opacity-50 cursor-pointer">Login</a>
+        <a href="/" class="font-medium">webs</a>
+        <div class="w-full flex flex-row items-center justify-end gap-4">
+          <a href="/login">Login</a>
+          <span>|</span>
+          <h1>Signup</h1>
+        </div>
       </div>
-      <form @submit.prevent="handle_signup" class="w-full mt-4 flex flex-col items-start justify-start gap-2">
-        <input w-model="email" type="email" placeholder="Email" required class="shrink-0" />
-        <input w-model="username" type="text" placeholder="Username" required class="shrink-0" />
-        <input w-model="password" type="password" placeholder="Password" required minlength="8" class="shrink-0" />
-        <button type="submit" class="shrink-0 mt-4 active:opacity-50 cursor-pointer">Create Account</button>
+      <form @submit.prevent="handle_signup" class="flex-1 flex flex-col items-start justify-start gap-2">
+        <input w-model="email" type="email" placeholder="Email" required />
+        <input w-model="username" type="text" placeholder="Username" required />
+        <input w-model="password" type="password" placeholder="Password" required minlength="8" />
+        <button type="submit" class="mt-4">Create Account</button>
       </form>
-      <div w-if="use_session.auth_error">
-        <p class="text-red-700">{{ use_session.auth_error }}</p>
+      <div w-if="use_session.error" class="flex-1 flex flex-col items-start justify-start>
+        <p class="text-red-700">{{ use_session.error }}</p>
       </div>
     </div>
   `,

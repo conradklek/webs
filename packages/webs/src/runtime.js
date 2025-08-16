@@ -52,7 +52,7 @@ export function create_app_api(renderer_options) {
        * @param {boolean} is_hydrating - Whether to hydrate existing SSR content.
        */
       mount(root_container, is_hydrating = false) {
-        vnode = create_vnode(root_component);
+        vnode = create_vnode(root_component, root_props);
         vnode.app_context = app._context;
 
         if (is_hydrating) {
@@ -72,9 +72,9 @@ export function create_app_api(renderer_options) {
 const is_on = (key) => /^on[A-Z]/.test(key);
 
 const renderer_options = {
-  create_element: (tag) => document.createElement(tag),
-  create_text: (text) => document.createTextNode(text),
-  create_comment: (text) => document.createComment(text),
+  create_element: (tag) => document?.createElement(tag),
+  create_text: (text) => document?.createTextNode(text),
+  create_comment: (text) => document?.createComment(text),
   set_element_text: (el, text) => {
     el.textContent = text;
   },
@@ -100,7 +100,7 @@ const renderer_options = {
       }
     }
   },
-  query_selector: (selector) => document.querySelector(selector),
+  query_selector: (selector) => document?.querySelector(selector),
 };
 
 export const create_app = create_app_api(renderer_options);
@@ -150,9 +150,16 @@ export function create_router(routes) {
     console.error("Router creation failed: Root element not provided.");
     return;
   }
-  const initialParams =
-    window.__INITIAL_PARAMS__ || parse_query_string(window.location.search);
-  const params = reactive(initialParams);
+
+  const webs_state = window.__WEBS_STATE__ || {};
+  const initial_params =
+    webs_state.params || parse_query_string(window.location.search);
+
+  if (webs_state.componentState) {
+    window.__INITIAL_STATE__ = webs_state.componentState;
+  }
+
+  const params = reactive(initial_params);
   let app;
   let current_route = {};
   let is_initial_load = true;
@@ -198,24 +205,29 @@ export function create_router(routes) {
       if (index < to_route.middleware.length) {
         to_route.middleware[index](to_route, from_route, next);
       } else {
-        renderComponent(to_route.component);
+        renderComponent(to_route.component, to_route.params);
       }
     };
     next();
   }
 
-  function renderComponent(PageComponent) {
+  function renderComponent(PageComponent, routeParams) {
     updateParams(window.location.search);
     current_route = { path: window.location.pathname };
 
     const should_hydrate = is_initial_load;
     is_initial_load = false;
 
-    app = create_app(PageComponent, { params });
+    const props = { params: reactive(routeParams) };
+    if (should_hydrate && webs_state.user) {
+      props.user = webs_state.user;
+    }
+
+    app = create_app(PageComponent, props);
     app.mount(root, should_hydrate);
 
-    if (should_hydrate && window.__INITIAL_STATE__) {
-      window.__INITIAL_STATE__ = null;
+    if (should_hydrate && window.__WEBS_STATE__) {
+      window.__WEBS_STATE__ = null;
     }
   }
   function handleLocalNavigation(event) {

@@ -1,4 +1,12 @@
-import { Fragment, Comment, Teleport, Text, is_function, is_object, is_string } from "./utils";
+import {
+  Fragment,
+  Comment,
+  Teleport,
+  Text,
+  is_function,
+  is_object,
+  is_string,
+} from "./utils";
 import { effect, reactive, computed } from "./reactivity";
 
 export function get_sequence(arr) {
@@ -539,23 +547,32 @@ export function create_component(
     }
   }
 
-  let state_from_server;
+  if (is_ssr && vnode.props.user && setup_result.session) {
+    setup_result.session.user = vnode.props.user;
+  }
+
+  const initial_state_from_data = state ? state.call(instance.ctx) : {};
+  let final_state;
+
   if (
     is_hydrating &&
     typeof window !== "undefined" &&
     window.__INITIAL_STATE__
   ) {
-    state_from_server = window.__INITIAL_STATE__;
+    final_state = window.__INITIAL_STATE__;
+    for (const key in setup_result) {
+      if (key in final_state) {
+        final_state[key] = setup_result[key];
+      }
+    }
+  } else {
+    final_state = { ...initial_state_from_data, ...setup_result };
   }
 
-  const initial_state =
-    state_from_server || (state ? state.call(instance.ctx) : {});
-  const combined_state = { ...setup_result, ...initial_state };
-
   if (is_ssr) {
-    instance.internal_ctx = combined_state;
+    instance.internal_ctx = final_state;
   } else {
-    instance.internal_ctx = reactive(combined_state);
+    instance.internal_ctx = reactive(final_state);
   }
 
   if (methods) {

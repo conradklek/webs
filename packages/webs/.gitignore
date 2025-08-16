@@ -1,0 +1,14 @@
+# Dependencies
+/node_modules
+/.bun
+
+# Build Output
+/dist
+
+# Temporary Files
+/.tmp
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
