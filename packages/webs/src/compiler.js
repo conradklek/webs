@@ -128,7 +128,7 @@ export function generate_render_fn(ast) {
         case NODE_TYPES.TEXT:
           return `_h(_Text, null, ${JSON.stringify(node.value)})`;
         case NODE_TYPES.INTERPOLATION:
-          return `_h(_Text, null, String(${this.gen_expr(node.expression)}))`;
+          return `_h(_Text, { 'w-dynamic': true }, String(${this.gen_expr(node.expression)}))`;
         case NODE_TYPES.COMMENT:
           return `_h(_Comment, null, ${JSON.stringify(node.value)})`;
         case NODE_TYPES.IF: {

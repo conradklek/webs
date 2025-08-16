@@ -8,4 +8,5 @@ export * from "./ssr";
 export * from "./utils";
 export * from "./parser";
 export * from "./compiler";
+export * from "./persist";
 export * from "./filesystem";

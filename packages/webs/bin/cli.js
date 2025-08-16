@@ -248,7 +248,7 @@ export async function setup_build_and_hmr({
   return manifest;
 }
 export function create_request_handler(context) {
-  return async function(req) {
+  return async function (req) {
     const {
       db,
       fs,
@@ -306,7 +306,7 @@ export function create_request_handler(context) {
       const webs_state = {
         user,
         params,
-        componentState
+        componentState,
       };
 
       const full_html = `<!DOCTYPE html>
@@ -315,10 +315,11 @@ export function create_request_handler(context) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${component_to_render.name || "Webs App"}</title>
-    ${manifest.css
-          ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
-          : ""
-        }
+    ${
+      manifest.css
+        ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
+        : ""
+    }
   </head>
   <body>
     <div id="root" style="display: contents">${app_html}</div>

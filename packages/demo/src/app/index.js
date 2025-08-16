@@ -7,7 +7,7 @@ export default {
   name: "Home",
   state() {
     return {
-      count: 0,
+      $count: 0,
     };
   },
   setup() {
@@ -17,7 +17,7 @@ export default {
   },
   methods: {
     increment() {
-      this.count++;
+      this.$count++;
     },
   },
   styles: `
@@ -55,7 +55,7 @@ export default {
       </div>
       <div w-else class="flex-1 flex flex-col items-start justify-start gap-2">
         <button type="button" @click="increment">
-          This button has been clicked {{ count }} time{{ count === 1 ? '' : 's' }}!
+          This button has been clicked {{ $count }} time{{ $count === 1 ? '' : 's' }}!
         </button>
       </div>
     </div>

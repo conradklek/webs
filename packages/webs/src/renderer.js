@@ -8,6 +8,7 @@ import {
   is_string,
 } from "./utils";
 import { effect, reactive, computed } from "./reactivity";
+import { get_persisted_state, persist_state } from "./persist.js";
 
 export function get_sequence(arr) {
   if (arr.length === 0) return [];
@@ -85,19 +86,53 @@ export function create_renderer(options) {
         return hydrate_children(children, dom_node.parentElement, dom_node);
       case Text: {
         const vnode_text = String(children);
-        if (dom_node.nodeType === 3 /* TEXT_NODE */) {
-          const dom_text = dom_node.textContent;
-          if (dom_text.startsWith(vnode_text)) {
-            if (dom_text.length > vnode_text.length) {
-              dom_node.splitText(vnode_text.length);
-            }
+
+        if (props && props["w-dynamic"]) {
+          if (dom_node.nodeType !== 8 || dom_node.data !== "[") {
+            console.warn(
+              "Hydration mismatch: expected dynamic text opening comment.",
+            );
             return dom_node.nextSibling;
           }
+
+          const text_node = dom_node.nextSibling;
+          if (!text_node || text_node.nodeType !== 3) {
+            console.warn(
+              "Hydration mismatch: expected text node after opening comment.",
+            );
+            return dom_node.nextSibling;
+          }
+
+          if (text_node.textContent !== vnode_text) {
+            text_node.textContent = vnode_text;
+          }
+          vnode.el = text_node;
+
+          const closing_comment = text_node.nextSibling;
+          if (
+            !closing_comment ||
+            closing_comment.nodeType !== 8 ||
+            closing_comment.data !== "]"
+          ) {
+            console.warn(
+              "Hydration mismatch: expected dynamic text closing comment.",
+            );
+            return dom_node.nextSibling;
+          }
+          return closing_comment.nextSibling;
         }
+
+        if (dom_node.nodeType === 3) {
+          if (dom_node.textContent !== vnode_text) {
+            console.warn(
+              `Hydration text mismatch: "${vnode_text}" vs DOM: "${dom_node.textContent}"`,
+            );
+          }
+          return dom_node.nextSibling;
+        }
+
         console.warn(
-          "Hydration text mismatch:",
-          `"${vnode_text}"`,
-          `vs DOM: "${dom_node.textContent}"`,
+          `Hydration mismatch: expected text node, but got nodeType ${dom_node.nodeType}`,
         );
         return dom_node.nextSibling;
       }
@@ -569,10 +604,33 @@ export function create_component(
     final_state = { ...initial_state_from_data, ...setup_result };
   }
 
+  if (!is_ssr) {
+    for (const key in final_state) {
+      if (key.startsWith("$")) {
+        const storage_key = `${instance.type.name}:${key}`;
+        const persisted_value = get_persisted_state(storage_key);
+        if (persisted_value !== null) {
+          final_state[key] = persisted_value;
+        }
+      }
+    }
+  }
+
   if (is_ssr) {
     instance.internal_ctx = final_state;
   } else {
     instance.internal_ctx = reactive(final_state);
+  }
+
+  if (!is_ssr) {
+    for (const key in instance.internal_ctx) {
+      if (key.startsWith("$")) {
+        const storage_key = `${instance.type.name}:${key}`;
+        effect(() => {
+          persist_state(storage_key, instance.ctx[key]);
+        });
+      }
+    }
   }
 
   if (methods) {

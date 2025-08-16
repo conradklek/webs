@@ -47,7 +47,7 @@ function escape_html(str) {
 function render_props(props) {
   let result = "";
   for (const key in props) {
-    if (key === "key" || key.startsWith("on")) continue;
+    if (key === "key" || key.startsWith("on") || key === "w-dynamic") continue;
     const value = props[key];
     if (value === true || value === "") {
       result += ` ${key}`;
@@ -81,7 +81,9 @@ async function render_vnode(vnode, parent_component, context) {
 
   switch (type) {
     case Text:
-      return escape_html(children);
+      const is_dynamic = props && props["w-dynamic"];
+      const content = escape_html(children);
+      return is_dynamic ? `<!--[-->${content}<!--]-->` : content;
     case Comment:
       return `<!--${escape_html(children)}-->`;
     case Fragment:
