@@ -1,33 +1,43 @@
 # webs.js
 
-A JavaScript Framework.
+A JavaScript framework.
+
+---
 
 ## Philosophy
 
-The webs.js framework is predicated on a foundational principle of radical efficiency. Our methodology is informed by a critical understanding of network protocols, specifically the mechanics of TCP slow start. As detailed in the seminal article, ["Why your website should be under 14kB in size"](https://endtimes.dev/why-your-website-should-be-under-14kb-in-size/), the initial congestion window of a TCP connection is typically limited to 10 packets.
+The design of webs.js is dictated by a single, foundational principle: the initial congestion window of a TCP connection. A payload exceeding approximately 14kB necessitates an additional network round trip, introducing significant, avoidable latency.
 
-This constraint dictates that a payload exceeding approximately 14kB necessitates an additional round trip, introducing significant, avoidable latency. The webs.js framework is therefore engineered from first principles to ensure that the critical-path assets of an application remain well within this 14kB threshold. By adhering to this directive, we facilitate a near-instantaneous initial render, providing a user experience that is not merely fast, but fundamentally more efficient at the transport layer. This is our core tenet: performance is not a feature, but a prerequisite.
+Webs is therefore engineered from the ground up to ensure that the critical-path assets of an application remain well within this 14kB threshold. By adhering to this directive, we facilitate a near-instantaneous initial render, providing a user experience that is not merely fast, but fundamentally more efficient at the transport layer.
+
+**Performance is not a feature, but a prerequisite.**
+
+---
 
 ## Features
 
-- **Performance:** A sub-14kb gzipped footprint, engineered for near-instant initial loads in accordance with TCP slow start principles.
-- **Client-Side Hydration:** Seamlessly takes over on the client for a rich, interactive experience.
-- **Built-in Reactivity:** A simple, powerful reactivity system (reactive, computed) inspired by the best.
-- **Integrated Database:** Comes with a ready-to-use SQLite database layer with a built-in migration system.
-- **Authentication Included:** Helpers for session management and user authentication out of the box.
-- **File-based Routing:** Simple and intuitive routing based on your file structure.
-- **All-in-One Tooling:** Includes a dev server, HMR, asset bundling with Tailwind CSS, and more, with zero configuration.
+- **Sub-14kB Footprint**: A minimal gzipped footprint, engineered for near-instant loads.
+- **Server-Side Rendering (SSR)**: Pre-renders pages on the server for fast initial loads and excellent SEO, then seamlessly hydrates into a full SPA.
+- **Component-Based**: Build your UI with simple, object-based components that encapsulate state, logic, and markup.
+- **Integrated Tooling**: A zero-configuration dev server with HMR, asset bundling, and more.
+- **Tailwind CSS v4 Engine**: Deep, component-scoped integration with the next generation of Tailwind CSS.
+- **Server Actions**: Securely call server-side logic directly from your client-side components.
+- **Built-in Database**: Includes a ready-to-use SQLite database layer with a simple migration system.
+- **Authentication**: Comes with helpers and API endpoints for session management and user authentication out of the box.
+- **File-based Routing**: Intuitive routing that maps files in your `src/app` directory to URL routes.
 
-## Tutorial
+---
 
-The best way to start a new `webs` project is by using the official scaffolding tool.
+## Getting Started
+
+The best way to start a new Webs project is by using the official scaffolding tool.
 
 ```bash
 # Create a new project
-bunx create-webs-app my-awesome-project
+bunx create-webs-app my-project
 
 # Navigate into your project
-cd my-awesome-project
+cd my-project
 
 # Install dependencies
 bun install
@@ -40,25 +50,22 @@ Your new site is now running at `http://localhost:3000`!
 
 ---
 
-## Concepts
-
-`webs` uses a simple, object-based component syntax that will feel familiar and intuitive.
+## Core Concepts
 
 ### Components
 
 A component is a plain JavaScript object with `name`, `state`, `methods`, and a `template`.
 
 **`src/app/index.js`**
-```javascript
-import { use_session } from "../use/session.js";
 
+```javascript
 export default {
   name: "Home",
   // State is a function that returns a reactive object.
   state: () => ({
     count: 0,
   }),
-  // Methods have `this` bound to the component's state.
+  // Methods have `this` bound to the component's context.
   methods: {
     increment() {
       this.count++;
@@ -67,7 +74,7 @@ export default {
   // Write your HTML directly in a template string.
   template: `
     <div>
-      <h1>Home Page</h1>
+      <h1>Welcome to Webs!</h1>
       <button @click="increment">
         Clicked {{ count }} time{{ count === 1 ? '' : 's' }}
       </button>
@@ -78,48 +85,48 @@ export default {
 
 ### Template Syntax
 
-The template compiler supports familiar directives:
-- **Interpolation**: `{{ count }}`
+The template compiler supports familiar directives for creating dynamic views:
+
+- **Text Interpolation**: `{{ count }}`
+- **Attribute Binding**: `:disabled="isDisabled"`
 - **Event Binding**: `@click="increment"`
 - **Two-Way Binding**: `w-model="email"`
 - **Conditionals**: `w-if="..."` and `w-else`
 
-### State Management
+### Global State Management
 
-For shared state, `webs` provides a `create_store` utility.
+For shared state, Webs provides a `create_store` utility.
 
 **`src/use/session.js`**
+
 ```javascript
-import { create_store } from "webs/store.js";
+import { create_store } from "@conradklek/webs";
 
 export const use_session = create_store({
   state: () => ({
-    current_user: null,
-    auth_error: null,
+    user: null,
+    error: null,
   }),
   getters: {
     is_logged_in() {
-      return !!this.current_user;
+      return !!this.user;
     },
   },
   actions: {
     async login(email, password) {
-      // ... implementation
+      // ... implementation calls /api/auth/login
     },
-    async logout() {
-      // ... implementation
-    }
+    // ... other actions
   },
 });
 ```
-
-This store can then be imported and used in any component.
 
 ### Database & Migrations
 
 Define your database schema and migrations in a simple configuration file.
 
 **`src/sql.js`**
+
 ```javascript
 export default {
   name: "app.db", // Your SQLite database file
@@ -145,5 +152,4 @@ export default {
 
 ## License
 
-MIT License. See the `LICENSE` file for details.
-
+MIT
