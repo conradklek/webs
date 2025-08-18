@@ -138,9 +138,9 @@ export function parse_query_string(queryString) {
 /**
  * Creates and manages a client-side router.
  * Handles navigation, route loading, middleware, and component rendering.
- * @param {object} routes - An object where keys are paths and values are component definitions.
- * A route definition can also include middleware.
- * e.g., { '/': { component: HomeComponent, middleware: [auth] } }
+ * @param {object} routes - An object where keys are paths and values are functions
+ * that return a promise resolving to a component module.
+ * e.g., { '/': () => import('./Home.js') }
  */
 export function create_router(routes) {
   if (typeof window === "undefined") return;
@@ -183,32 +183,47 @@ export function create_router(routes) {
   async function loadRoute() {
     const to_path = window.location.pathname;
     const from_route = current_route;
-    const route_definition = routes[to_path];
-    if (!route_definition) {
+    const route_loader = routes[to_path];
+
+    if (!route_loader) {
       console.error(`No component found for path: ${to_path}`);
       root.innerHTML = `<div>404 - Not Found</div>`;
       return;
     }
-    const to_route = {
-      path: to_path,
-      params: parse_query_string(window.location.search),
-      component: route_definition.component || route_definition,
-      middleware: route_definition.middleware || [],
-    };
-    let index = -1;
-    const next = (path) => {
-      if (path) {
-        navigate(path);
-        return;
-      }
-      index++;
-      if (index < to_route.middleware.length) {
-        to_route.middleware[index](to_route, from_route, next);
-      } else {
-        renderComponent(to_route.component, to_route.params);
-      }
-    };
-    next();
+
+    try {
+      const module = await route_loader();
+      const component = module.default;
+      const middleware = module.middleware || [];
+
+      const to_route = {
+        path: to_path,
+        params: parse_query_string(window.location.search),
+        component: component,
+        middleware: middleware,
+      };
+
+      let index = -1;
+      const next = (path) => {
+        if (path) {
+          navigate(path);
+          return;
+        }
+        index++;
+        if (index < to_route.middleware.length) {
+          to_route.middleware[index](to_route, from_route, next);
+        } else {
+          renderComponent(to_route.component, to_route.params);
+        }
+      };
+      next();
+    } catch (error) {
+      console.error(
+        `Failed to load route component for path: ${to_path}`,
+        error,
+      );
+      root.innerHTML = `<div>Error loading page.</div>`;
+    }
   }
 
   function renderComponent(PageComponent, routeParams) {
@@ -230,6 +245,7 @@ export function create_router(routes) {
       window.__WEBS_STATE__ = null;
     }
   }
+
   function handleLocalNavigation(event) {
     const anchorElement = event.target.closest("a");
     if (anchorElement && anchorElement.host === window.location.host) {

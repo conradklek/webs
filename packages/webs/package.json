@@ -1,6 +1,6 @@
 {
   "name": "@conradklek/webs",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "A JavaScript framework.",
   "bin": {
     "webs": "bin/cli.js"
@@ -23,10 +23,11 @@
     "./*": "./*.js"
   },
   "scripts": {
-    "build:js": "bun build ./src/index.js --outfile=./dist/index.js --format=cjs && bun build ./src/index.js --outfile=./dist/index.mjs --format=esm",
+    "build:js": "bun build ./src/index.js --outfile=./dist/index.js --format=cjs --minify --sourcemap=inline && bun build ./src/index.js --outfile=./dist/index.mjs --format=esm --minify --sourcemap=inline",
     "build:types": "tsc",
     "build": "rm -rf dist && bun run build:js && bun run build:types",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "analyze": "rm -rf dist && bun build ./src/index.js --outdir=./dist --format=esm --naming='index.mjs' --minify --sourcemap=external && npx source-map-explorer dist/index.mjs"
   },
   "dependencies": {
     "bun-plugin-tailwind": "^0.0.15"
@@ -36,6 +37,7 @@
   },
   "devDependencies": {
     "prettier": "^3.3.2",
+    "source-map-explorer": "^2.5.3",
     "typescript": "^5.4.5"
   }
 }
