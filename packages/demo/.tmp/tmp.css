@@ -68,7 +68,7 @@
     }
 @layer components {
       .btn {
-        @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+        @apply inline-flex items-center justify-center whitespace-nowrap rounded text-sm tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
       }
 
       .btn-default {
@@ -91,23 +91,48 @@
       }
 
       .btn-size-default {
-        @apply h-10 px-4 py-2;
+        @apply h-8 px-2 py-1;
       }
       .btn-size-sm {
-        @apply h-9 rounded-md px-3;
+        @apply h-7 rounded-md px-1.5;
       }
       .btn-size-lg {
-        @apply h-11 rounded-md px-8;
+        @apply h-10 px-2;
       }
       .btn-size-icon {
-        @apply h-10 w-10;
+        @apply w-8 h-8;
+      }
+    }
+@layer components {
+      .card-footer {
+        @apply flex items-center p-6 pt-0;
+      }
+    }
+@layer components {
+      .card-title {
+        @apply text-lg font-medium leading-none;
+      }
+    }
+@layer components {
+      .card-header {
+        @apply flex flex-col space-y-1.5 p-6;
+      }
+    }
+@layer components {
+      .card-content {
+        @apply p-6 pt-0;
+      }
+    }
+@layer components {
+      .card-description {
+        @apply text-sm text-muted-foreground;
+      }
+    }
+@layer components {
+      .card {
+        @apply rounded-lg border bg-card text-card-foreground;
       }
     }
 @layer base {
-      h1     { @apply font-medium; }
-      button { @apply cursor-pointer active:opacity-50 whitespace-nowrap; }
-      a      { @apply underline cursor-pointer active:opacity-50 whitespace-nowrap; }
-    }
-    @layer components {
-      .button-primary { @apply bg-primary text-white px-1.5 rounded-md cursor-pointer active:opacity-50; }
+      a { @apply underline cursor-pointer active:opacity-50 whitespace-nowrap; }
     }

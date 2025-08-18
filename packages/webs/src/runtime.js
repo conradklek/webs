@@ -4,18 +4,23 @@ import { compile } from "./compiler";
 
 /**
  * Recursively compiles templates for a component and its sub-components.
- * If a component has a template string but no render function, this will compile
- * the template into a render function.
+ * This "leaves-first" approach with registry flattening is crucial for ensuring
+ * parent components are aware of all nested descendant components at compile time.
  * @param {object} component_def - The component definition object.
  */
 function compile_templates(component_def) {
-  if (component_def.template && !component_def.render) {
-    component_def.render = compile(component_def);
-  }
   if (component_def.components) {
     for (const key in component_def.components) {
-      compile_templates(component_def.components[key]);
+      const sub_component = component_def.components[key];
+      compile_templates(sub_component);
+      if (sub_component.components) {
+        Object.assign(component_def.components, sub_component.components);
+      }
     }
+  }
+
+  if (component_def.template && !component_def.render) {
+    component_def.render = compile(component_def);
   }
 }
 

@@ -72,6 +72,15 @@ export function create_renderer(options) {
   };
 
   const hydrate_node = (vnode, dom_node) => {
+    const isDynamicText = vnode.type === Text && vnode.props?.["w-dynamic"];
+    while (
+      dom_node &&
+      ((dom_node.nodeType === 3 && !dom_node.textContent.trim()) ||
+        (dom_node.nodeType === 8 && vnode.type !== Comment && !isDynamicText))
+    ) {
+      dom_node = dom_node.nextSibling;
+    }
+
     if (!dom_node) {
       console.warn("DOM Mismatch during hydration.");
       return null;

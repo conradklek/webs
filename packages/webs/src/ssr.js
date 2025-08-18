@@ -6,6 +6,7 @@ import {
   Teleport,
 } from "./renderer";
 import { is_string, is_object, is_function } from "./utils";
+import { compile } from "./compiler.js";
 
 const VOID_ELEMENTS = new Set([
   "area",
@@ -23,6 +24,36 @@ const VOID_ELEMENTS = new Set([
   "track",
   "wbr",
 ]);
+
+/**
+ * Recursively compiles templates and flattens the component registry.
+ * This function traverses a component definition from the "leaves" of the
+ * component tree upwards. It compiles the template if a render function
+ * doesn't already exist.
+ *
+ * CRITICAL FIX: It flattens the component registry by merging child components
+ * into their parent's `components` object using `Object.assign`. This ensures
+ * that when a parent component is compiled and rendered on the server, it has
+ * full awareness of all possible descendant components, preventing "invalid vnode"
+ * errors and ensuring components like `CardFooter` are rendered correctly during SSR.
+ *
+ * @param {object} component_def - The component definition object.
+ */
+function compile_templates(component_def) {
+  if (component_def.components) {
+    for (const key in component_def.components) {
+      const sub_component = component_def.components[key];
+      compile_templates(sub_component);
+      if (sub_component.components) {
+        Object.assign(component_def.components, sub_component.components);
+      }
+    }
+  }
+
+  if (!component_def.render && component_def.template) {
+    component_def.render = compile(component_def);
+  }
+}
 
 function escape_html(str) {
   if (str == null) return "";
@@ -99,6 +130,13 @@ async function render_vnode(vnode, parent_component, context) {
         }
         return html;
       } else if (is_object(type)) {
+        if (!type.render) {
+          console.warn(
+            `Component "${type.name || "Anonymous"}" was not compiled correctly before SSR.`,
+          );
+          compile_templates(type);
+        }
+
         const instance = create_component(
           vnode,
           parent_component,
@@ -109,10 +147,6 @@ async function render_vnode(vnode, parent_component, context) {
           context.component_state = instance.internal_ctx;
         }
 
-        if (!instance.render && type.template) {
-          const { compile } = await import("./compiler.js");
-          instance.render = compile(type);
-        }
         if (is_function(instance.render)) {
           const sub_tree = instance.render.call(instance.ctx, instance.ctx);
           return await render_vnode(sub_tree, instance, context);
@@ -135,6 +169,9 @@ async function render_vnode(vnode, parent_component, context) {
  */
 export async function render_to_string(vnode) {
   try {
+    if (vnode && vnode.type) {
+      compile_templates(vnode.type);
+    }
     const context = { component_state: {} };
     const html = await render_vnode(vnode, null, context);
     return { html, componentState: context.component_state };

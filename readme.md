@@ -75,7 +75,7 @@ export default {
   template: `
     <div>
       <p>Count: {{ count }}</p>
-      <button @click="increment">Increment</button>
+      <button type="button" @click="increment">Increment</button>
     </div>
   `,
 };
@@ -101,7 +101,7 @@ export default {
 
 #### Registering Child Components
 
-To use a component within another, you must import it and register it in the `components` object.
+To use a component within another, you must import it and register it in the `components` object. This makes the child component's tag available in the parent's template.
 
 ```javascript
 // src/app/index.js
@@ -126,27 +126,86 @@ export default {
 To pass content _into_ a component, use the `<slot>` tag. Any child elements you place inside your custom component tag in the parent will be rendered where the `<slot>` tag is.
 
 ```javascript
-// src/components/Card.js
+// src/components/Wrapper.js
 export default {
-  name: "Card",
+  name: "Wrapper",
   template: `
-    <div class="card">
+    <div class="wrapper">
       <slot></slot>
     </div>
   `
 }
 
 // src/app/index.js
-import Card from '../components/Card.js';
+import Wrapper from '../components/Wrapper.js';
 export default {
   name: "HomePage",
-  components: { Card },
+  components: { Wrapper },
   template: `
-    <Card>
-      <p>This content will be placed inside the card.</p>
-    </Card>
+    <Wrapper>
+      <p>This content will be placed inside the wrapper.</p>
+    </Wrapper>
   `
 }
+```
+
+#### Composable Components: The Card Example
+
+A powerful pattern in Webs is creating small, composable components that work together. The `Card` component is a perfect example. It's built from several smaller pieces (`CardHeader`, `CardTitle`, `CardContent`, etc.) that are bundled together.
+
+Here's how you would define the main `Card` component, which registers all its sub-components:
+
+```javascript
+// src/components/card/index.js
+import Card from "./card.js";
+import CardHeader from "./card-header.js";
+import CardTitle from "./card-title.js";
+import CardDescription from "./card-description.js";
+import CardContent from "./card-content.js";
+import CardFooter from "./card-footer.js";
+
+export default {
+  ...Card, // Spreads the base Card styles and template
+  name: "Card",
+  components: {
+    CardHeader,
+    CardTitle,
+    CardDescription,
+    CardContent,
+    CardFooter,
+  },
+};
+```
+
+Now, when you use the `Card` component in a page, you have access to all the sub-component tags within its template, allowing for clean, semantic markup:
+
+```javascript
+// src/app/index.js
+import Card from "../components/card/index.js";
+import Button from "../components/Button.js";
+
+export default {
+  name: "Dashboard",
+  components: {
+    Card,
+    Button,
+  },
+  template: `
+    <Card>
+      <CardHeader>
+        <CardTitle>Create project</CardTitle>
+        <CardDescription>Deploy your new project in one-click.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p>This is the main content area of the card. You can place forms, text, or other components here.</p>
+      </CardContent>
+      <CardFooter>
+        <Button variant="outline">Cancel</Button>
+        <Button class="ml-auto">Deploy</Button>
+      </CardFooter>
+    </Card>
+  `,
+};
 ```
 
 #### Fallthrough Attributes
@@ -255,7 +314,7 @@ Webs templates are standard HTML supercharged with a simple syntax for data bind
   \`\`\`
 - **Event Handling**: Use the `@` symbol to listen for DOM events.
   \`\`\`html
-  <button @click="increment">Click me</button>
+  <button type="button" @click="increment">Click me</button>
   \`\`\`
 
 ### 8. Styling with Tailwind CSS

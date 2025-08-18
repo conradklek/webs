@@ -205,7 +205,23 @@ return ${generated_code || "null"};
 export class Compiler {
   constructor(component_def, options = null) {
     this.definition = component_def;
-    this.components = component_def.components || {};
+
+    const all_components = {};
+    const collect_components = (comps) => {
+      if (!comps) return;
+      for (const key in comps) {
+        const comp_def = comps[key];
+        if (comp_def) {
+          all_components[key] = comp_def;
+          if (comp_def.components) {
+            collect_components(comp_def.components);
+          }
+        }
+      }
+    };
+    collect_components(component_def.components);
+    this.components = all_components;
+
     this.component_tags = new Set(Object.keys(this.components));
     this.options = options;
   }
@@ -274,7 +290,8 @@ export class Compiler {
     };
     const text = unescape(node.content);
     if (!text.includes("{{")) {
-      return text.trim() ? { type: NODE_TYPES.TEXT, value: text } : null;
+      const trimmed_text = text.trim();
+      return trimmed_text ? { type: NODE_TYPES.TEXT, value: text } : null;
     }
 
     const mustache_regex = /\{\{([^}]+)\}\}/g;
@@ -285,7 +302,7 @@ export class Compiler {
     while ((match = mustache_regex.exec(text))) {
       if (match.index > last_index) {
         const text_content = text.substring(last_index, match.index);
-        if (text_content.trim()) {
+        if (text_content) {
           tokens.push({ type: NODE_TYPES.TEXT, value: text_content });
         }
       }
@@ -297,7 +314,7 @@ export class Compiler {
     }
     if (last_index < text.length) {
       const text_content = text.substring(last_index);
-      if (text_content.trim()) {
+      if (text_content) {
         tokens.push({ type: NODE_TYPES.TEXT, value: text_content });
       }
     }
@@ -375,7 +392,11 @@ export class Compiler {
       }
       const transformed_node = this._transform_node(child);
       if (transformed_node) {
-        transformed.push(transformed_node);
+        if (Array.isArray(transformed_node)) {
+          transformed.push(...transformed_node);
+        } else {
+          transformed.push(transformed_node);
+        }
       }
     }
     return transformed;

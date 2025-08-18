@@ -18,7 +18,7 @@ export default {
         <div class="w-full flex flex-row items-center justify-end gap-4">
           <h1>Profile</h1>
           <span>|</span>
-          <button type="button" @click="session.logout()" class="button-primary">Logout</button>
+          <button type="button" @click="session.logout()" class="bg-primary text-white px-1.5 rounded-md cursor-pointer active:opacity-50">Logout</button>
         </div>
       </div>
       <div w-if="session.user.username" class="flex-1 flex flex-col items-start justify-start gap-2">

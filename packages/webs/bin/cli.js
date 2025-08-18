@@ -203,22 +203,19 @@ async function compress_assets(outputs) {
   return sizes;
 }
 
-export async function setup_build_and_hmr({
+/**
+ * Sets up a file watcher for Hot Module Replacement (HMR).
+ * This function only handles watching and rebuilding; it does not
+ * perform the initial build.
+ * @param {object} options - Configuration for the watcher.
+ */
+export function setup_hmr_watcher({
   cwd,
   outdir,
   server,
   on_rebuild,
   entrypoint,
 }) {
-  let build_result = await build_assets(outdir, entrypoint);
-  if (!build_result) process.exit(1);
-
-  let manifest = {
-    js: build_result.outputs.find((o) => o.path.endsWith(".js"))?.path,
-    css: build_result.outputs.find((o) => o.path.endsWith(".css"))?.path,
-    sizes: {},
-  };
-
   const srcDir = resolve(cwd, "src");
   console.log(`[HMR] Watching for changes in ${srcDir}`);
   let isRebuilding = false;
@@ -240,12 +237,11 @@ export async function setup_build_and_hmr({
 
     const new_build_result = await build_assets(outdir, entrypoint);
     if (new_build_result) {
-      manifest.js = new_build_result.outputs.find((o) =>
-        o.path.endsWith(".js"),
-      )?.path;
-      manifest.css = new_build_result.outputs.find((o) =>
-        o.path.endsWith(".css"),
-      )?.path;
+      const manifest = {
+        js: new_build_result.outputs.find((o) => o.path.endsWith(".js"))?.path,
+        css: new_build_result.outputs.find((o) => o.path.endsWith(".css"))
+          ?.path,
+      };
       await on_rebuild({ manifest, routes: new_routes });
       server.publish(HMR_TOPIC, "reload");
     }
@@ -253,11 +249,10 @@ export async function setup_build_and_hmr({
       isRebuilding = false;
     }, 100);
   });
-  return manifest;
 }
 
 export function create_request_handler(context) {
-  return async function (req) {
+  return async function(req) {
     const {
       db,
       fs,
@@ -265,7 +260,6 @@ export function create_request_handler(context) {
       app_routes,
       manifest,
       outdir,
-      is_ready,
       server,
     } = context;
     const url = new URL(req.url);
@@ -296,7 +290,7 @@ export function create_request_handler(context) {
     );
     if (asset_response) return asset_response;
 
-    if (!is_ready) {
+    if (!context.is_ready) {
       return new Response("Server is starting, please wait...", {
         status: 503,
         headers: { Refresh: "1" },
@@ -345,11 +339,10 @@ export function create_request_handler(context) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${component_to_render.name || "Webs App"}</title>
-    ${
-      manifest.css
-        ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
-        : ""
-    }
+    ${manifest.css
+          ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
+          : ""
+        }
   </head>
   <body>
     <div id="root" style="display: contents">${app_html}</div>
@@ -476,10 +469,25 @@ async function main() {
       sizes: asset_sizes,
     };
     server_context.is_ready = true;
+  } else {
+    console.log("--- Performing initial build for development ---");
+    const initial_build_result = await build_assets(OUTDIR, TMP_APP_JS);
+    if (!initial_build_result) process.exit(1);
+
+    server_context.manifest = {
+      js: initial_build_result.outputs.find((o) => o.path.endsWith(".js"))
+        ?.path,
+      css: initial_build_result.outputs.find((o) => o.path.endsWith(".css"))
+        ?.path,
+    };
+    // FIX: Set is_ready to true only AFTER the initial build is complete.
+    server_context.is_ready = true;
   }
 
   const request_handler = create_request_handler(server_context);
 
+  // FIX: Moved server initialization down, so it only starts after the
+  // initial build has populated the manifest.
   const server = Bun.serve({
     port: PORT,
     development: !IS_PROD,
@@ -487,15 +495,15 @@ async function main() {
     websocket: IS_PROD
       ? undefined
       : {
-          open(ws) {
-            console.log("[HMR] WebSocket client connected");
-            ws.subscribe(HMR_TOPIC);
-          },
-          close(ws) {
-            console.log("[HMR] WebSocket client disconnected");
-            ws.unsubscribe(HMR_TOPIC);
-          },
+        open(ws) {
+          console.log("[HMR] WebSocket client connected");
+          ws.subscribe(HMR_TOPIC);
         },
+        close(ws) {
+          console.log("[HMR] WebSocket client disconnected");
+          ws.unsubscribe(HMR_TOPIC);
+        },
+      },
     error(error) {
       console.error(error);
       return new Response("Internal Server Error", { status: 500 });
@@ -506,7 +514,7 @@ async function main() {
 
   if (!IS_PROD) {
     console.log("--- Running in development mode with HMR ---");
-    const initial_manifest = await setup_build_and_hmr({
+    setup_hmr_watcher({
       cwd: CWD,
       outdir: OUTDIR,
       server: server,
@@ -516,8 +524,6 @@ async function main() {
         server_context.app_routes = new_routes;
       },
     });
-    server_context.manifest = initial_manifest;
-    server_context.is_ready = true;
   }
 
   console.log(`--- Server ready at http://localhost:${PORT} ---`);
