@@ -5,7 +5,7 @@ import { resolve, join, basename } from "path";
 import tailwind from "bun-plugin-tailwind";
 import { Database } from "bun:sqlite";
 import { readFileSync } from "fs";
-import * as Webs from "../src";
+import * as Webs from "../src/server.js";
 import { watch } from "fs";
 import { Glob } from "bun";
 
@@ -172,6 +172,9 @@ async function compress_assets(outputs) {
   return sizes;
 }
 
+/**
+ * Sets up the development server with HMR.
+ */
 export async function setup_build_and_hmr({
   cwd,
   outdir,
@@ -226,7 +229,7 @@ export async function setup_build_and_hmr({
 }
 
 export function create_request_handler(context) {
-  return async function (req) {
+  return async function(req) {
     const {
       db,
       fs,
@@ -314,11 +317,10 @@ export function create_request_handler(context) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${component_to_render.name || "Webs App"}</title>
-    ${
-      manifest.css
-        ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
-        : ""
-    }
+    ${manifest.css
+          ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
+          : ""
+        }
   </head>
   <body>
     <div id="root" style="display: contents">${app_html}</div>
@@ -456,15 +458,15 @@ async function main() {
     websocket: IS_PROD
       ? undefined
       : {
-          open(ws) {
-            console.log("[HMR] WebSocket client connected");
-            ws.subscribe(HMR_TOPIC);
-          },
-          close(ws) {
-            console.log("[HMR] WebSocket client disconnected");
-            ws.unsubscribe(HMR_TOPIC);
-          },
+        open(ws) {
+          console.log("[HMR] WebSocket client connected");
+          ws.subscribe(HMR_TOPIC);
         },
+        close(ws) {
+          console.log("[HMR] WebSocket client disconnected");
+          ws.unsubscribe(HMR_TOPIC);
+        },
+      },
     error(error) {
       console.error(error);
       return new Response("Internal Server Error", { status: 500 });
