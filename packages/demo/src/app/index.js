@@ -1,5 +1,6 @@
 import { use_session } from "../use/session.js";
 import { use_logger } from "../use/logger.js";
+import Button from "../gui/button.js";
 
 export const middleware = [use_logger];
 
@@ -54,10 +55,13 @@ export default {
         <p>Welcome back, @{{ session.user.username }}!</p>
       </div>
       <div w-else class="flex-1 flex flex-col items-start justify-start gap-2">
-        <button type="button" @click="increment">
+        <Button type="button" @click="increment">
           This button has been clicked {{ $count }} time{{ $count === 1 ? '' : 's' }}!
-        </button>
+        </Button>
       </div>
     </div>
   `,
+  components: {
+    Button,
+  },
 };

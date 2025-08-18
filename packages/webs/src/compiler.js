@@ -12,6 +12,7 @@ export const NODE_TYPES = {
   FRAGMENT: 6,
   IF: 7,
   FOR: 8,
+  SLOT: 9,
 };
 
 export const ATTR_TYPES = {
@@ -117,10 +118,14 @@ export function generate_render_fn(ast) {
         }
         case NODE_TYPES.FRAGMENT:
           return `_h(_Fragment, null, ${this.gen_children(node.children)})`;
-        case NODE_TYPES.COMPONENT:
+        case NODE_TYPES.COMPONENT: {
+          const slots = `{ default: () => ${this.gen_children(
+            node.children,
+          )} }`;
           return `_h(_ctx.${node.tag_name}, ${this.gen_props(
             node.properties,
-          )}, ${this.gen_children(node.children)})`;
+          )}, ${slots})`;
+        }
         case NODE_TYPES.ELEMENT:
           return `_h('${node.tag_name}', ${this.gen_props(
             node.properties,
@@ -131,6 +136,11 @@ export function generate_render_fn(ast) {
           return `_h(_Text, { 'w-dynamic': true }, String(${this.gen_expr(node.expression)}))`;
         case NODE_TYPES.COMMENT:
           return `_h(_Comment, null, ${JSON.stringify(node.value)})`;
+        case NODE_TYPES.SLOT: {
+          return `_h(_Fragment, null, _ctx.$slots.default ? _ctx.$slots.default() : ${this.gen_children(
+            node.children,
+          )})`;
+        }
         case NODE_TYPES.IF: {
           const gen_branch = (branch) => {
             if (branch.condition) {
@@ -195,7 +205,8 @@ return ${generated_code || "null"};
 export class Compiler {
   constructor(component_def, options = null) {
     this.definition = component_def;
-    this.component_tags = new Set(Object.keys(component_def.components || {}));
+    this.components = component_def.components || {};
+    this.component_tags = new Set(Object.keys(this.components));
     this.options = options;
   }
 
@@ -398,13 +409,21 @@ export class Compiler {
   }
 
   _transform_native_element(el) {
-    const registered_comp_name = [...this.component_tags].find(
-      (c) => c.toLowerCase() === el.tagName.toLowerCase(),
+    if (el.tagName === "slot") {
+      return {
+        type: NODE_TYPES.SLOT,
+        children: this._transform_children(el.children),
+      };
+    }
+
+    const registered_comp_key = [...this.component_tags].find(
+      (key) => key.toLowerCase() === el.tagName.toLowerCase(),
     );
-    const is_component = !!registered_comp_name;
+    const is_component = !!registered_comp_key;
+
     const node = {
       type: is_component ? NODE_TYPES.COMPONENT : NODE_TYPES.ELEMENT,
-      tag_name: is_component ? registered_comp_name : el.tagName,
+      tag_name: is_component ? registered_comp_key : el.tagName,
       properties: this._process_attributes(el.attributes),
       children: this._transform_children(el.children),
     };

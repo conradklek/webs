@@ -35,9 +35,23 @@ Your new site is now running at `http://localhost:3000`!
 
 ## Core Concepts
 
-### 1. Components
+### 1. File-Based Routing
 
-Components are the heart of a Webs application. They are plain JavaScript objects that encapsulate their own state, logic, and markup. Every component is the default export from a `.js` file and is defined by four key properties:
+Routing in Webs is simple and intuitive. The framework automatically maps files in the `src/app` directory to URL routes. These files are your "page" components.
+
+- `src/app/index.js` → `/`
+- `src/app/about.js` → `/about`
+- `src/app/profile.js` → `/profile`
+
+To navigate between pages, use standard `<a>` tags. The Webs router intercepts these clicks to provide a fast, single-page application experience without full page reloads.
+
+### 2. Components
+
+Components are the heart of a Webs application. They are plain JavaScript objects that encapsulate their own state, logic, and markup. Every component is the default export from a `.js` file.
+
+#### Basic Definition
+
+A component is defined by a few key properties:
 
 - `name`: A unique string identifier for the component.
 - `state()`: A function that returns an object of reactive data.
@@ -67,15 +81,77 @@ export default {
 };
 ```
 
-### 2. File-Based Routing
+#### Props
 
-Routing in Webs is simple and intuitive. The framework automatically maps files in the `src/app` directory to URL routes.
+Props allow you to pass data from a parent component to a child. You can define them with types and default values.
 
-- `src/app/index.js` → `/`
-- `src/app/about.js` → `/about`
-- `src/app/profile.js` → `/profile`
+```javascript
+// src/components/Greeting.js
+export default {
+  name: "Greeting",
+  props: {
+    name: {
+      type: String,
+      default: "World",
+    },
+  },
+  template: `<p>Hello, {{ name }}!</p>`,
+};
+```
 
-To navigate between pages, use standard `<a>` tags. The Webs router intercepts these clicks to provide a fast, single-page application experience without full page reloads.
+#### Registering Child Components
+
+To use a component within another, you must import it and register it in the `components` object.
+
+```javascript
+// src/app/index.js
+import Greeting from "../components/Greeting.js";
+
+export default {
+  name: "HomePage",
+  components: {
+    Greeting,
+  },
+  template: `
+    <div>
+      <Greeting name="Alice" />
+      <Greeting />
+    </div>
+  `,
+};
+```
+
+#### Slots & Content Projection
+
+To pass content _into_ a component, use the `<slot>` tag. Any child elements you place inside your custom component tag in the parent will be rendered where the `<slot>` tag is.
+
+```javascript
+// src/components/Card.js
+export default {
+  name: "Card",
+  template: `
+    <div class="card">
+      <slot></slot>
+    </div>
+  `
+}
+
+// src/app/index.js
+import Card from '../components/Card.js';
+export default {
+  name: "HomePage",
+  components: { Card },
+  template: `
+    <Card>
+      <p>This content will be placed inside the card.</p>
+    </Card>
+  `
+}
+```
+
+#### Fallthrough Attributes
+
+Any attributes you add to a component tag that are not declared as props (like `class`, `id`, or `type`) will be automatically passed down to the root element of that component's template. This makes it easy to work with standard HTML attributes.
 
 ### 3. Server-Side Rendering (SSR) & Hydration
 
@@ -105,13 +181,13 @@ export default {
       version: 1,
       name: "initial_auth_schema",
       up: (db) => {
-        db.exec(`
+        db.exec(\`
           CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT NOT NULL UNIQUE,
             password TEXT NOT NULL
           );
-        `);
+        \`);
       },
     },
   ],
@@ -134,7 +210,7 @@ export default {
     async read_notes(context) {
       const { fs, user } = context; // Safely access server resources
       // Read a user-specific file from the server
-      const notes = await fs.cat(`./user_data/${user.id}/notes.txt`).text();
+      const notes = await fs.cat(\`./user_data/\${user.id}/notes.txt\`).text();
       return { notes };
     },
   },
@@ -170,17 +246,17 @@ export default {
 Webs templates are standard HTML supercharged with a simple syntax for data binding and event handling.
 
 - **Text Interpolation**: Use mustaches `{{ }}` to display reactive state.
-  ```html
+  \`\`\`html
   <p>Welcome, {{ username }}!</p>
-  ```
+  \`\`\`
 - **Attribute Binding**: Use the `:` shorthand to bind state to attributes.
-  ```html
+  \`\`\`html
   <img :src="user_image" />
-  ```
+  \`\`\`
 - **Event Handling**: Use the `@` symbol to listen for DOM events.
-  ```html
+  \`\`\`html
   <button @click="increment">Click me</button>
-  ```
+  \`\`\`
 
 ### 8. Styling with Tailwind CSS
 
@@ -189,20 +265,20 @@ Webs has a deep, native integration with the **Tailwind CSS v4 engine**. You can
 Of course, you can also use standard Tailwind utility classes directly in your template for rapid development.
 
 ```javascript
-// src/app/components/custom-button.js
+// src/components/custom-button.js
 export default {
   name: "CustomButton",
-  styles: `
+  styles: \`
     @theme {
       --color-brand: oklch(0.84 0.18 117.33);
     }
     .btn-brand {
       @apply bg-brand text-white font-bold py-2 px-4 rounded;
     }
-  `,
-  template: `
+  \`,
+  template: \`
     <button type="button" class="btn-brand">Click Me</button>
-  `,
+  \`,
 };
 ```
 

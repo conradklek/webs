@@ -89,12 +89,13 @@ function extractStyles(src) {
 }
 
 async function collectComponentStyles() {
-  const glob = new Glob("*.js");
+  const glob = new Glob("**/*.js");
   let cssChunks = [];
-  const appDir = resolve(CWD, "src/app");
-  if (!(await exists(appDir))) return "";
-  for await (const file of glob.scan(appDir)) {
-    const filePath = join(appDir, file);
+  const srcDir = resolve(CWD, "src");
+  if (!(await exists(srcDir))) return "";
+
+  for await (const file of glob.scan(srcDir)) {
+    const filePath = join(srcDir, file);
     const src = readFileSync(filePath, "utf8");
     const css = extractStyles(src);
     if (css) cssChunks.push(css);

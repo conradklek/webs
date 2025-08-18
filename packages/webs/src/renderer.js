@@ -158,7 +158,7 @@ export function create_renderer(options) {
     return dom_node.nextSibling;
   };
 
-  const hydrate_children = (children, parent, start_node) => {
+  const hydrate_children = (children, _, start_node) => {
     let next_dom_node = start_node;
     const child_vnodes = Array.isArray(children) ? children : [children];
     for (const child_vnode of child_vnodes) {
@@ -347,6 +347,16 @@ export function create_renderer(options) {
           }
 
           vnode.el = sub_tree.el;
+
+          if (
+            sub_tree.type !== Fragment &&
+            Object.keys(instance.attrs).length > 0
+          ) {
+            for (const key in instance.attrs) {
+              host_patch_prop(vnode.el, key, null, instance.attrs[key]);
+            }
+          }
+
           instance.is_mounted = true;
           instance.hooks.onMounted?.forEach((h) => h());
         } else {
@@ -358,6 +368,22 @@ export function create_renderer(options) {
           ));
           patch(prev_tree, next_tree, container, anchor, instance);
           vnode.el = next_tree.el;
+
+          if (next_tree.type !== Fragment) {
+            const old_attrs = instance.prev_attrs || {};
+            const new_attrs = instance.attrs;
+            for (const key in new_attrs) {
+              if (new_attrs[key] !== old_attrs[key]) {
+                host_patch_prop(vnode.el, key, old_attrs[key], new_attrs[key]);
+              }
+            }
+            for (const key in old_attrs) {
+              if (!(key in new_attrs)) {
+                host_patch_prop(vnode.el, key, old_attrs[key], null);
+              }
+            }
+          }
+
           instance.hooks.onUpdated?.forEach((h) => h());
         }
       },
@@ -373,26 +399,45 @@ export function create_renderer(options) {
     );
   };
 
-  const should_update_component = (n1, n2) => {
-    const p1 = n1.props || {};
-    const p2 = n2.props || {};
-    const keys1 = Object.keys(p1);
-    if (keys1.length !== Object.keys(p2).length) return true;
-    for (const key of keys1) {
-      if (p2[key] !== p1[key]) return true;
-    }
-    return false;
-  };
-
   const update_component = (n1, n2) => {
     const instance = (n2.component = n1.component);
-    if (should_update_component(n1, n2)) {
-      instance.vnode = n2;
-      instance.props = n2.props;
-      instance.update();
-    } else {
-      n2.el = n1.el;
-      instance.vnode = n2;
+
+    instance.vnode = n2;
+    n2.el = n1.el;
+    instance.prev_attrs = instance.attrs;
+
+    const { props: props_options } = instance.type;
+    const vnode_props = n2.props || {};
+    const next_props = {};
+    const next_attrs = {};
+
+    for (const key in vnode_props) {
+      if (props_options && props_options.hasOwnProperty(key)) {
+        next_props[key] = vnode_props[key];
+      } else {
+        next_attrs[key] = vnode_props[key];
+      }
+    }
+    instance.attrs = next_attrs;
+
+    instance.slots = n2.children || {};
+
+    if (props_options) {
+      for (const key in props_options) {
+        const options = props_options[key];
+        let new_value;
+
+        if (next_props.hasOwnProperty(key)) {
+          new_value = next_props[key];
+        } else if (options?.hasOwnProperty("default")) {
+          const def = options.default;
+          new_value = is_function(def) ? def() : def;
+        } else {
+          new_value = undefined;
+        }
+
+        instance.internal_ctx[key] = new_value;
+      }
     }
   };
 
@@ -481,7 +526,9 @@ export function create_component(
   const instance = {
     vnode,
     type: vnode.type,
-    props: {},
+    slots: vnode.children || {},
+    attrs: {},
+    prev_attrs: null,
     ctx: {},
     internal_ctx: {},
     methods: {},
@@ -501,30 +548,117 @@ export function create_component(
       : Object.create(app_context.provides || {}),
     hooks: {},
   };
+
+  const {
+    props: props_options,
+    state,
+    methods,
+    computed: computed_options,
+    setup,
+    actions,
+  } = instance.type;
+
+  const vnode_props = vnode.props || {};
+  const resolved_props = {};
+
+  for (const key in vnode_props) {
+    if (props_options && props_options.hasOwnProperty(key)) {
+      resolved_props[key] = vnode_props[key];
+    } else {
+      instance.attrs[key] = vnode_props[key];
+    }
+  }
+
+  if (props_options) {
+    for (const key in props_options) {
+      if (!resolved_props.hasOwnProperty(key)) {
+        const options = props_options[key];
+        if (options?.hasOwnProperty("default")) {
+          const def = options.default;
+          resolved_props[key] = is_function(def) ? def() : def;
+        }
+      }
+    }
+  }
+
+  let setup_result = {};
+  if (setup) {
+    set_current_instance(instance);
+    const res = setup(resolved_props, {});
+    set_current_instance(null);
+    if (is_object(res)) {
+      setup_result = res;
+    }
+  }
+
+  if (is_ssr && vnode.props.user && setup_result.session) {
+    setup_result.session.user = vnode.props.user;
+  }
+
+  const initial_state_from_data = state ? state.call(instance.ctx) : {};
+  let final_state;
+
+  if (
+    !parent &&
+    is_hydrating &&
+    typeof window !== "undefined" &&
+    window.__INITIAL_STATE__
+  ) {
+    final_state = {
+      ...resolved_props,
+      ...window.__INITIAL_STATE__,
+      ...setup_result,
+    };
+  } else {
+    final_state = {
+      ...resolved_props,
+      ...initial_state_from_data,
+      ...setup_result,
+    };
+  }
+
+  if (!is_ssr) {
+    for (const key in final_state) {
+      if (key.startsWith("$")) {
+        const storage_key = `${instance.type.name}:${key}`;
+        const persisted_value = get_persisted_state(storage_key);
+        if (persisted_value !== null) {
+          final_state[key] = persisted_value;
+        }
+      }
+    }
+  }
+
+  if (is_ssr) {
+    instance.internal_ctx = final_state;
+  } else {
+    instance.internal_ctx = reactive(final_state);
+  }
+
   instance.ctx = new Proxy(
     {},
     {
       has: (_, key) =>
         key === "$params" ||
+        key === "$slots" ||
+        key === "$attrs" ||
         key in instance.internal_ctx ||
         key in instance.methods ||
         key === "actions" ||
         key in instance.actions ||
-        key in instance.props ||
+        key in instance.type.components ||
         key in instance.app_context.globals,
       get: (_, key) => {
         if (key === "$params") return instance.app_context.params;
-        if (key === "actions") return instance.actions;
+        if (key === "$slots") return instance.slots;
+        if (key === "$attrs") return instance.attrs;
         if (key in instance.internal_ctx) {
           const val = instance.internal_ctx[key];
           return val && val.__is_ref && !is_ssr ? val.value : val;
         }
         if (key in instance.actions) return instance.actions[key];
         if (key in instance.methods) return instance.methods[key];
-        if (key in instance.props) return instance.props[key];
-        const component =
-          instance.type.components?.[key] ||
-          instance.type.components?.[to_pascal_case(key)];
+        const component = instance.type.components?.[key];
         if (component) return component;
         if (key in instance.app_context.globals)
           return instance.app_context.globals[key];
@@ -550,77 +684,6 @@ export function create_component(
       },
     },
   );
-
-  const {
-    props: props_options,
-    state,
-    methods,
-    computed: computed_options,
-    setup,
-    actions,
-  } = instance.type;
-  const vnode_props = vnode.props || {};
-  if (props_options) {
-    for (const key in props_options) {
-      const options = props_options[key];
-      if (vnode_props.hasOwnProperty(key)) {
-        instance.props[key] = vnode_props[key];
-      } else if (options?.hasOwnProperty("default")) {
-        const def = options.default;
-        instance.props[key] = is_function(def) ? def() : def;
-      }
-    }
-  }
-
-  let setup_result = {};
-  if (setup) {
-    set_current_instance(instance);
-    const res = setup(instance.props, {});
-    set_current_instance(null);
-    if (is_object(res)) {
-      setup_result = res;
-    }
-  }
-
-  if (is_ssr && vnode.props.user && setup_result.session) {
-    setup_result.session.user = vnode.props.user;
-  }
-
-  const initial_state_from_data = state ? state.call(instance.ctx) : {};
-  let final_state;
-
-  if (
-    is_hydrating &&
-    typeof window !== "undefined" &&
-    window.__INITIAL_STATE__
-  ) {
-    final_state = window.__INITIAL_STATE__;
-    for (const key in setup_result) {
-      if (key in final_state) {
-        final_state[key] = setup_result[key];
-      }
-    }
-  } else {
-    final_state = { ...initial_state_from_data, ...setup_result };
-  }
-
-  if (!is_ssr) {
-    for (const key in final_state) {
-      if (key.startsWith("$")) {
-        const storage_key = `${instance.type.name}:${key}`;
-        const persisted_value = get_persisted_state(storage_key);
-        if (persisted_value !== null) {
-          final_state[key] = persisted_value;
-        }
-      }
-    }
-  }
-
-  if (is_ssr) {
-    instance.internal_ctx = final_state;
-  } else {
-    instance.internal_ctx = reactive(final_state);
-  }
 
   if (!is_ssr) {
     for (const key in instance.internal_ctx) {
@@ -685,7 +748,11 @@ export { Fragment, Comment, Teleport, Text };
 
 export class VNode {
   constructor(type, props, children) {
-    if (props && (Array.isArray(props) || typeof props !== "object")) {
+    if (
+      props &&
+      (Array.isArray(props) ||
+        (typeof props !== "object" && !is_function(props)))
+    ) {
       children = props;
       props = null;
     }
