@@ -90,17 +90,32 @@ function extractStyles(src) {
 
 async function collectComponentStyles() {
   const glob = new Glob("**/*.js");
-  let cssChunks = [];
+  let themeChunks = [];
+  let styleChunks = [];
   const srcDir = resolve(CWD, "src");
-  if (!(await exists(srcDir))) return "";
+  if (!(await exists(srcDir))) return { themes: "", styles: "" };
+
+  const themeRegex = /@theme\s*\{[\s\S]*?\}/g;
 
   for await (const file of glob.scan(srcDir)) {
     const filePath = join(srcDir, file);
     const src = readFileSync(filePath, "utf8");
-    const css = extractStyles(src);
-    if (css) cssChunks.push(css);
+    let css = extractStyles(src);
+    if (css) {
+      const themes = css.match(themeRegex);
+      if (themes) {
+        themeChunks.push(...themes);
+      }
+      const stylesOnly = css.replace(themeRegex, "").trim();
+      if (stylesOnly) {
+        styleChunks.push(stylesOnly);
+      }
+    }
   }
-  return cssChunks.join("\n");
+  return {
+    themes: themeChunks.join("\n"),
+    styles: styleChunks.join("\n"),
+  };
 }
 
 async function ensureTmpDir() {
@@ -121,8 +136,23 @@ async function build_assets(outdir, entrypoint) {
     return null;
   }
   await ensureTmpDir();
-  const cssContent = await collectComponentStyles();
-  const fullCSS = `@import "tailwindcss";\n${cssContent}`;
+
+  const globalThemePath = resolve(CWD, "src/app.css");
+  let globalThemeCss = "";
+  if (await exists(globalThemePath)) {
+    console.log("Found global theme file at src/app.css");
+    globalThemeCss = await Bun.file(globalThemePath).text();
+  }
+
+  const { themes: componentThemes, styles: componentStyles } =
+    await collectComponentStyles();
+
+  const fullCSS = `@import "tailwindcss";
+${globalThemeCss}
+${componentThemes}
+${componentStyles}
+`;
+
   await Bun.write(TMP_CSS, fullCSS);
 
   const build_result = await Bun.build({
@@ -173,9 +203,6 @@ async function compress_assets(outputs) {
   return sizes;
 }
 
-/**
- * Sets up the development server with HMR.
- */
 export async function setup_build_and_hmr({
   cwd,
   outdir,
@@ -230,7 +257,7 @@ export async function setup_build_and_hmr({
 }
 
 export function create_request_handler(context) {
-  return async function(req) {
+  return async function (req) {
     const {
       db,
       fs,
@@ -318,10 +345,11 @@ export function create_request_handler(context) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${component_to_render.name || "Webs App"}</title>
-    ${manifest.css
-          ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
-          : ""
-        }
+    ${
+      manifest.css
+        ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
+        : ""
+    }
   </head>
   <body>
     <div id="root" style="display: contents">${app_html}</div>
@@ -459,15 +487,15 @@ async function main() {
     websocket: IS_PROD
       ? undefined
       : {
-        open(ws) {
-          console.log("[HMR] WebSocket client connected");
-          ws.subscribe(HMR_TOPIC);
+          open(ws) {
+            console.log("[HMR] WebSocket client connected");
+            ws.subscribe(HMR_TOPIC);
+          },
+          close(ws) {
+            console.log("[HMR] WebSocket client disconnected");
+            ws.unsubscribe(HMR_TOPIC);
+          },
         },
-        close(ws) {
-          console.log("[HMR] WebSocket client disconnected");
-          ws.unsubscribe(HMR_TOPIC);
-        },
-      },
     error(error) {
       console.error(error);
       return new Response("Internal Server Error", { status: 500 });

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "components": {
+    "button": {
+      "name": "Button",
+      "path": "src/components/button/button.js",
+      "dependencies": [],
+      "devDependencies": []
+    }
+  }
+}

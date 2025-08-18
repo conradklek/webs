@@ -1,22 +1,109 @@
 @import "tailwindcss";
+@theme {
+  --color-background: oklch(1 0 0);
 
-    @layer components {
-      .btn {
-        @apply inline-flex items-center justify-center rounded-md px-1.5 py-0 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2;
-      }
-      .btn-primary {
-        @apply text-primary focus:ring-primary;
-      }
-      .btn-secondary {
-        @apply text-current;
-      }
-    }
-  
+  --color-foreground: oklch(0.145 0 0);
 
-    @theme {
+  --color-card: oklch(1 0 0);
+
+  --color-card-foreground: oklch(0.145 0 0);
+
+  --color-popover: oklch(1 0 0);
+
+  --color-popover-foreground: oklch(0.145 0 0);
+
+  --color-primary: oklch(0.205 0 0);
+
+  --color-primary-foreground: oklch(0.985 0 0);
+
+  --color-secondary: oklch(0.97 0 0);
+
+  --color-secondary-foreground: oklch(0.205 0 0);
+
+  --color-muted: oklch(0.97 0 0);
+
+  --color-muted-foreground: oklch(0.556 0 0);
+
+  --color-accent: oklch(0.97 0 0);
+
+  --color-accent-foreground: oklch(0.205 0 0);
+
+  --color-destructive: oklch(0.577 0.245 27.325);
+
+  --color-border: oklch(0.922 0 0);
+
+  --color-input: oklch(0.922 0 0);
+
+  --color-ring: oklch(0.708 0 0);
+
+  --color-chart-1: oklch(0.646 0.222 41.116);
+
+  --color-chart-2: oklch(0.6 0.118 184.704);
+
+  --color-chart-3: oklch(0.398 0.07 227.392);
+
+  --color-chart-4: oklch(0.828 0.189 84.429);
+
+  --color-chart-5: oklch(0.769 0.188 70.08);
+
+  --color-sidebar: oklch(0.985 0 0);
+
+  --color-sidebar-foreground: oklch(0.145 0 0);
+
+  --color-sidebar-primary: oklch(0.205 0 0);
+
+  --color-sidebar-primary-foreground: oklch(0.985 0 0);
+
+  --color-sidebar-accent: oklch(0.97 0 0);
+
+  --color-sidebar-accent-foreground: oklch(0.205 0 0);
+
+  --color-sidebar-border: oklch(0.922 0 0);
+
+  --color-sidebar-ring: oklch(0.708 0 0);
+}
+
+@theme {
       --color-primary: #1e40af;
     }
-    @layer base {
+@layer components {
+      .btn {
+        @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+      }
+
+      .btn-default {
+        @apply bg-primary text-primary-foreground hover:bg-primary/90;
+      }
+      .btn-destructive {
+        @apply bg-destructive text-white hover:bg-destructive/90;
+      }
+      .btn-outline {
+        @apply border border-input bg-background hover:bg-accent hover:text-accent-foreground;
+      }
+      .btn-secondary {
+        @apply bg-secondary text-secondary-foreground hover:bg-secondary/80;
+      }
+      .btn-ghost {
+        @apply hover:bg-accent hover:text-accent-foreground;
+      }
+      .btn-link {
+        @apply text-primary underline-offset-4 hover:underline;
+      }
+
+      .btn-size-default {
+        @apply h-10 px-4 py-2;
+      }
+      .btn-size-sm {
+        @apply h-9 rounded-md px-3;
+      }
+      .btn-size-lg {
+        @apply h-11 rounded-md px-8;
+      }
+      .btn-size-icon {
+        @apply h-10 w-10;
+      }
+    }
+@layer base {
       h1     { @apply font-medium; }
       button { @apply cursor-pointer active:opacity-50 whitespace-nowrap; }
       a      { @apply underline cursor-pointer active:opacity-50 whitespace-nowrap; }
@@ -24,4 +111,3 @@
     @layer components {
       .button-primary { @apply bg-primary text-white px-1.5 rounded-md cursor-pointer active:opacity-50; }
     }
-  

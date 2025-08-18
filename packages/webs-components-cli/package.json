@@ -1,0 +1,19 @@
+{
+  "name": "webs-components-cli",
+  "version": "0.0.1",
+  "description": "A CLI for adding Webs components to your project.",
+  "type": "module",
+  "main": "src/cli.js",
+  "bin": {
+    "webs-components": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "webs",
+    "cli"
+  ],
+  "author": "Conrad Klek",
+  "license": "MIT"
+}

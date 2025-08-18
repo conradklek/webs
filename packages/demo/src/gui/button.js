@@ -3,24 +3,78 @@ export default {
   props: {
     variant: {
       type: String,
-      default: "primary",
+      default: "default",
+    },
+    size: {
+      type: String,
+      default: "default",
+    },
+  },
+  methods: {
+    getButtonClasses() {
+      const variantClasses = {
+        default: "btn-default",
+        destructive: "btn-destructive",
+        outline: "btn-outline",
+        secondary: "btn-secondary",
+        ghost: "btn-ghost",
+        link: "btn-link",
+      };
+
+      const sizeClasses = {
+        default: "btn-size-default",
+        sm: "btn-size-sm",
+        lg: "btn-size-lg",
+        icon: "btn-size-icon",
+      };
+      return [
+        "btn",
+        variantClasses[this.variant] || variantClasses.default,
+        sizeClasses[this.size] || sizeClasses.default,
+      ].join(" ");
     },
   },
   styles: `
     @layer components {
       .btn {
-        @apply inline-flex items-center justify-center rounded-md px-1.5 py-0 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2;
+        @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
       }
-      .btn-primary {
-        @apply text-primary focus:ring-primary;
+
+      .btn-default {
+        @apply bg-primary text-primary-foreground hover:bg-primary/90;
+      }
+      .btn-destructive {
+        @apply bg-destructive text-white hover:bg-destructive/90;
+      }
+      .btn-outline {
+        @apply border border-input bg-background hover:bg-accent hover:text-accent-foreground;
       }
       .btn-secondary {
-        @apply text-current;
+        @apply bg-secondary text-secondary-foreground hover:bg-secondary/80;
+      }
+      .btn-ghost {
+        @apply hover:bg-accent hover:text-accent-foreground;
+      }
+      .btn-link {
+        @apply text-primary underline-offset-4 hover:underline;
+      }
+
+      .btn-size-default {
+        @apply h-10 px-4 py-2;
+      }
+      .btn-size-sm {
+        @apply h-9 rounded-md px-3;
+      }
+      .btn-size-lg {
+        @apply h-11 rounded-md px-8;
+      }
+      .btn-size-icon {
+        @apply h-10 w-10;
       }
     }
   `,
   template: `
-    <button :class="'btn ' + (variant === 'primary' ? 'btn-primary' : 'btn-secondary')">
+    <button :class="getButtonClasses()">
       <slot></slot>
     </button>
   `,
