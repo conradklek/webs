@@ -1,8 +1,9 @@
 import { use_session } from "../use/session.js";
 import { use_logger } from "../use/logger.js";
 import Card from "../gui/card/index.js";
-import Button from "../gui/button.js";
+import Button from "../gui/button/index.js";
 import Accordion from "../gui/accordion/index.js";
+import Breadcrumb from "../gui/breadcrumb/index.js";
 
 export const middleware = [use_logger];
 
@@ -76,12 +77,26 @@ export default {
             <AccordionContent value="item2">Content 2</AccordionContent>
           </AccordionItem>
         </Accordion>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink href="/">Home</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator></BreadcrumbSeparator>
+            <BreadcrumbEllipsis></BreadcrumbEllipsis>
+            <BreadcrumbSeparator></BreadcrumbSeparator>
+            <BreadcrumbItem>
+              <BreadcrumbPage>Breadcrumb</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       </div>
     </div>
   `,
   components: {
     Accordion,
-    Card,
+    Breadcrumb,
     Button,
+    Card,
   },
 };

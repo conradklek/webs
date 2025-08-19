@@ -357,11 +357,11 @@ export function create_store(options) {
       }
       return Reflect.get(target, key, receiver);
     },
-    set(_, key, __, ___) {
+    set(target, key, value, receiver) {
       console.warn(
         `Attempted to directly set store property "${String(key)}". Use an action to modify state.`,
       );
-      return false;
+      return Reflect.set(target, key, value, receiver);
     },
   });
 }
