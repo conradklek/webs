@@ -73,11 +73,11 @@ export default {
     },
   },
   template: `
-    <div>
-      <p>Count: {{ count }}</p>
-      <button type="button" @click="increment">Increment</button>
-    </div>
-  `,
+  <div>
+    <p>Count: {{ count }}</p>
+    <button type="button" @click="increment">Increment</button>
+  </div>
+`,
 };
 ```
 
@@ -113,11 +113,11 @@ export default {
     Greeting,
   },
   template: `
-    <div>
-      <Greeting name="Alice" />
-      <Greeting />
-    </div>
-  `,
+  <div>
+    <Greeting name="Alice" />
+    <Greeting />
+  </div>
+`,
 };
 ```
 
@@ -130,9 +130,9 @@ To pass content _into_ a component, use the `<slot>` tag. Any child elements you
 export default {
   name: "Wrapper",
   template: `
-    <div class="wrapper">
-      <slot></slot>
-    </div>`;
+  <div class="wrapper">
+    <slot></slot>
+  </div>`;
 }
 
 // src/app/index.js
@@ -142,9 +142,9 @@ export default {
   name: "HomePage",
   components: { Wrapper },
   template: `
-    <Wrapper>
-      <p>This content will be placed inside the wrapper.</p>
-    </Wrapper>`;
+  <Wrapper>
+    <p>This content will be placed inside the wrapper.</p>
+  </Wrapper>`;
 }
 ```
 
@@ -166,11 +166,11 @@ export default {
       name: "initial_auth_schema",
       up: (db) => {
         db.exec(`
-CREATE TABLE IF NOT EXISTS users (
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-email TEXT NOT NULL UNIQUE,
-password TEXT NOT NULL
-);
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL
+  );
 `);
       },
     },
@@ -235,16 +235,43 @@ Webs templates are standard HTML supercharged with a simple syntax for data bind
 <p>Welcome, {{ username }}!</p>
 ```
 
--\*Attribute Binding\*\*: Use the `:` shorthand to bind state to attributes.
+-\*Event Handling\*\*: Use the `@` symbol to listen for DOM events.
+
+```html
+<button type="button" @click="increment">Click me</button>
+```
+
+- -\*Attribute Binding\*\*: Use the `:` shorthand to bind state to attributes. This is now more powerful than ever.
 
 ```html
 <img :src="user_image" />
 ```
 
--\*Event Handling\*\*: Use the `@` symbol to listen for DOM events.
+**Attribute Fallthrough**
+
+Any attribute you pass to a component that isnot\* a declared prop will automatically be applied to the root element of that component's template. This makes creating wrapper components incredibly clean.
 
 ```html
-<button type="button" @click="increment">Click me</button>
+<!-- If you write this: -->
+<CustomInput class="mt-4" data-testid="name-input" />
+
+<!-- And CustomInput's template is: -->
+<!-- <input class="input" :value="value" /> -->
+
+<!-- The final rendered output will be: -->
+<input class="input mt-4" data-testid="name-input" value="..." />
+```
+
+**Declarative Class Binding**
+
+The `:class` binding is supercharged. You can pass it an object to conditionally toggle classes, or an array to mix and match dynamic and static classes.
+
+```html
+<!-- Object Syntax -->
+<div :class="{ 'active': isActive, 'text-danger': hasError }"></div>
+
+<!-- Array Syntax -->
+<div :class="[baseClass, { 'active': isActive }]"></div>
 ```
 
 ### 7. Styling with Tailwind CSS
@@ -258,13 +285,13 @@ Of course, you can also use standard Tailwind utility classes directly in your t
 export default {
   name: "CustomButton",
   styles: `
-    @theme {
-      --color-brand: oklch(0.84 0.18 117.33);
-    }
-    .btn-brand {
-      @apply bg-brand text-white font-bold py-2 px-4 rounded;
-    }
-  `,
+  @theme {
+    --color-brand: oklch(0.84 0.18 117.33);
+  }
+  .btn-brand {
+    @apply bg-brand text-white font-bold py-2 px-4 rounded;
+  }
+`,
   template: `<button type="button" class="btn-brand">Click Me</button>`,
 };
 ```

@@ -1,5 +1,3 @@
-import { accordion } from "./index.js";
-
 export default {
   name: "AccordionContent",
   props: {
@@ -8,12 +6,15 @@ export default {
       required: true,
     },
   },
-  setup() {
+  setup(_, { inject }) {
+    const accordion = inject("accordion");
     return { accordion };
   },
   template: `
     <div w-if="accordion.is_open(value)" class="contents">
-      <slot></slot>
+      <div class="pb-3 pt-1">
+        <slot></slot>
+      </div>
     </div>
   `,
 };

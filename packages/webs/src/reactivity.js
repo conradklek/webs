@@ -6,46 +6,12 @@
 
 import { is_object } from "./utils";
 
-/**
- * The currently running effect. This is the global "listener" that gets
- * associated with any reactive property that is accessed.
- * @type {object | null}
- */
 let active_effect = null;
-
-/**
- * A stack of effects. This is necessary to handle nested effects, ensuring
- * that the `active_effect` is correctly restored when an inner effect finishes.
- * @type {Array<object>}
- */
 const effect_stack = [];
-
-/**
- * A WeakMap to store all dependency relationships.
- * The structure is: `target -> Map(key -> Set(effects))`
- * @type {WeakMap<object, Map<any, Set<object>>>}
- */
 const target_map = new WeakMap();
-
-/**
- * A WeakMap to cache reactive proxies. This prevents creating multiple
- * proxies for the same raw object.
- * @type {WeakMap<object, Proxy>}
- */
 const proxy_map = new WeakMap();
-
-/**
- * A unique symbol to access the original, raw object from a reactive proxy.
- * @type {symbol}
- */
 export const RAW_SYMBOL = Symbol("raw");
 
-/**
- * Establishes a dependency between the `active_effect` and the given `target` and `key`.
- * When the property `target[key]` is accessed, this function is called.
- * @param {object} target - The raw object being accessed.
- * @param {string | symbol} key - The property key being accessed.
- */
 export function track(target, key) {
   if (active_effect) {
     let deps_map = target_map.get(target);
@@ -61,12 +27,6 @@ export function track(target, key) {
   }
 }
 
-/**
- * Finds and re-runs all effects that depend on the given `target` and `key`.
- * When the property `target[key]` is mutated, this function is called.
- * @param {object} target - The raw object that was mutated.
- * @param {string | symbol} key - The property key that was mutated.
- */
 export function trigger(target, key) {
   const deps_map = target_map.get(target);
   if (!deps_map) return;
@@ -84,11 +44,6 @@ export function trigger(target, key) {
   }
 }
 
-/**
- * Cleans up an effect by removing it from all its dependencies.
- * This is crucial to prevent memory leaks and unnecessary updates.
- * @param {object} effect - The effect to clean up.
- */
 function cleanup(effect) {
   const { deps } = effect;
   for (let i = 0; i < deps.length; i++) {
@@ -97,13 +52,6 @@ function cleanup(effect) {
   deps.length = 0;
 }
 
-/**
- * Creates a reactive effect that runs a function and tracks its dependencies.
- * @param {Function} fn - The function to run inside the effect.
- * @param {object} [options] - Configuration options for the effect.
- * @param {Function} [options.scheduler] - A custom scheduler to control when the effect runs.
- * @returns {Function} A runner function that can be called to manually re-run the effect.
- */
 export function effect(fn, options = {}) {
   const _effect = create_reactive_effect(fn, options.scheduler);
   _effect.run();
@@ -113,10 +61,6 @@ export function effect(fn, options = {}) {
   return runner;
 }
 
-/**
- * Creates the internal effect object with run and stop capabilities.
- * @private
- */
 function create_reactive_effect(fn, scheduler) {
   const effect = {
     fn,
@@ -147,12 +91,6 @@ function create_reactive_effect(fn, scheduler) {
   return effect;
 }
 
-/**
- * Creates a computed property, which is a ref-like object that lazily
- * evaluates a getter function and caches the result.
- * @param {Function} getter - The function to compute the value.
- * @returns {object} A computed ref object with a `.value` property.
- */
 export function computed(getter) {
   let computed_value;
   let is_dirty = true;
@@ -181,13 +119,6 @@ export function computed(getter) {
   return computed_ref;
 }
 
-/**
- * Creates a reactive proxy for a given target object.
- * Returns the target itself if it's not an object.
- * Caches proxies to ensure the same proxy is returned for the same object.
- * @param {object} target - The object to make reactive.
- * @returns {Proxy | object} The reactive proxy or the original target.
- */
 export function reactive(target) {
   if (!is_object(target)) return target;
   if (proxy_map.has(target)) return proxy_map.get(target);
@@ -279,54 +210,64 @@ const collectionHandlers = {
   set: {
     get(target, key, receiver) {
       if (key === RAW_SYMBOL) return target;
-      const value = Reflect.get(target, key, receiver);
 
-      if (key === "has") {
-        return (v) => {
-          track(target, "size");
-          return target.has(v);
-        };
-      }
       if (key === "size") {
-        track(target, "size");
-        return target.size;
-      }
-      if (
-        ["forEach", "keys", "values", "entries", Symbol.iterator].includes(key)
-      ) {
         track(target, "iterate");
+        return Reflect.get(target, key, receiver);
       }
 
-      if (key === "add") {
-        return (v) => {
-          const had = target.has(v);
-          const result = target.add(v);
-          if (!had) trigger(target, "size");
-          return result;
-        };
-      }
-      if (key === "delete") {
-        return (v) => {
-          const had = target.has(v);
-          const result = target.delete(v);
-          if (had) trigger(target, "size");
-          return result;
-        };
+      const value = Reflect.get(target, key, receiver);
+      if (typeof value !== "function") {
+        return value;
       }
 
-      return typeof value === "function" ? value.bind(target) : value;
+      const boundFn = value.bind(target);
+
+      switch (key) {
+        case "has":
+          return (v) => {
+            track(target, v);
+            return boundFn(v);
+          };
+        case "add":
+          return (v) => {
+            const had = target.has(v);
+            const result = boundFn(v);
+            if (!had) {
+              trigger(target, v);
+              trigger(target, "iterate");
+            }
+            return result;
+          };
+        case "delete":
+          return (v) => {
+            const had = target.has(v);
+            const result = boundFn(v);
+            if (had) {
+              trigger(target, v);
+              trigger(target, "iterate");
+            }
+            return result;
+          };
+        case "clear":
+          return () => {
+            const hadItems = target.size > 0;
+            const items = hadItems ? [...target] : [];
+            const result = boundFn();
+            if (hadItems) {
+              items.forEach((v) => trigger(target, v));
+              trigger(target, "iterate");
+            }
+            return result;
+          };
+        default:
+          track(target, "iterate");
+          return boundFn;
+      }
     },
   },
 };
 
-/**
- * Creates a centralized store for state management, built on the reactivity system.
- * @param {object} options - The store configuration.
- * @param {Function} options.state - A function that returns the initial state object.
- * @param {object} [options.actions] - An object of functions that can mutate the state.
- * @param {object} [options.getters] - An object of functions for computed values derived from the state.
- * @returns {Proxy} A reactive store instance.
- */
 export function create_store(options) {
   const store = reactive(options.state());
   const wrapped_actions = {};

@@ -9,6 +9,34 @@ import { reactive } from "./reactivity";
 import { compile } from "./compiler";
 
 /**
+ * Normalizes a class binding value (string, object, or array) into a
+ * final class string.
+ * @param {*} value - The value to normalize.
+ * @returns {string} The normalized class string.
+ * @private
+ */
+function normalize_class(value) {
+  let res = "";
+  if (typeof value === "string") {
+    res = value;
+  } else if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      const normalized = normalize_class(value[i]);
+      if (normalized) {
+        res += normalized + " ";
+      }
+    }
+  } else if (typeof value === "object" && value !== null) {
+    for (const key in value) {
+      if (value[key]) {
+        res += key + " ";
+      }
+    }
+  }
+  return res.trim();
+}
+
+/**
  * Creates a factory for generating application instances. This allows for creating
  * multiple app instances with different renderer options.
  * @param {object} renderer_options - Platform-specific DOM manipulation functions.
@@ -45,6 +73,7 @@ export function create_app_api(renderer_options) {
           app._context.patch(null, vnode, root_container);
         }
         app._container = root_container;
+        return vnode;
       },
     };
     return app;
@@ -74,6 +103,8 @@ export const create_app = create_app_api({
       const event_name = key.slice(2).toLowerCase();
       if (prev_val) el.removeEventListener(event_name, prev_val);
       if (next_val) el.addEventListener(event_name, next_val);
+    } else if (key === "class") {
+      el.className = normalize_class(next_val) || "";
     } else {
       if (next_val == null) {
         el.removeAttribute(key);
@@ -97,35 +128,28 @@ export function create_router(routes) {
   if (!root)
     return console.error("Router creation failed: #root element not found.");
 
+  const app = create_app({ render: () => null });
+  let current_vnode = null;
+
   const webs_state = deserialize_state(window.__WEBS_STATE__ || {});
 
-  if (webs_state.componentState) {
-    window.__INITIAL_STATE__ = webs_state.componentState;
-  }
-  const initial_params =
-    webs_state.params || parse_query_string(window.location.search);
+  const initial_component_state = webs_state.componentState || {};
+  console.log("[Router] Initial state from server:", initial_component_state);
 
-  let current_route = {};
-
-  /**
-   * Programmatically navigates to a new path.
-   * @param {string} path - The destination URL.
-   * @private
-   */
   async function navigate(path) {
     history.pushState({}, "", path);
     await loadRoute(false);
   }
 
-  /**
-   * Loads and renders the component for the current URL.
-   * @param {boolean} [shouldHydrate=true] - Whether this is the initial hydrating render.
-   * @private
-   */
   async function loadRoute(shouldHydrate = true) {
     const to_path = window.location.pathname;
-    const from_route = current_route;
+    const from_path = current_vnode?.component.type.name;
+    const from_route = { path: from_path };
     const route_loader = routes[to_path];
+
+    console.log(
+      `[Router] Navigating to: ${to_path}. Hydrating: ${shouldHydrate}`,
+    );
 
     if (!route_loader) {
       console.error(`No component found for path: ${to_path}`);
@@ -136,6 +160,9 @@ export function create_router(routes) {
     try {
       const module = await route_loader();
       const component = module.default;
+
+      compile_templates(component);
+
       const middleware = module.middleware || [];
       const to_route = {
         path: to_path,
@@ -151,7 +178,45 @@ export function create_router(routes) {
         if (index < to_route.middleware.length) {
           to_route.middleware[index](to_route, from_route, next);
         } else {
-          renderComponent(to_route.component, to_route.params, shouldHydrate);
+          const props = {
+            params: reactive(to_route.params),
+            initial_state: initial_component_state,
+          };
+
+          if (shouldHydrate && webs_state.user) {
+            props.user = webs_state.user;
+          }
+
+          console.log("[Router] Creating component with props:", props);
+
+          const new_vnode = create_vnode(to_route.component, props);
+          new_vnode.app_context = app._context;
+
+          Object.assign(
+            app._context.components,
+            to_route.component.components || {},
+          );
+
+          if (shouldHydrate) {
+            console.log("[Router] Hydrating component in container:", root);
+            app._context.hydrate(new_vnode, root);
+          } else {
+            console.log(
+              "[Router] Patching component. Old VNode:",
+              current_vnode,
+              "New VNode:",
+              new_vnode,
+            );
+            app._context.patch(current_vnode, new_vnode, root);
+          }
+          current_vnode = new_vnode;
+
+          if (shouldHydrate) {
+            console.log(
+              "[Router] Hydration complete. Clearing __WEBS_STATE__.",
+            );
+            window.__WEBS_STATE__ = null;
+          }
         }
       };
       next();
@@ -162,21 +227,6 @@ export function create_router(routes) {
       );
       root.innerHTML = `<div>Error loading page.</div>`;
     }
-  }
-
-  /**
-   * Creates a new app instance and mounts the component.
-   * @private
-   */
-  function renderComponent(PageComponent, routeParams, shouldHydrate) {
-    current_route = { path: window.location.pathname };
-    const props = { params: reactive(routeParams) };
-    if (shouldHydrate && webs_state.user) {
-      props.user = webs_state.user;
-    }
-    const app = create_app(PageComponent, props);
-    app.mount(root, shouldHydrate);
-    if (shouldHydrate) window.__WEBS_STATE__ = null;
   }
 
   window.addEventListener("popstate", () => loadRoute(false));
@@ -203,6 +253,7 @@ export function create_router(routes) {
  * @private
  */
 function compile_templates(component_def) {
+  if (!component_def) return;
   if (component_def.components) {
     for (const key in component_def.components) {
       const sub_component = component_def.components[key];

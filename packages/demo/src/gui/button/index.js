@@ -37,7 +37,7 @@ export default {
   styles: `
     @layer components {
       .btn {
-        @apply inline-flex items-center justify-center whitespace-nowrap rounded text-sm tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer;
+        @apply shrink-0 inline-flex items-center justify-center whitespace-nowrap rounded text-sm tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer;
       }
 
       .btn-default {
@@ -60,16 +60,16 @@ export default {
       }
 
       .btn-size-default {
-        @apply h-8 px-2 py-1;
+        @apply h-7 px-2;
       }
       .btn-size-sm {
-        @apply h-7 rounded-md px-1.5;
+        @apply h-6 rounded-md px-1.5;
       }
       .btn-size-lg {
-        @apply h-10 px-2;
+        @apply h-8 px-2;
       }
       .btn-size-icon {
-        @apply w-8 h-8;
+        @apply w-7 h-7;
       }
     }
   `,

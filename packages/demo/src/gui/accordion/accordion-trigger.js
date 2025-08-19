@@ -1,5 +1,3 @@
-import { accordion } from "./index.js";
-
 export default {
   name: "AccordionTrigger",
   props: {
@@ -8,7 +6,12 @@ export default {
       required: true,
     },
   },
-  setup() {
+  setup(props, { inject }) {
+    const accordion = inject("accordion");
+    console.log(
+      `[AccordionTrigger for value='${props.value}'] Injected context:`,
+      accordion,
+    );
     return { accordion };
   },
   template: `

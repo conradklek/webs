@@ -2,7 +2,12 @@ import { use_session } from "../use/session.js";
 import { use_logger } from "../use/logger.js";
 import Card from "../gui/card/index.js";
 import Button from "../gui/button/index.js";
-import Accordion from "../gui/accordion/index.js";
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+} from "../gui/accordion/index.js";
 import Breadcrumb from "../gui/breadcrumb/index.js";
 
 export const middleware = [use_logger];
@@ -67,14 +72,14 @@ export default {
             </Button>
           </CardFooter>
         </Card>
-        <Accordion type="multiple" collapsible="true">
+        <Accordion type="multiple">
           <AccordionItem value="item1">
-            <AccordionTrigger value="item1">Item 1</AccordionTrigger>
-            <AccordionContent value="item1">Content 1</AccordionContent>
+            <AccordionTrigger value="item1">Is it accessible?</AccordionTrigger>
+            <AccordionContent value="item1">Yes. It adheres to the WAI-ARIA design pattern.</AccordionContent>
           </AccordionItem>
           <AccordionItem value="item2">
-            <AccordionTrigger value="item2">Item 2</AccordionTrigger>
-            <AccordionContent value="item2">Content 2</AccordionContent>
+            <AccordionTrigger value="item2">Is it styled?</AccordionTrigger>
+            <AccordionContent value="item2">Yes. It comes with default styles that matches the other components' aesthetic.</AccordionContent>
           </AccordionItem>
         </Accordion>
         <Breadcrumb>
@@ -95,6 +100,9 @@ export default {
   `,
   components: {
     Accordion,
+    AccordionItem,
+    AccordionTrigger,
+    AccordionContent,
     Breadcrumb,
     Button,
     Card,
