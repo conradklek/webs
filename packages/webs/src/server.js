@@ -1,10 +1,138 @@
-export * from "./database";
-export * from "./auth";
-export * from "./reactivity";
-export * from "./runtime";
-export * from "./renderer";
-export * from "./ssr";
-export * from "./utils";
-export * from "./parser";
-export * from "./compiler";
-export * from "./filesystem";
+import { basename, join } from "path";
+import { render_to_string } from "./ssr.js";
+import { h } from "./renderer.js";
+import { get_user_from_session, register_user, login_user, logout_user } from "./auth.js";
+import { parse_query_string } from "./runtime.js";
+import { fs } from "./filesystem.js";
+
+/**
+ * Creates the main request handler for the application.
+ */
+export function create_request_handler(context) {
+  return async function handle_request(req) {
+    const { db, app_routes, outdir, is_prod } = context;
+    const url = new URL(req.url);
+
+    if (url.pathname.startsWith("/api/auth/")) return handle_auth_api(req, db);
+    if (url.pathname.startsWith("/__actions__/")) return handle_server_actions(req, context);
+
+    const asset_response = await handle_static_assets(req, url.pathname, outdir, is_prod);
+    if (asset_response) return asset_response;
+
+    const route_definition = app_routes[url.pathname];
+    if (route_definition) {
+      return handle_page_request(req, route_definition, context);
+    }
+
+    return new Response("Not Found", { status: 404 });
+  };
+}
+
+async function handle_page_request(req, route_definition, context) {
+    const { db, manifest, is_prod, hmr_ws_path } = context;
+    const url = new URL(req.url);
+    const session_id = req.headers.get("cookie")?.match(/session_id=([^;]+)/)?.[1];
+    const user = get_user_from_session(db, session_id);
+    const params = parse_query_string(url.search);
+    const component_vnode = h(route_definition.component, { user, params });
+    const { html: app_html, componentState } = await render_to_string(component_vnode);
+    const webs_state = { user, params, componentState };
+    const full_html = render_html_shell({
+        app_html,
+        webs_state,
+        manifest,
+        is_prod,
+        hmr_ws_path,
+        title: route_definition.component.name || "Webs App",
+    });
+    return new Response(full_html, {
+        headers: { "Content-Type": "text/html;charset=utf-8" },
+    });
+}
+async function handle_static_assets(req, pathname, outdir, is_prod) {
+    const asset_path = join(outdir, basename(pathname));
+    const file = Bun.file(asset_path);
+    if (await file.exists()) {
+        if (is_prod && req.headers.get("accept-encoding")?.includes("gzip")) {
+            const gzipped_path = `${asset_path}.gz`;
+            if (await Bun.file(gzipped_path).exists()) {
+                return new Response(Bun.file(gzipped_path), {
+                    headers: { "Content-Encoding": "gzip", "Content-Type": file.type },
+                });
+            }
+        }
+        return new Response(file);
+    }
+    return null;
+}
+async function handle_auth_api(req, db) {
+    const { pathname } = new URL(req.url);
+    if (pathname === "/api/auth/register") return register_user(req, db);
+    if (pathname === "/api/auth/login") return login_user(req, db);
+    if (pathname === "/api/auth/logout") return logout_user(req, db);
+    return new Response("Auth route not found", { status: 404 });
+}
+async function handle_server_actions(req, context) {
+    const { db, app_routes } = context;
+    const { pathname } = new URL(req.url);
+    const session_id = req.headers.get("cookie")?.match(/session_id=([^;]+)/)?.[1];
+    const user = get_user_from_session(db, session_id);
+    if (!user) return new Response("Unauthorized", { status: 401 });
+    const [, , componentName, actionName] = pathname.split("/");
+    const route_def = Object.values(app_routes).find(
+        (r) => r.component.name === componentName,
+    );
+    const action = route_def?.component?.actions?.[actionName];
+    if (typeof action !== "function") {
+        return new Response("Action not found", { status: 404 });
+    }
+    try {
+        const args = req.method === "POST" ? await req.json() : [];
+        const result = await action({ req, db, fs, user }, ...args);
+        return result instanceof Response ? result : Response.json(result);
+    } catch (e) {
+        console.error(`Action Error: ${e.message}`);
+        return new Response("Internal Server Error", { status: 500 });
+    }
+}
+function render_html_shell({ app_html, webs_state, manifest, is_prod, title, hmr_ws_path }) {
+    const hmr_script = is_prod
+        ? ""
+        : `
+    <script>
+      const hmrSocket = new WebSocket(\`ws://\${location.host}${hmr_ws_path}\`);
+      hmrSocket.addEventListener('message', e => e.data === 'reload' && location.reload());
+      hmrSocket.addEventListener('open', () => console.log('[HMR] Connected.'));
+      hmrSocket.addEventListener('close', () => {
+        console.log('[HMR] Disconnected. Reconnecting...');
+        const interval = setInterval(() => {
+          const ws = new WebSocket(\`ws://\${location.host}${hmr_ws_path}\`);
+          ws.onopen = () => { clearInterval(interval); location.reload(); };
+        }, 1000);
+      });
+    </script>`;
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${title}</title>
+    ${manifest.css ? `<link rel="stylesheet" href="/${basename(manifest.css)}">` : ""}
+</head>
+<body>
+    <div id="root" style="display: contents">${app_html}</div>
+    <script>window.__WEBS_STATE__ = ${serialize_state(webs_state)};</script>
+    <script type="module" src="/${basename(manifest.js)}"></script>
+    ${hmr_script}
+</body>
+</html>`;
+}
+function serialize_state(state) {
+    return JSON.stringify(state, (_, value) => {
+        if (value instanceof Set) return { __type: "Set", values: [...value] };
+        if (value instanceof Map)
+            return { __type: "Map", entries: [...value.entries()] };
+        return value;
+    });
+}
+

@@ -1,48 +1,19 @@
+/**
+ * @fileoverview Provides authentication and session management utilities.
+ * This file contains functions for user creation, login, logout, and session validation.
+ * It is designed to work with a database instance and handles HTTP requests.
+ */
+
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7;
 
-/**
- * Hashes a password using bcrypt.
- * @param {string} password - The plaintext password to hash.
- * @returns {Promise<string>} The hashed password.
- */
 async function hash_password(password) {
   return Bun.password.hash(password, { algorithm: "bcrypt", cost: 10 });
 }
 
-/**
- * Verifies a plaintext password against a hash.
- * @param {string} password - The plaintext password.
- * @param {string} hash - The hash to compare against.
- * @returns {Promise<boolean>} True if the password is valid, false otherwise.
- */
 async function verify_password(password, hash) {
   return Bun.password.verify(password, hash);
 }
 
-/**
- * Creates a new user in the database.
- * @param {object} db - The database instance.
- * @param {object} userData - The user's data.
- * @param {string} userData.email - The user's email.
- * @param {string} userData.username - The user's username.
- * @param {string} userData.password - The user's plaintext password.
- * @returns {Promise<object>} The newly created user object (without password).
- */
-export async function create_user(db, { email, username, password }) {
-  const hashed_password = await hash_password(password);
-  return db
-    .query(
-      "INSERT INTO users (email, username, password) VALUES ($email, $username, $password) RETURNING id, email, username",
-    )
-    .get({ $email: email, $username: username, $password: hashed_password });
-}
-
-/**
- * Creates a new session for a user.
- * @param {object} db - The database instance.
- * @param {number} user_id - The ID of the user to create the session for.
- * @returns {string} The newly created session ID.
- */
 export function create_session(db, user_id) {
   const session_id = crypto.randomUUID();
   const expires_at = new Date(Date.now() + SESSION_DURATION_MS);
@@ -52,21 +23,10 @@ export function create_session(db, user_id) {
   return session_id;
 }
 
-/**
- * Deletes a session from the database.
- * @param {object} db - The database instance.
- * @param {string} session_id - The ID of the session to delete.
- */
 export function delete_session(db, session_id) {
   db.query("DELETE FROM sessions WHERE id = ?").run(session_id);
 }
 
-/**
- * Retrieves a user from the database based on a session ID.
- * @param {object} db - The database instance.
- * @param {string} session_id - The session ID from the client's cookie.
- * @returns {object|null} The user object if the session is valid, otherwise null.
- */
 export function get_user_from_session(db, session_id) {
   if (!session_id) return null;
   const session = db
@@ -82,12 +42,15 @@ export function get_user_from_session(db, session_id) {
     .get(session.user_id);
 }
 
-/**
- * Handles user registration. Expects a JSON body with email, username, and password.
- * @param {Request} req - The incoming HTTP request.
- * @param {object} db - The database instance.
- * @returns {Promise<Response>} A response object.
- */
+export async function create_user(db, { email, username, password }) {
+  const hashed_password = await hash_password(password);
+  return db
+    .query(
+      "INSERT INTO users (email, username, password) VALUES ($email, $username, $password) RETURNING id, email, username",
+    )
+    .get({ $email: email, $username: username, $password: hashed_password });
+}
+
 export async function register_user(req, db) {
   try {
     const { email, username, password } = await req.json();
@@ -103,9 +66,7 @@ export async function register_user(req, db) {
     if (existing_user) {
       return new Response(
         "A user with this email or username already exists.",
-        {
-          status: 409,
-        },
+        { status: 409 },
       );
     }
     const user = await create_user(db, { email, username, password });
@@ -119,13 +80,6 @@ export async function register_user(req, db) {
   }
 }
 
-/**
- * Handles user login. Expects a JSON body with email and password.
- * Sets a session cookie on successful login.
- * @param {Request} req - The incoming HTTP request.
- * @param {object} db - The database instance.
- * @returns {Promise<Response>} A response object.
- */
 export async function login_user(req, db) {
   try {
     const { email, password } = await req.json();
@@ -135,11 +89,7 @@ export async function login_user(req, db) {
     const user = db
       .query("SELECT id, username, email, password FROM users WHERE email = ?")
       .get(email);
-    if (!user) {
-      return new Response("Invalid credentials.", { status: 401 });
-    }
-    const is_valid_password = await verify_password(password, user.password);
-    if (!is_valid_password) {
+    if (!user || !(await verify_password(password, user.password))) {
       return new Response("Invalid credentials.", { status: 401 });
     }
     const session_id = create_session(db, user.id);
@@ -162,12 +112,6 @@ export async function login_user(req, db) {
   }
 }
 
-/**
- * Handles user logout. Deletes the session and clears the session cookie.
- * @param {Request} req - The incoming HTTP request.
- * @param {object} db - The database instance.
- * @returns {Promise<Response>} A response object.
- */
 export async function logout_user(req, db) {
   const session_id = req.headers
     .get("cookie")

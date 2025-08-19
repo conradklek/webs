@@ -1,19 +1,17 @@
+/**
+ * @fileoverview This file contains the parsing logic for both JavaScript expressions
+ * and HTML templates used by the framework. It is divided into two main sections:
+ * 1. JavaScript Expression Parser: Handles tokenizing and parsing JS-like
+ * expressions found in template bindings.
+ * 2. HTML Parser: A state-machine-based tokenizer and tree builder for
+ * component templates.
+ */
+
 import { void_elements } from "./utils";
-
-const js_is_whitespace = (c) =>
-  c === " " || c === "\n" || c === "\t" || c === "\r";
-
-const is_digit = (c) => c >= "0" && c <= "9";
-
-const is_ident_start = (c) =>
-  (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c === "$" || c === "_";
-
-const is_ident_part = (c) => is_ident_start(c) || is_digit(c);
 
 const js_token_cache = new Map();
 
 const JS_ESCAPE_MAP = { n: "\n", t: "\t", r: "\r" };
-
 const JS_KEYWORDS = {
   true: "BOOLEAN",
   false: "BOOLEAN",
@@ -21,24 +19,33 @@ const JS_KEYWORDS = {
   undefined: "UNDEFINED",
 };
 
+const js_is_whitespace = (c) =>
+  c === " " || c === "\n" || c === "\t" || c === "\r";
+const is_digit = (c) => c >= "0" && c <= "9";
+const is_ident_start = (c) =>
+  (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c === "$" || c === "_";
+const is_ident_part = (c) => is_ident_start(c) || is_digit(c);
+
 /**
- * Tokenizes a JavaScript expression string.
+ * Tokenizes a JavaScript expression string. Caches results for performance.
  * @param {string} expression - The expression string to tokenize.
  * @returns {Array<object>} An array of token objects.
  */
-
 export function tokenize_js(expression) {
   if (js_token_cache.has(expression)) {
     return js_token_cache.get(expression);
   }
+
   const tokens = [];
   let i = 0;
   while (i < expression.length) {
     let char = expression[i];
+
     if (js_is_whitespace(char)) {
       i++;
       continue;
     }
+
     if (is_ident_start(char)) {
       let ident = char;
       while (++i < expression.length && is_ident_part(expression[i])) {
@@ -47,6 +54,7 @@ export function tokenize_js(expression) {
       tokens.push({ type: JS_KEYWORDS[ident] || "IDENTIFIER", value: ident });
       continue;
     }
+
     if (is_digit(char)) {
       let num_str = char;
       while (
@@ -58,6 +66,7 @@ export function tokenize_js(expression) {
       tokens.push({ type: "NUMBER", value: parseFloat(num_str) });
       continue;
     }
+
     if (char === "'" || char === '"') {
       const quote = char;
       let value = "";
@@ -76,6 +85,7 @@ export function tokenize_js(expression) {
       tokens.push({ type: "STRING", value });
       continue;
     }
+
     const two_char_op = char + expression[i + 1];
     const three_char_op = two_char_op + expression[i + 2];
     if (three_char_op === "===" || three_char_op === "!==") {
@@ -95,6 +105,7 @@ export function tokenize_js(expression) {
       i += 2;
       continue;
     }
+
     if ("()[]{},.:".includes(char)) {
       const type = {
         "(": "LPAREN",
@@ -111,19 +122,23 @@ export function tokenize_js(expression) {
       i++;
       continue;
     }
+
     if ("+-*/<>&|!?=".includes(char)) {
       tokens.push({ type: char === "=" ? "EQUALS" : "OPERATOR", value: char });
       i++;
       continue;
     }
+
     throw new Error(`Tokenizer Error: Unrecognized character '${char}'`);
   }
+
   js_token_cache.set(expression, tokens);
   return tokens;
 }
 
 /**
- * Parses an array of JavaScript expression tokens into an AST.
+ * Parses an array of JavaScript expression tokens into an AST. This is a Pratt
+ * parser implementation that handles operator precedence.
  * @param {Array<object>} tokens - The array of tokens from `tokenize_js`.
  * @returns {object} An expression AST object.
  */
@@ -131,28 +146,9 @@ export function parse_js(tokens) {
   let i = 0;
   const peek = () => tokens[i];
   const consume = () => tokens[i++];
+
   let parse_assignment;
-  const parse_object_literal = () => {
-    consume();
-    const properties = [];
-    if (peek()?.type !== "RBRACE") {
-      do {
-        const key = parse_primary();
-        if (key.type !== "Identifier" && key.type !== "Literal") {
-          throw new Error("Invalid property key in object literal.");
-        }
-        if (peek()?.type !== "COLON")
-          throw new Error("Expected ':' after property key.");
-        consume();
-        const value = parse_assignment();
-        properties.push({ type: "Property", key, value });
-      } while (peek()?.type === "COMMA" && consume());
-    }
-    if (peek()?.type !== "RBRACE")
-      throw new Error("Expected '}' to close object literal.");
-    consume();
-    return { type: "ObjectLiteral", properties };
-  };
+
   const parse_primary = () => {
     const token = peek();
     if (!token) throw new Error("Unexpected end of expression.");
@@ -185,6 +181,29 @@ export function parse_js(tokens) {
         throw new Error(`Parser Error: Unexpected token ${token.type}`);
     }
   };
+
+  const parse_object_literal = () => {
+    consume();
+    const properties = [];
+    if (peek()?.type !== "RBRACE") {
+      do {
+        const key = parse_primary();
+        if (key.type !== "Identifier" && key.type !== "Literal") {
+          throw new Error("Invalid property key in object literal.");
+        }
+        if (peek()?.type !== "COLON")
+          throw new Error("Expected ':' after property key.");
+        consume();
+        const value = parse_assignment();
+        properties.push({ type: "Property", key, value });
+      } while (peek()?.type === "COMMA" && consume());
+    }
+    if (peek()?.type !== "RBRACE")
+      throw new Error("Expected '}' to close object literal.");
+    consume();
+    return { type: "ObjectLiteral", properties };
+  };
+
   const parse_accessors = () => {
     let node = parse_primary();
     while (peek()) {
@@ -232,6 +251,7 @@ export function parse_js(tokens) {
     }
     return node;
   };
+
   const parse_unary = () => {
     if (
       peek()?.type === "OPERATOR" &&
@@ -242,15 +262,17 @@ export function parse_js(tokens) {
     }
     return parse_accessors();
   };
-  const build_binary_parser = (next, ops) => () => {
-    let left = next();
-    while (peek() && ops.includes(peek().value)) {
+
+  const build_binary_parser = (next_parser, operators) => () => {
+    let left = next_parser();
+    while (peek() && operators.includes(peek().value)) {
       const op = consume().value;
-      const right = next();
+      const right = next_parser();
       left = { type: "BinaryExpression", operator: op, left, right };
     }
     return left;
   };
+
   const parse_multiplicative = build_binary_parser(parse_unary, ["*", "/"]);
   const parse_additive = build_binary_parser(parse_multiplicative, ["+", "-"]);
   const parse_comparison = build_binary_parser(parse_additive, [
@@ -272,6 +294,7 @@ export function parse_js(tokens) {
   const parse_logical_or = build_binary_parser(parse_nullish_coalescing, [
     "||",
   ]);
+
   const parse_ternary = () => {
     const test = parse_logical_or();
     if (peek()?.value === "?") {
@@ -285,6 +308,7 @@ export function parse_js(tokens) {
     }
     return test;
   };
+
   const parse_arrow = () => {
     const left = parse_ternary();
     if (peek()?.type === "ARROW") {
@@ -305,6 +329,7 @@ export function parse_js(tokens) {
     }
     return left;
   };
+
   parse_assignment = () => {
     const left = parse_arrow();
     if (peek()?.type === "EQUALS") {
@@ -320,6 +345,7 @@ export function parse_js(tokens) {
     }
     return left;
   };
+
   const ast = parse_assignment();
   if (i < tokens.length) {
     throw new Error(`Parser Error: Unexpected tokens at end of expression.`);
@@ -327,197 +353,226 @@ export function parse_js(tokens) {
   return ast;
 }
 
-const html_is_whitespace = (c) =>
-  c === " " || c === "\n" || c === "\t" || c === "\r";
-
 export const html_ast_cache = new Map();
 
-const State = {
+const HTML_TOKENIZER_STATE = {
   DATA: 1,
   TAG_OPEN: 2,
   TAG_NAME: 3,
-  BEFORE_ATTR: 4,
-  ATTR_NAME: 5,
-  BEFORE_ATTR_VALUE: 6,
-  ATTR_VALUE_D_QUOTED: 7,
-  ATTR_VALUE_S_QUOTED: 8,
-  ATTR_VALUE_UNQUOTED: 9,
+  BEFORE_ATTRIBUTE_NAME: 4,
+  ATTRIBUTE_NAME: 5,
+  BEFORE_ATTRIBUTE_VALUE: 6,
+  ATTRIBUTE_VALUE_DOUBLE_QUOTED: 7,
+  ATTRIBUTE_VALUE_SINGLE_QUOTED: 8,
+  ATTRIBUTE_VALUE_UNQUOTED: 9,
   COMMENT: 10,
-  SELF_CLOSING: 11,
+  SELF_CLOSING_START_TAG: 11,
 };
 
+const html_is_whitespace = (c) =>
+  c === " " || c === "\n" || c === "\t" || c === "\r";
+
 /**
- * Tokenizes an HTML string.
+ * A state-machine based tokenizer for HTML. It's designed to be fast and
+ * handle the specific syntax required by the template compiler.
  * @param {string} html - The HTML string to tokenize.
  * @returns {Array<object>} An array of token objects.
  */
 function tokenize_html(html) {
-  let state = State.DATA;
+  let state = HTML_TOKENIZER_STATE.DATA;
   let i = 0;
   const tokens = [];
   let buffer = "";
   let tag_token = null;
+
   while (i < html.length) {
     const char = html[i];
     switch (state) {
-      case State.DATA:
+      case HTML_TOKENIZER_STATE.DATA:
         if (char === "<") {
           if (buffer) tokens.push({ type: "text", content: buffer });
           buffer = "";
-          state = State.TAG_OPEN;
+          state = HTML_TOKENIZER_STATE.TAG_OPEN;
         } else {
           buffer += char;
         }
         break;
-      case State.TAG_OPEN:
+
+      case HTML_TOKENIZER_STATE.TAG_OPEN:
         if (char === "!") {
           if (html.substring(i, i + 3) === "!--") {
-            state = State.COMMENT;
+            state = HTML_TOKENIZER_STATE.COMMENT;
             i += 2;
           }
         } else if (char === "/") {
           tag_token = { type: "tagEnd", tagName: "" };
-          state = State.TAG_NAME;
+          state = HTML_TOKENIZER_STATE.TAG_NAME;
         } else if (/[a-zA-Z]/.test(char)) {
           tag_token = { type: "tagStart", tagName: char, attributes: [] };
-          state = State.TAG_NAME;
+          state = HTML_TOKENIZER_STATE.TAG_NAME;
         }
         break;
-      case State.TAG_NAME:
+
+      case HTML_TOKENIZER_STATE.TAG_NAME:
         if (html_is_whitespace(char)) {
-          state = State.BEFORE_ATTR;
+          state = HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME;
         } else if (char === "/") {
-          state = State.SELF_CLOSING;
+          state = HTML_TOKENIZER_STATE.SELF_CLOSING_START_TAG;
         } else if (char === ">") {
           tokens.push(tag_token);
-          state = State.DATA;
+          state = HTML_TOKENIZER_STATE.DATA;
         } else {
           tag_token.tagName += char;
         }
         break;
-      case State.BEFORE_ATTR:
+
+      case HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME:
         if (!html_is_whitespace(char)) {
           if (char === ">") {
             tokens.push(tag_token);
-            state = State.DATA;
+            state = HTML_TOKENIZER_STATE.DATA;
           } else if (char === "/") {
-            state = State.SELF_CLOSING;
+            state = HTML_TOKENIZER_STATE.SELF_CLOSING_START_TAG;
           } else if (char !== "=") {
             buffer = char;
-            state = State.ATTR_NAME;
+            state = HTML_TOKENIZER_STATE.ATTRIBUTE_NAME;
           }
         }
         break;
-      case State.ATTR_NAME:
+
+      case HTML_TOKENIZER_STATE.ATTRIBUTE_NAME:
         if (char === "=" || html_is_whitespace(char) || char === ">") {
           tag_token.attributes.push({ name: buffer, value: true });
           buffer = "";
-          if (char === "=") state = State.BEFORE_ATTR_VALUE;
+          if (char === "=") state = HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_VALUE;
           else if (char === ">") {
             tokens.push(tag_token);
-            state = State.DATA;
-          } else state = State.BEFORE_ATTR;
+            state = HTML_TOKENIZER_STATE.DATA;
+          } else state = HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME;
         } else {
           buffer += char;
         }
         break;
-      case State.BEFORE_ATTR_VALUE:
-        if (char === '"') state = State.ATTR_VALUE_D_QUOTED;
-        else if (char === "'") state = State.ATTR_VALUE_S_QUOTED;
+
+      case HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_VALUE:
+        if (char === '"')
+          state = HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_DOUBLE_QUOTED;
+        else if (char === "'")
+          state = HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_SINGLE_QUOTED;
         else if (!html_is_whitespace(char)) {
           buffer = char;
-          state = State.ATTR_VALUE_UNQUOTED;
+          state = HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_UNQUOTED;
         }
         break;
-      case State.ATTR_VALUE_D_QUOTED:
-      case State.ATTR_VALUE_S_QUOTED:
-        const quote = state === State.ATTR_VALUE_D_QUOTED ? '"' : "'";
+
+      case HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_DOUBLE_QUOTED:
+      case HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_SINGLE_QUOTED:
+        const quote =
+          state === HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_DOUBLE_QUOTED
+            ? '"'
+            : "'";
         if (char === quote) {
           tag_token.attributes[tag_token.attributes.length - 1].value = buffer;
           buffer = "";
-          state = State.BEFORE_ATTR;
+          state = HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME;
         } else {
           buffer += char;
         }
         break;
-      case State.ATTR_VALUE_UNQUOTED:
+
+      case HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_UNQUOTED:
         if (html_is_whitespace(char) || char === ">") {
           tag_token.attributes[tag_token.attributes.length - 1].value = buffer;
           buffer = "";
-          state = char === ">" ? State.DATA : State.BEFORE_ATTR;
+          state =
+            char === ">"
+              ? HTML_TOKENIZER_STATE.DATA
+              : HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME;
           if (char === ">") tokens.push(tag_token);
         } else {
           buffer += char;
         }
         break;
-      case State.COMMENT:
+
+      case HTML_TOKENIZER_STATE.COMMENT:
         if (char === "-" && html.substring(i, i + 3) === "-->") {
           tokens.push({ type: "comment", content: buffer });
           buffer = "";
           i += 2;
-          state = State.DATA;
+          state = HTML_TOKENIZER_STATE.DATA;
         } else {
           buffer += char;
         }
         break;
-      case State.SELF_CLOSING:
+
+      case HTML_TOKENIZER_STATE.SELF_CLOSING_START_TAG:
         if (char === ">") {
           tokens.push(tag_token);
-          state = State.DATA;
+          state = HTML_TOKENIZER_STATE.DATA;
         }
         break;
     }
     i++;
   }
-  if (state === State.DATA && buffer) {
+
+  if (state === HTML_TOKENIZER_STATE.DATA && buffer) {
     tokens.push({ type: "text", content: buffer });
   }
   return tokens;
 }
 
 /**
- * Builds a parse tree from an array of HTML tokens.
+ * Builds a parse tree from an array of HTML tokens. Uses a stack to handle
+ * nested elements and implicitly closes tags.
  * @param {Array<object>} tokens - The array of tokens from `tokenize_html`.
  * @returns {object} A root node of the parsed tree.
  */
 export function build_tree(tokens) {
   const root = { type: "root", children: [] };
   const stack = [root];
+
   for (const token of tokens) {
     const parent = stack[stack.length - 1];
-    if (token.type === "tagStart") {
-      const node = {
-        type: "element",
-        tagName: token.tagName.toLowerCase(),
-        attributes: token.attributes,
-        children: [],
-      };
-      parent.children.push(node);
-      if (!void_elements.has(node.tagName)) {
-        stack.push(node);
-      }
-    } else if (token.type === "tagEnd") {
-      const tag_name_lower = token.tagName.toLowerCase();
-      for (let i = stack.length - 1; i >= 0; i--) {
-        if (stack[i].tagName === tag_name_lower) {
-          stack.length = i;
-          break;
+    switch (token.type) {
+      case "tagStart": {
+        const node = {
+          type: "element",
+          tagName: token.tagName.toLowerCase(),
+          attributes: token.attributes,
+          children: [],
+        };
+        parent.children.push(node);
+        if (!void_elements.has(node.tagName)) {
+          stack.push(node);
         }
+        break;
       }
-    } else if (token.type === "text") {
-      if (token.content.trim().length === 0) {
-        continue;
+      case "tagEnd": {
+        const tag_name_lower = token.tagName.toLowerCase();
+        for (let i = stack.length - 1; i >= 0; i--) {
+          if (stack[i].tagName === tag_name_lower) {
+            stack.length = i;
+            break;
+          }
+        }
+        break;
       }
-      parent.children.push({ type: "text", content: token.content });
-    } else if (token.type === "comment") {
-      parent.children.push({ type: "comment", content: token.content });
+      case "text":
+        if (token.content.trim().length > 0) {
+          parent.children.push({ type: "text", content: token.content });
+        }
+        break;
+      case "comment":
+        parent.children.push({ type: "comment", content: token.content });
+        break;
     }
   }
   return root;
 }
 
 /**
- * Parses an HTML string into a simplified AST. Caches the result.
+ * Parses an HTML string into a simplified AST. Caches the result for performance.
+ * This is the main public-facing function for HTML parsing.
  * @param {string} html - The HTML string to parse.
  * @returns {object} The root of the HTML AST.
  */

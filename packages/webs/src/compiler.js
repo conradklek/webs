@@ -1,5 +1,5 @@
 import { parse_html, parse_js, tokenize_js } from "./parser";
-import { Text, Fragment, Comment, camelize } from "./utils";
+import { camelize } from "./utils";
 import * as Webs from "./renderer";
 
 export const NODE_TYPES = {
@@ -177,19 +177,11 @@ export function generate_render_fn(ast) {
 
   const generated_code = ctx.gen_node(ast);
   const function_body = `
-const { h: _h } = Webs;
-const _Text = Webs.Text;
-const _Fragment = Webs.Fragment;
-const _Comment = Webs.Comment;
+const { h: _h, Text: _Text, Fragment: _Fragment, Comment: _Comment } = Webs;
 return ${generated_code || "null"};
 `;
   try {
-    const fn = new Function("Webs", "_ctx", function_body).bind(null, {
-      ...Webs,
-      Text,
-      Fragment,
-      Comment,
-    });
+    const fn = new Function("Webs", "_ctx", function_body).bind(null, Webs);
     fn.toString = () => function_body;
     return fn;
   } catch (e) {

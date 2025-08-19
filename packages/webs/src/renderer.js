@@ -1,56 +1,17 @@
-import {
-  Fragment,
-  Comment,
-  Teleport,
-  Text,
-  is_function,
-  is_object,
-  is_string,
-} from "./utils";
+import { is_function, is_object, is_string } from "./utils";
 import { effect, reactive, computed } from "./reactivity";
 
-export function get_sequence(arr) {
-  if (arr.length === 0) return [];
-  const p = new Array(arr.length);
-  const result = [0];
-  let i, j, u, v, c;
-  const len = arr.length;
-  for (i = 0; i < len; i++) {
-    const arr_i = arr[i];
-    if (arr_i !== 0) {
-      j = result[result.length - 1];
-      if (arr[j] < arr_i) {
-        p[i] = j;
-        result.push(i);
-        continue;
-      }
-      u = 0;
-      v = result.length - 1;
-      while (u < v) {
-        c = (u + v) >> 1;
-        if (arr[result[c]] < arr_i) {
-          u = c + 1;
-        } else {
-          v = c;
-        }
-      }
-      if (arr_i < arr[result[u]]) {
-        if (u > 0) {
-          p[i] = result[u - 1];
-        }
-        result[u] = i;
-      }
-    }
-  }
-  u = result.length;
-  v = result[u - 1];
-  while (u-- > 0) {
-    result[u] = v;
-    v = p[v];
-  }
-  return result;
-}
+export const Text = Symbol("Text");
+export const Comment = Symbol("Comment");
+export const Fragment = Symbol("Fragment");
+export const Teleport = Symbol("Teleport");
 
+/**
+ * Creates a renderer instance with platform-specific options.
+ * This is the main entry point for the rendering logic.
+ * @param {object} options - Platform-specific functions for DOM manipulation.
+ * @returns {{ patch: function, hydrate: function }} - The patch and hydrate functions.
+ */
 export function create_renderer(options) {
   const {
     create_element: host_create_element,
@@ -63,187 +24,89 @@ export function create_renderer(options) {
     query_selector: host_query_selector,
   } = options;
 
-  const hydrate = (vnode, container) => {
-    hydrate_node(vnode, container.firstChild);
-  };
+  /**
+   * The main patching function. It diffs two VNodes (n1: old, n2: new) and
+   * applies the necessary changes to the container.
+   * @param {VNode | null} n1 - The old virtual node.
+   * @param {VNode} n2 - The new virtual node.
+   * @param {HTMLElement} container - The parent DOM element.
+   * @param {HTMLElement | null} anchor - The anchor element for insertion.
+   * @param {object | null} parent_component - The parent component instance.
+   */
+  const patch = (n1, n2, container, anchor = null, parent_component = null) => {
+    if (n1 === n2) return;
 
-  const hydrate_node = (vnode, dom_node) => {
-    while (
-      dom_node &&
-      ((dom_node.nodeType === 3 && !dom_node.textContent.trim()) ||
-        (dom_node.nodeType === 8 && dom_node.data === "w"))
-    ) {
-      dom_node = dom_node.nextSibling;
+    if (n1 && (n1.type !== n2.type || n1.key !== n2.key)) {
+      unmount(n1);
+      n1 = null;
     }
 
-    if (!dom_node && vnode.type !== Comment) {
-      console.warn("DOM Mismatch during hydration: Node not found.", vnode);
-      return null;
-    }
-
-    const { type, props, children } = vnode;
-    vnode.el = dom_node;
-
+    const { type } = n2;
     switch (type) {
       case Text:
-        if (props && props["w-dynamic"]) {
-          if (dom_node.nodeType !== 8 || dom_node.data !== "[")
-            return dom_node.nextSibling;
-          const textNode = dom_node.nextSibling;
-          const closingComment = textNode.nextSibling;
-          if (
-            !closingComment ||
-            closingComment.nodeType !== 8 ||
-            closingComment.data !== "]"
-          )
-            return dom_node.nextSibling;
-          vnode.el = textNode;
-          return closingComment.nextSibling;
-        }
-        if (dom_node.nodeType !== 3) return dom_node.nextSibling;
-        return dom_node.nextSibling;
-
-      case Comment:
-        if (dom_node && dom_node.nodeType === 8) {
-          return dom_node.nextSibling;
-        }
-        return dom_node;
-
-      case Fragment:
-        return hydrate_children(children, dom_node.parentElement, dom_node);
-
-      default:
-        if (is_object(type)) {
-          mount_component(vnode, null, null, null, true);
-          return dom_node.nextSibling;
-        } else if (is_string(type)) {
-          if (props) {
-            for (const key in props) {
-              host_patch_prop(dom_node, key, null, props[key]);
-            }
+        n2.el = n1 ? n1.el : host_create_text(n2.children);
+        if (n1) {
+          if (n2.children !== n1.children) {
+            host_set_element_text(n2.el, n2.children);
           }
-          hydrate_children(children, dom_node, dom_node.firstChild);
-          return dom_node.nextSibling;
-        }
-    }
-    return dom_node ? dom_node.nextSibling : null;
-  };
-
-  const hydrate_children = (children, parent_dom, start_node) => {
-    let next_dom_node = start_node;
-    const child_vnodes = Array.isArray(children) ? children : [children];
-    for (const child_vnode of child_vnodes) {
-      if (!child_vnode) continue;
-      next_dom_node = hydrate_node(child_vnode, next_dom_node);
-    }
-    return next_dom_node;
-  };
-
-  const unmount = (vnode) => {
-    if (vnode.component) {
-      vnode.component.hooks.onUnmounted?.forEach((h) => h());
-      unmount(vnode.component.sub_tree);
-      return;
-    }
-    if (vnode.type === Fragment || vnode.type === Teleport) {
-      unmount_children(vnode.children);
-      return;
-    }
-    host_remove(vnode.el);
-  };
-
-  const unmount_children = (children) => {
-    if (Array.isArray(children)) {
-      children.forEach(unmount);
-    }
-  };
-
-  const patch_keyed_children = (c1, c2, container) => {
-    let i = 0;
-    const l2 = c2.length;
-    let e1 = c1.length - 1;
-    let e2 = l2 - 1;
-    while (i <= e1 && i <= e2 && c1[i].key === c2[i].key) {
-      patch(c1[i], c2[i], container);
-      i++;
-    }
-    while (i <= e1 && i <= e2 && c1[e1].key === c2[e2].key) {
-      patch(c1[e1], c2[e2], container);
-      e1--;
-      e2--;
-    }
-    if (i > e1) {
-      if (i <= e2) {
-        const next_pos = e2 + 1;
-        const anchor = next_pos < l2 ? c2[next_pos].el : null;
-        while (i <= e2) {
-          patch(null, c2[i++], container, anchor);
-        }
-      }
-    } else if (i > e2) {
-      while (i <= e1) {
-        unmount(c1[i++]);
-      }
-    } else {
-      const s1 = i,
-        s2 = i;
-      const key_to_new_index_map = new Map();
-      for (i = s2; i <= e2; i++) {
-        key_to_new_index_map.set(c2[i].key, i);
-      }
-      const to_be_patched = e2 - s2 + 1;
-      const new_index_to_old_index_map = new Array(to_be_patched).fill(0);
-      let moved = false;
-      let max_new_index_so_far = 0;
-      for (i = s1; i <= e1; i++) {
-        const prev_child = c1[i];
-        const new_index = key_to_new_index_map.get(prev_child.key);
-        if (new_index === undefined) {
-          unmount(prev_child);
         } else {
-          if (new_index >= max_new_index_so_far) {
-            max_new_index_so_far = new_index;
-          } else {
-            moved = true;
-          }
-          new_index_to_old_index_map[new_index - s2] = i + 1;
-          patch(prev_child, c2[new_index], container);
+          host_insert(n2.el, container, anchor);
         }
-      }
-      const increasing_new_index_sequence = moved
-        ? get_sequence(new_index_to_old_index_map)
-        : [];
-      let j = increasing_new_index_sequence.length - 1;
-      for (i = to_be_patched - 1; i >= 0; i--) {
-        const next_index = s2 + i;
-        const next_child = c2[next_index];
-        const anchor = next_index + 1 < l2 ? c2[next_index + 1].el : null;
-        if (new_index_to_old_index_map[i] === 0) {
-          patch(null, next_child, container, anchor);
-        } else if (moved) {
-          if (j < 0 || i !== increasing_new_index_sequence[j]) {
-            host_insert(next_child.el, container, anchor);
+        break;
+      case Comment:
+        n2.el = n1 ? n1.el : host_create_comment(n2.children);
+        if (!n1) {
+          host_insert(n2.el, container, anchor);
+        }
+        break;
+      case Fragment:
+        if (!n1) {
+          n2.children.forEach((c) => patch(null, c, container, anchor));
+        } else {
+          patch_children(n1, n2, container);
+        }
+        break;
+      case Teleport:
+        const target = host_query_selector(n2.props.to);
+        if (target) {
+          patch_children(n1, n2, target);
+        } else {
+          console.warn(`Teleport target "${n2.props.to}" not found.`);
+        }
+        break;
+      default:
+        if (is_string(type)) {
+          patch_element(n1, n2, container, anchor);
+        } else if (is_object(type)) {
+          if (!n1) {
+            mount_component(n2, container, anchor, parent_component);
           } else {
-            j--;
+            update_component(n1, n2);
           }
         }
-      }
     }
   };
 
-  const patch_unkeyed_children = (c1, c2, container) => {
-    const old_length = c1.length;
-    const new_length = c2.length;
-    const common_length = Math.min(old_length, new_length);
-    for (let i = 0; i < common_length; i++) {
-      patch(c1[i], c2[i], container);
-    }
-    if (new_length > old_length) {
-      for (let i = common_length; i < new_length; i++) {
-        patch(null, c2[i], container);
+  const patch_element = (n1, n2, container, anchor) => {
+    const el = (n2.el = n1 ? n1.el : host_create_element(n2.type));
+    const old_props = n1?.props || {};
+    const new_props = n2.props || {};
+
+    for (const key in new_props) {
+      if (new_props[key] !== old_props[key]) {
+        host_patch_prop(el, key, old_props[key], new_props[key]);
       }
-    } else {
-      unmount_children(c1.slice(common_length));
+    }
+    for (const key in old_props) {
+      if (!(key in new_props)) {
+        host_patch_prop(el, key, old_props[key], null);
+      }
+    }
+
+    patch_children(n1, n2, el);
+
+    if (!n1) {
+      host_insert(el, container, anchor);
     }
   };
 
@@ -285,6 +148,101 @@ export function create_renderer(options) {
     }
   };
 
+  const patch_unkeyed_children = (c1, c2, container) => {
+    const old_length = c1.length;
+    const new_length = c2.length;
+    const common_length = Math.min(old_length, new_length);
+
+    for (let i = 0; i < common_length; i++) {
+      patch(c1[i], c2[i], container);
+    }
+    if (new_length > old_length) {
+      for (let i = common_length; i < new_length; i++) {
+        patch(null, c2[i], container);
+      }
+    } else {
+      unmount_children(c1.slice(common_length));
+    }
+  };
+
+  const patch_keyed_children = (c1, c2, container) => {
+    let i = 0;
+    const l2 = c2.length;
+    let e1 = c1.length - 1;
+    let e2 = l2 - 1;
+
+    while (i <= e1 && i <= e2 && c1[i].key === c2[i].key) {
+      patch(c1[i], c2[i], container);
+      i++;
+    }
+    while (i <= e1 && i <= e2 && c1[e1].key === c2[e2].key) {
+      patch(c1[e1], c2[e2], container);
+      e1--;
+      e2--;
+    }
+
+    if (i > e1) {
+      if (i <= e2) {
+        const next_pos = e2 + 1;
+        const anchor = next_pos < l2 ? c2[next_pos].el : null;
+        while (i <= e2) {
+          patch(null, c2[i++], container, anchor);
+        }
+      }
+    } else if (i > e2) {
+      while (i <= e1) {
+        unmount(c1[i++]);
+      }
+    } else {
+      const s1 = i,
+        s2 = i;
+      const key_to_new_index_map = new Map();
+      for (i = s2; i <= e2; i++) {
+        key_to_new_index_map.set(c2[i].key, i);
+      }
+
+      const to_be_patched = e2 - s2 + 1;
+      const new_index_to_old_index_map = new Array(to_be_patched).fill(0);
+      let moved = false;
+      let max_new_index_so_far = 0;
+
+      for (i = s1; i <= e1; i++) {
+        const prev_child = c1[i];
+        const new_index = key_to_new_index_map.get(prev_child.key);
+        if (new_index === undefined) {
+          unmount(prev_child);
+        } else {
+          if (new_index >= max_new_index_so_far) {
+            max_new_index_so_far = new_index;
+          } else {
+            moved = true;
+          }
+          new_index_to_old_index_map[new_index - s2] = i + 1;
+          patch(prev_child, c2[new_index], container);
+        }
+      }
+
+      const increasing_new_index_sequence = moved
+        ? get_longest_increasing_subsequence(new_index_to_old_index_map)
+        : [];
+      let j = increasing_new_index_sequence.length - 1;
+      for (i = to_be_patched - 1; i >= 0; i--) {
+        const next_index = s2 + i;
+        const next_child = c2[next_index];
+        const anchor = next_index + 1 < l2 ? c2[next_index + 1].el : null;
+        if (new_index_to_old_index_map[i] === 0) {
+          patch(null, next_child, container, anchor);
+        } else if (moved) {
+          if (j < 0 || i !== increasing_new_index_sequence[j]) {
+            host_insert(next_child.el, container, anchor);
+          } else {
+            j--;
+          }
+        }
+      }
+    }
+  };
+
   const mount_component = (
     vnode,
     container,
@@ -299,11 +257,13 @@ export function create_renderer(options) {
       is_hydrating,
     ));
     const component = instance.type;
+
     if (!component.render) {
       console.warn(`Component is missing a render function.`, component);
       component.render = () => create_vnode(Comment, null, "missing render");
     }
     instance.render = component.render;
+
     instance.update = effect(
       () => {
         if (!instance.is_mounted) {
@@ -318,7 +278,6 @@ export function create_renderer(options) {
           } else {
             patch(null, sub_tree, container, anchor, instance);
           }
-
           vnode.el = sub_tree.el;
 
           if (
@@ -329,7 +288,6 @@ export function create_renderer(options) {
               host_patch_prop(vnode.el, key, null, instance.attrs[key]);
             }
           }
-
           instance.is_mounted = true;
           instance.hooks.onMounted?.forEach((h) => h());
         } else {
@@ -360,7 +318,6 @@ export function create_renderer(options) {
               }
             }
           }
-
           instance.hooks.onUpdated?.forEach((h) => h());
         }
       },
@@ -378,7 +335,6 @@ export function create_renderer(options) {
 
   const update_component = (n1, n2) => {
     const instance = (n2.component = n1.component);
-
     instance.vnode = n2;
     n2.el = n1.el;
     instance.prev_attrs = instance.attrs;
@@ -396,7 +352,6 @@ export function create_renderer(options) {
       }
     }
     instance.attrs = next_attrs;
-
     instance.slots = n2.children || {};
 
     if (props_options) {
@@ -416,80 +371,123 @@ export function create_renderer(options) {
     }
   };
 
-  const patch_element = (n1, n2, container, anchor) => {
-    const el = (n2.el = n1 ? n1.el : host_create_element(n2.type));
-    const old_props = n1?.props || {};
-    const new_props = n2.props || {};
-    for (const key in new_props) {
-      if (new_props[key] !== old_props[key]) {
-        host_patch_prop(el, key, old_props[key], new_props[key]);
-      }
+  const unmount = (vnode) => {
+    if (vnode.component) {
+      vnode.component.hooks.onUnmounted?.forEach((h) => h());
+      unmount(vnode.component.sub_tree);
+      return;
     }
-    for (const key in old_props) {
-      if (!(key in new_props)) {
-        host_patch_prop(el, key, old_props[key], null);
-      }
+    if (vnode.type === Fragment || vnode.type === Teleport) {
+      unmount_children(vnode.children);
+      return;
     }
-    patch_children(n1, n2, el);
-    if (!n1) {
-      host_insert(el, container, anchor);
+    host_remove(vnode.el);
+  };
+
+  const unmount_children = (children) => {
+    if (Array.isArray(children)) {
+      children.forEach(unmount);
     }
   };
 
-  const patch = (n1, n2, container, anchor = null, parent_component = null) => {
-    if (n1 === n2) return;
-    if (n1 && (n1.type !== n2.type || n1.key !== n2.key)) {
-      unmount(n1);
-      n1 = null;
-    }
-    const { type } = n2;
-    switch (type) {
-      case Fragment:
-        if (!n1) n2.children.forEach((c) => patch(null, c, container, anchor));
-        else patch_children(n1, n2, container);
-        break;
-      case Text:
-        n2.el = n1 ? n1.el : host_create_text(n2.children);
-        if (n1) {
-          if (n2.children !== n1.children)
-            host_set_element_text(n2.el, n2.children);
-        } else {
-          host_insert(n2.el, container, anchor);
-        }
-        break;
-      case Comment:
-        n2.el = n1 ? n1.el : host_create_comment(n2.children);
-        if (!n1) host_insert(n2.el, container, anchor);
-        break;
-      case Teleport:
-        const target = host_query_selector(n2.props.to);
-        if (target) {
-          patch_children(n1, n2, target);
-        } else {
-          console.warn(`Teleport target "${n2.props.to}" not found.`);
-        }
-        break;
-      default:
-        if (is_string(type)) {
-          patch_element(n1, n2, container, anchor);
-        } else if (is_object(type)) {
-          if (!n1) {
-            mount_component(n2, container, anchor, parent_component);
-          } else {
-            update_component(n1, n2);
-          }
-        }
-    }
+  const hydrate = (vnode, container) => {
+    hydrate_node(vnode, container.firstChild);
   };
+
+  const hydrate_node = (vnode, dom_node) => {
+    while (
+      dom_node &&
+      ((dom_node.nodeType === 3 && !dom_node.textContent.trim()) ||
+        (dom_node.nodeType === 8 && dom_node.data === "w"))
+    ) {
+      dom_node = dom_node.nextSibling;
+    }
+    if (!dom_node && vnode.type !== Comment) {
+      console.warn("DOM Mismatch during hydration: Node not found.", vnode);
+      return null;
+    }
+
+    const { type, props, children } = vnode;
+    vnode.el = dom_node;
+
+    switch (type) {
+      case Text:
+        if (props && props["w-dynamic"]) {
+          if (dom_node.nodeType !== 8 || dom_node.data !== "[")
+            return dom_node.nextSibling;
+          const textNode = dom_node.nextSibling;
+          const closingComment = textNode.nextSibling;
+          if (
+            !closingComment ||
+            closingComment.nodeType !== 8 ||
+            closingComment.data !== "]"
+          )
+            return dom_node.nextSibling;
+          vnode.el = textNode;
+          return closingComment.nextSibling;
+        }
+        if (dom_node.nodeType !== 3) return dom_node.nextSibling;
+        return dom_node.nextSibling;
+      case Comment:
+        if (dom_node && dom_node.nodeType === 8) {
+          return dom_node.nextSibling;
+        }
+        return dom_node;
+      case Fragment:
+        return hydrate_children(children, dom_node.parentElement, dom_node);
+      default:
+        if (is_object(type)) {
+          mount_component(vnode, null, null, null, true);
+          return dom_node.nextSibling;
+        } else if (is_string(type)) {
+          if (props) {
+            for (const key in props) {
+              host_patch_prop(dom_node, key, null, props[key]);
+            }
+          }
+          hydrate_children(children, dom_node, dom_node.firstChild);
+          return dom_node.nextSibling;
+        }
+    }
+    return dom_node ? dom_node.nextSibling : null;
+  };
+
+  const hydrate_children = (children, parent_dom, start_node) => {
+    let next_dom_node = start_node;
+    const child_vnodes = Array.isArray(children) ? children : [children];
+    for (const child_vnode of child_vnodes) {
+      if (!child_vnode) continue;
+      next_dom_node = hydrate_node(child_vnode, next_dom_node);
+    }
+    return next_dom_node;
+  };
+
   return { patch, hydrate };
 }
 
+/**
+ * @internal
+ * Module-level state for the component instance currently being initialized.
+ * This is used by lifecycle hooks to associate themselves with the correct component.
+ */
 let current_instance = null;
 
+/**
+ * @internal
+ * Sets the current component instance.
+ */
 const set_current_instance = (instance) => {
   current_instance = instance;
 };
 
+/**
+ * Creates a component instance object.
+ * @param {VNode} vnode - The component's virtual node.
+ * @param {object | null} parent - The parent component instance.
+ * @param {boolean} is_ssr - Flag for server-side rendering.
+ * @param {boolean} is_hydrating - Flag for hydration.
+ * @returns {object} The component instance.
+ */
 export function create_component(
   vnode,
   parent,
@@ -532,7 +530,6 @@ export function create_component(
     setup,
     actions,
   } = instance.type;
-
   const vnode_props = vnode.props || {};
   const resolved_props = {};
 
@@ -543,7 +540,6 @@ export function create_component(
       instance.attrs[key] = vnode_props[key];
     }
   }
-
   if (props_options) {
     for (const key in props_options) {
       if (!resolved_props.hasOwnProperty(key)) {
@@ -551,8 +547,7 @@ export function create_component(
         const def = options?.hasOwnProperty("default")
           ? options.default
           : undefined;
-        const new_value = is_function(def) ? def() : def;
-        resolved_props[key] = new_value;
+        resolved_props[key] = is_function(def) ? def() : def;
       }
     }
   }
@@ -573,7 +568,6 @@ export function create_component(
 
   const initial_state_from_data = state ? state.call(instance.ctx) : {};
   let final_state;
-
   if (
     !parent &&
     is_hydrating &&
@@ -593,11 +587,7 @@ export function create_component(
     };
   }
 
-  if (is_ssr) {
-    instance.internal_ctx = final_state;
-  } else {
-    instance.internal_ctx = reactive(final_state);
-  }
+  instance.internal_ctx = is_ssr ? final_state : reactive(final_state);
 
   instance.ctx = new Proxy(
     {},
@@ -654,7 +644,6 @@ export function create_component(
       instance.methods[key] = methods[key].bind(instance.ctx);
     }
   }
-
   if (!is_ssr && actions) {
     for (const key in actions) {
       instance.actions[key] = async (...args) => {
@@ -682,19 +671,20 @@ export function create_component(
       };
     }
   }
+
   if (!is_ssr && computed_options) {
     for (const key in computed_options) {
       const getter = computed_options[key].bind(instance.ctx);
       instance.internal_ctx[key] = computed(getter);
     }
   }
+
   if (instance.type.render) {
     instance.render = instance.type.render;
   }
+
   return instance;
 }
-
-export { Fragment, Comment, Teleport, Text };
 
 export class VNode {
   constructor(type, props, children) {
@@ -715,8 +705,66 @@ export class VNode {
   }
 }
 
+/**
+ * Factory function for creating a VNode.
+ * @param {string | object | symbol} type - The type of the VNode.
+ * @param {object | null} props - The properties (attributes) of the VNode.
+ * @param {any} children - The children of the VNode.
+ * @returns {VNode} A new VNode instance.
+ */
 export function create_vnode(type, props, children) {
   return new VNode(type, props, children);
 }
 
+/**
+ * Alias for create_vnode, commonly used in JSX transforms.
+ */
 export const h = create_vnode;
+
+/**
+ * Calculates the longest increasing subsequence for optimizing keyed children diffing.
+ * This helps to minimize DOM moves.
+ * @param {number[]} arr - The array of indices.
+ * @returns {number[]} The longest increasing subsequence.
+ */
+function get_longest_increasing_subsequence(arr) {
+  if (arr.length === 0) return [];
+  const p = new Array(arr.length);
+  const result = [0];
+  let i, j, u, v, c;
+  const len = arr.length;
+  for (i = 0; i < len; i++) {
+    const arr_i = arr[i];
+    if (arr_i !== 0) {
+      j = result[result.length - 1];
+      if (arr[j] < arr_i) {
+        p[i] = j;
+        result.push(i);
+        continue;
+      }
+      u = 0;
+      v = result.length - 1;
+      while (u < v) {
+        c = (u + v) >> 1;
+        if (arr[result[c]] < arr_i) {
+          u = c + 1;
+        } else {
+          v = c;
+        }
+      }
+      if (arr_i < arr[result[u]]) {
+        if (u > 0) {
+          p[i] = result[u - 1];
+        }
+        result[u] = i;
+      }
+    }
+  }
+  u = result.length;
+  v = result[u - 1];
+  while (u-- > 0) {
+    result[u] = v;
+    v = p[v];
+  }
+  return result;
+}
