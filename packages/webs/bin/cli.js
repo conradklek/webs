@@ -19,6 +19,21 @@ const HMR_WS_PATH = "/hmr-ws";
 const HMR_TOPIC = "reload";
 const IS_PROD = process.env.NODE_ENV === "production";
 
+/**
+ * Serialize state into JSON-safe format (preserves Set/Map).
+ */
+function serialize_state(state) {
+  return JSON.stringify(state, (key, value) => {
+    if (value instanceof Set) {
+      return { __type: "Set", values: Array.from(value) };
+    }
+    if (value instanceof Map) {
+      return { __type: "Map", entries: Array.from(value.entries()) };
+    }
+    return value;
+  });
+}
+
 export async function load_and_generate_routes(cwd) {
   console.log("Loading application routes and generating client entrypoint...");
   const server_routes = {};
@@ -203,12 +218,6 @@ async function compress_assets(outputs) {
   return sizes;
 }
 
-/**
- * Sets up a file watcher for Hot Module Replacement (HMR).
- * This function only handles watching and rebuilding; it does not
- * perform the initial build.
- * @param {object} options - Configuration for the watcher.
- */
 export function setup_hmr_watcher({
   cwd,
   outdir,
@@ -347,7 +356,8 @@ export function create_request_handler(context) {
   <body>
     <div id="root" style="display: contents">${app_html}</div>
     <script>
-      window.__WEBS_STATE__ = ${JSON.stringify(webs_state)};
+      console.log('Client-side webs_state:', JSON.stringify(${serialize_state(webs_state)}, null, 2));
+      window.__WEBS_STATE__ = ${serialize_state(webs_state)};
     </script>
     <script type="module" src="/${basename(manifest.js)}"></script>
     ${hmr_script}
@@ -480,14 +490,11 @@ async function main() {
       css: initial_build_result.outputs.find((o) => o.path.endsWith(".css"))
         ?.path,
     };
-    // FIX: Set is_ready to true only AFTER the initial build is complete.
     server_context.is_ready = true;
   }
 
   const request_handler = create_request_handler(server_context);
 
-  // FIX: Moved server initialization down, so it only starts after the
-  // initial build has populated the manifest.
   const server = Bun.serve({
     port: PORT,
     development: !IS_PROD,

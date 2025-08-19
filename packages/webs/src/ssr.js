@@ -5,40 +5,9 @@ import {
   Comment,
   Teleport,
 } from "./renderer";
-import { is_string, is_object, is_function } from "./utils";
+import { void_elements, is_string, is_object, is_function } from "./utils";
 import { compile } from "./compiler.js";
 
-const VOID_ELEMENTS = new Set([
-  "area",
-  "base",
-  "br",
-  "col",
-  "embed",
-  "hr",
-  "img",
-  "input",
-  "link",
-  "meta",
-  "param",
-  "source",
-  "track",
-  "wbr",
-]);
-
-/**
- * Recursively compiles templates and flattens the component registry.
- * This function traverses a component definition from the "leaves" of the
- * component tree upwards. It compiles the template if a render function
- * doesn't already exist.
- *
- * CRITICAL FIX: It flattens the component registry by merging child components
- * into their parent's `components` object using `Object.assign`. This ensures
- * that when a parent component is compiled and rendered on the server, it has
- * full awareness of all possible descendant components, preventing "invalid vnode"
- * errors and ensuring components like `CardFooter` are rendered correctly during SSR.
- *
- * @param {object} component_def - The component definition object.
- */
 function compile_templates(component_def) {
   if (component_def.components) {
     for (const key in component_def.components) {
@@ -121,19 +90,24 @@ async function render_vnode(vnode, parent_component, context) {
     case Teleport:
       return render_children(children, parent_component, context);
     default:
+      if (typeof type === "symbol") {
+        return render_children(children, parent_component, context);
+      }
       if (is_string(type)) {
         const tag = type.toLowerCase();
         let html = `<${tag}${render_props(props)}>`;
-        if (!VOID_ELEMENTS.has(tag)) {
-          html += await render_children(children, parent_component, context);
+        if (!void_elements.has(tag)) {
+          const children_html = await render_children(
+            children,
+            parent_component,
+            context,
+          );
+          html += children_html || "<!--w-->";
           html += `</${tag}>`;
         }
         return html;
       } else if (is_object(type)) {
         if (!type.render) {
-          console.warn(
-            `Component "${type.name || "Anonymous"}" was not compiled correctly before SSR.`,
-          );
           compile_templates(type);
         }
 
@@ -151,22 +125,14 @@ async function render_vnode(vnode, parent_component, context) {
           const sub_tree = instance.render.call(instance.ctx, instance.ctx);
           return await render_vnode(sub_tree, instance, context);
         } else {
-          console.warn(
-            `Component "${type.name || "Anonymous"}" is missing a render function or template.`,
-          );
           return `<!-- component failed to render -->`;
         }
       } else {
-        return `<!-- invalid vnode type: ${String(type)} -->`;
+        return `<!-- invalid vnode type -->`;
       }
   }
 }
 
-/**
- * The main entry point for server-side rendering.
- * @param {VNode} vnode The root VNode of the application.
- * @returns {Promise<{html: string, componentState: object}>} A promise that resolves to the HTML and initial component state.
- */
 export async function render_to_string(vnode) {
   try {
     if (vnode && vnode.type) {
@@ -178,7 +144,9 @@ export async function render_to_string(vnode) {
   } catch (e) {
     console.error(`[SSR Error] ${e.message}`);
     console.error(e.stack);
-    const html = `<div style="color:red; background:lightyellow; border: 1px solid red; padding: 1rem;">SSR Error: ${escape_html(e.message)}</div>`;
+    const html = `<div style="color:red; background:lightyellow; border: 1px solid red; padding: 1rem;">SSR Error: ${escape_html(
+      e.message,
+    )}</div>`;
     return { html, componentState: {} };
   }
 }

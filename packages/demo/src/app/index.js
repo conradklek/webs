@@ -2,6 +2,7 @@ import { use_session } from "../use/session.js";
 import { use_logger } from "../use/logger.js";
 import Card from "../gui/card/index.js";
 import Button from "../gui/button.js";
+import Accordion from "../gui/accordion/index.js";
 
 export const middleware = [use_logger];
 
@@ -9,7 +10,7 @@ export default {
   name: "Home",
   state() {
     return {
-      $count: 0,
+      count: 0,
     };
   },
   setup() {
@@ -19,7 +20,7 @@ export default {
   },
   methods: {
     increment() {
-      this.$count++;
+      this.count++;
     },
   },
   styles: `
@@ -50,7 +51,7 @@ export default {
       <div w-if="session.user.username" class="flex-1 flex flex-col items-start justify-start gap-2">
         <p>Welcome back, @{{ session.user.username }}!</p>
       </div>
-      <div w-else class="flex-1 flex flex-col items-start justify-start gap-2">
+      <div w-else class="flex-1 flex flex-col items-start justify-start gap-6">
         <Card>
           <CardHeader>
             <CardTitle>Create project</CardTitle>
@@ -61,14 +62,25 @@ export default {
           </CardContent>
           <CardFooter>
             <Button type="button" @click="increment">
-              This button has been clicked {{ $count }} time{{ $count === 1 ? '' : 's' }}!
+              This button has been clicked {{ count }} time{{ count === 1 ? '' : 's' }}!
             </Button>
           </CardFooter>
         </Card>
+        <Accordion type="multiple" collapsible="true">
+          <AccordionItem value="item1">
+            <AccordionTrigger value="item1">Item 1</AccordionTrigger>
+            <AccordionContent value="item1">Content 1</AccordionContent>
+          </AccordionItem>
+          <AccordionItem value="item2">
+            <AccordionTrigger value="item2">Item 2</AccordionTrigger>
+            <AccordionContent value="item2">Content 2</AccordionContent>
+          </AccordionItem>
+        </Accordion>
       </div>
     </div>
   `,
   components: {
+    Accordion,
     Card,
     Button,
   },

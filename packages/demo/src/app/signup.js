@@ -37,9 +37,6 @@ export default {
         <input w-model="password" type="password" placeholder="Password" required minlength="8" />
         <button type="submit" class="mt-4">Create Account</button>
       </form>
-      <div w-if="use_session.error" class="flex-1 flex flex-col items-start justify-start>
-        <p class="text-red-700">{{ use_session.error }}</p>
-      </div>
     </div>
   `,
 };

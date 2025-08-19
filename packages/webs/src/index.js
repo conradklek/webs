@@ -3,4 +3,3 @@ export * from "./reactivity";
 export * from "./runtime";
 export * from "./renderer";
 export * from "./utils";
-export * from "./persist";

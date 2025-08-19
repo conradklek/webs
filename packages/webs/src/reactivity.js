@@ -1,18 +1,14 @@
 import { is_object } from "./utils";
 
 let active_effect = null;
-
 const effect_stack = [];
-
 const target_map = new WeakMap();
+const proxy_map = new WeakMap();
 
 const RAW_SYMBOL = Symbol("raw");
 
 /**
  * Creates a reactive effect that can be run and tracked.
- * @param {Function} fn - The function to be executed as the effect.
- * @param {object} scheduler - An optional scheduler to control when the effect is run.
- * @returns {object} The reactive effect object with run and stop methods.
  */
 export const create_reactive_effect = (fn, scheduler) => {
   const effect = {
@@ -43,10 +39,6 @@ export const create_reactive_effect = (fn, scheduler) => {
   return effect;
 };
 
-/**
- * Cleans up an effect by removing it from all its dependencies.
- * @param {object} effect - The effect to clean up.
- */
 export function cleanup(effect) {
   const { deps } = effect;
   for (let i = 0; i < deps.length; i++) {
@@ -56,9 +48,7 @@ export function cleanup(effect) {
 }
 
 /**
- * Tracks a property as a dependency of the currently active effect.
- * @param {object} target - The target object.
- * @param {string|symbol} key - The property key to track.
+ * Dependency tracking.
  */
 export function track(target, key) {
   if (active_effect) {
@@ -72,9 +62,7 @@ export function track(target, key) {
 }
 
 /**
- * Triggers all effects that depend on a specific property.
- * @param {object} target - The target object.
- * @param {string|symbol} key - The property key that has changed.
+ * Trigger re-runs of effects depending on target[key].
  */
 export function trigger(target, key) {
   const deps_map = target_map.get(target);
@@ -89,10 +77,7 @@ export function trigger(target, key) {
 }
 
 /**
- * Creates a reactive effect that runs immediately and re-runs when its dependencies change.
- * @param {Function} fn - The function to wrap in an effect.
- * @param {object} [options={}] - Options for the effect, like a scheduler.
- * @returns {Function} A runner function that can be used to manually trigger the effect.
+ * Register an effect that runs immediately.
  */
 export function effect(fn, options = {}) {
   const _effect = create_reactive_effect(fn, options.scheduler);
@@ -102,16 +87,129 @@ export function effect(fn, options = {}) {
   return runner;
 }
 
-const proxy_map = new WeakMap();
-
 /**
- * Creates a reactive proxy for an object.
- * @param {object} target - The object to make reactive.
- * @returns {Proxy} A reactive proxy of the original object.
+ * Reactive proxy factory.
  */
 export function reactive(target) {
   if (!is_object(target)) return target;
   if (proxy_map.has(target)) return proxy_map.get(target);
+
+  if (target instanceof Set) {
+    const proxy = new Proxy(target, {
+      get(target, key, receiver) {
+        if (key === RAW_SYMBOL) return target;
+
+        if (key === "add") {
+          return (value) => {
+            const had = target.has(value);
+            const result = target.add(value);
+            if (!had) trigger(target, "size");
+            return result;
+          };
+        }
+
+        if (key === "delete") {
+          return (value) => {
+            const had = target.has(value);
+            const result = target.delete(value);
+            if (had) trigger(target, "size");
+            return result;
+          };
+        }
+
+        if (key === "has") {
+          return (value) => {
+            track(target, "size");
+            return target.has(value);
+          };
+        }
+
+        if (key === "size") {
+          track(target, "size");
+          return Reflect.get(target, key, target);
+        }
+
+        if (
+          key === Symbol.iterator ||
+          key === "forEach" ||
+          key === "values" ||
+          key === "keys" ||
+          key === "entries"
+        ) {
+          track(target, "iterate");
+        }
+
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    proxy_map.set(target, proxy);
+    return proxy;
+  }
+
+  if (target instanceof Map) {
+    const proxy = new Proxy(target, {
+      get(target, key, receiver) {
+        if (key === RAW_SYMBOL) return target;
+
+        if (key === "set") {
+          return (k, v) => {
+            const had = target.has(k);
+            const old_val = target.get(k);
+            const result = target.set(k, v);
+            if (!had) {
+              trigger(target, "size");
+            } else if (old_val !== v) {
+              trigger(target, k);
+            }
+            return result;
+          };
+        }
+
+        if (key === "delete") {
+          return (k) => {
+            const had = target.has(k);
+            const result = target.delete(k);
+            if (had) trigger(target, "size");
+            return result;
+          };
+        }
+
+        if (key === "get") {
+          return (k) => {
+            track(target, k);
+            return target.get(k);
+          };
+        }
+
+        if (key === "has") {
+          return (k) => {
+            track(target, k);
+            return target.has(k);
+          };
+        }
+
+        if (key === "size") {
+          track(target, "size");
+          return Reflect.get(target, key, target);
+        }
+
+        if (
+          key === Symbol.iterator ||
+          key === "forEach" ||
+          key === "values" ||
+          key === "keys" ||
+          key === "entries"
+        ) {
+          track(target, "iterate");
+        }
+
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    proxy_map.set(target, proxy);
+    return proxy;
+  }
+
   const proxy = new Proxy(target, {
     get(target, key, receiver) {
       if (key === RAW_SYMBOL) return target;
@@ -133,9 +231,7 @@ export function reactive(target) {
 }
 
 /**
- * Creates a computed property that caches its value and only re-computes when dependencies change.
- * @param {Function} getter - The function to compute the value.
- * @returns {object} A computed ref object with a `.value` property.
+ * Computed properties.
  */
 export function computed(getter) {
   let _value;

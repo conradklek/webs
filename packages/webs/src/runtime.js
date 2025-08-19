@@ -2,12 +2,6 @@ import { create_renderer, create_vnode } from "./renderer";
 import { reactive } from "./reactivity";
 import { compile } from "./compiler";
 
-/**
- * Recursively compiles templates for a component and its sub-components.
- * This "leaves-first" approach with registry flattening is crucial for ensuring
- * parent components are aware of all nested descendant components at compile time.
- * @param {object} component_def - The component definition object.
- */
 function compile_templates(component_def) {
   if (component_def.components) {
     for (const key in component_def.components) {
@@ -24,20 +18,45 @@ function compile_templates(component_def) {
   }
 }
 
-/**
- * Creates a factory for generating app instances.
- * @param {object} renderer_options - Configuration for the renderer.
- * @returns {function} A function to create a new app instance.
- */
+function revive_special(node) {
+  if (node && typeof node === "object" && "__type" in node) {
+    if (node.__type === "Set" && Array.isArray(node.values)) {
+      return new Set(node.values.map(revive_special));
+    }
+    if (node.__type === "Map" && Array.isArray(node.entries)) {
+      return new Map(
+        node.entries.map(([k, v]) => [revive_special(k), revive_special(v)]),
+      );
+    }
+  }
+  return node;
+}
+
+function deserialize_state(input) {
+  const walk = (val) => {
+    const revived = revive_special(val);
+    if (revived !== val) return revived;
+
+    if (Array.isArray(val)) return val.map(walk);
+
+    if (val && typeof val === "object") {
+      const out = {};
+      for (const k in val) out[k] = walk(val[k]);
+      return out;
+    }
+    return val;
+  };
+
+  try {
+    if (input && typeof input === "object") return walk(input);
+    if (typeof input === "string") return walk(JSON.parse(input));
+  } catch { }
+  return input;
+}
+
 export function create_app_api(renderer_options) {
   const renderer = create_renderer(renderer_options);
 
-  /**
-   * Creates a new application instance.
-   * @param {object} root_component - The root component for the application.
-   * @param {object} [root_props={}] - The initial props for the root component.
-   * @returns {object} The application instance with a mount method.
-   */
   return function create_app(root_component, root_props = {}) {
     compile_templates(root_component);
     let vnode;
@@ -51,11 +70,6 @@ export function create_app_api(renderer_options) {
         hydrate: renderer.hydrate,
         params: root_props.params || {},
       },
-      /**
-       * Mounts the application to a container element.
-       * @param {Element} root_container - The DOM element to mount the app into.
-       * @param {boolean} is_hydrating - Whether to hydrate existing SSR content.
-       */
       mount(root_container, is_hydrating = false) {
         vnode = create_vnode(root_component, root_props);
         vnode.app_context = app._context;
@@ -110,12 +124,6 @@ const renderer_options = {
 
 export const create_app = create_app_api(renderer_options);
 
-/**
- * Parses a URL query string into a nested object.
- * Supports nested keys like 'user[name]=John'.
- * @param {string} queryString - The query string to parse (e.g., window.location.search).
- * @returns {object} An object representation of the query string parameters.
- */
 export function parse_query_string(queryString) {
   const params = {};
   const searchParams = new URLSearchParams(queryString);
@@ -140,13 +148,6 @@ export function parse_query_string(queryString) {
   return params;
 }
 
-/**
- * Creates and manages a client-side router.
- * Handles navigation, route loading, middleware, and component rendering.
- * @param {object} routes - An object where keys are paths and values are functions
- * that return a promise resolving to a component module.
- * e.g., { '/': () => import('./Home.js') }
- */
 export function create_router(routes) {
   if (typeof window === "undefined") return;
 
@@ -156,18 +157,19 @@ export function create_router(routes) {
     return;
   }
 
-  const webs_state = window.__WEBS_STATE__ || {};
+  const webs_state_raw = window.__WEBS_STATE__ || {};
+  const webs_state = deserialize_state(webs_state_raw);
+
   const initial_params =
     webs_state.params || parse_query_string(window.location.search);
 
   if (webs_state.componentState) {
-    window.__INITIAL_STATE__ = webs_state.componentState;
+    window.__INITIAL_STATE__ = deserialize_state(webs_state.componentState);
   }
 
   const params = reactive(initial_params);
   let app;
   let current_route = {};
-  let is_initial_load = true;
 
   function updateParams(search) {
     const newParams = parse_query_string(search);
@@ -182,10 +184,10 @@ export function create_router(routes) {
   async function navigate(path) {
     const url = new URL(path, window.location.origin);
     history.pushState({}, "", url);
-    await loadRoute();
+    await loadRoute(false);
   }
 
-  async function loadRoute() {
+  async function loadRoute(shouldHydrate = true) {
     const to_path = window.location.pathname;
     const from_route = current_route;
     const route_loader = routes[to_path];
@@ -218,7 +220,7 @@ export function create_router(routes) {
         if (index < to_route.middleware.length) {
           to_route.middleware[index](to_route, from_route, next);
         } else {
-          renderComponent(to_route.component, to_route.params);
+          renderComponent(to_route.component, to_route.params, shouldHydrate);
         }
       };
       next();
@@ -231,35 +233,38 @@ export function create_router(routes) {
     }
   }
 
-  function renderComponent(PageComponent, routeParams) {
+  function renderComponent(PageComponent, routeParams, shouldHydrate) {
     updateParams(window.location.search);
     current_route = { path: window.location.pathname };
 
-    const should_hydrate = is_initial_load;
-    is_initial_load = false;
-
     const props = { params: reactive(routeParams) };
-    if (should_hydrate && webs_state.user) {
+    if (shouldHydrate && webs_state.user) {
       props.user = webs_state.user;
     }
 
     app = create_app(PageComponent, props);
-    app.mount(root, should_hydrate);
+    app.mount(root, shouldHydrate);
 
-    if (should_hydrate && window.__WEBS_STATE__) {
+    if (shouldHydrate && window.__WEBS_STATE__) {
       window.__WEBS_STATE__ = null;
     }
   }
 
   function handleLocalNavigation(event) {
     const anchorElement = event.target.closest("a");
-    if (anchorElement && anchorElement.host === window.location.host) {
+    if (
+      anchorElement &&
+      anchorElement.host === window.location.host &&
+      !anchorElement.hasAttribute("download") &&
+      anchorElement.getAttribute("target") !== "_blank" &&
+      anchorElement.getAttribute("rel") !== "external"
+    ) {
       event.preventDefault();
       navigate(anchorElement.href);
     }
   }
 
-  window.addEventListener("popstate", loadRoute);
+  window.addEventListener("popstate", () => loadRoute(false));
   document.addEventListener("click", handleLocalNavigation);
   loadRoute();
 }

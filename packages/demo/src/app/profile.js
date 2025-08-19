@@ -21,9 +21,9 @@ export default {
           <button type="button" @click="session.logout()" class="bg-primary text-white px-1.5 rounded-md cursor-pointer active:opacity-50">Logout</button>
         </div>
       </div>
-      <div w-if="session.user.username" class="flex-1 flex flex-col items-start justify-start gap-2">
-        <p>This is the profile page for @{{ session.user.username }}.</p>
-        <p>Your email is: {{ session.user.email }}</p>
+      <div w-if="session.user?.username" class="flex-1 flex flex-col items-start justify-start gap-2">
+        <p>This is the profile page for @{{ session.user?.username }}.</p>
+        <p>Your email is: {{ session.user?.email }}</p>
       </div>
       <div w-else class="flex-1 flex flex-col items-start justify-start gap-2">
         <p>You must be logged in to see this page.</p>

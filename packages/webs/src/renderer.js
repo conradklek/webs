@@ -8,7 +8,6 @@ import {
   is_string,
 } from "./utils";
 import { effect, reactive, computed } from "./reactivity";
-import { get_persisted_state, persist_state } from "./persist.js";
 
 export function get_sequence(arr) {
   if (arr.length === 0) return [];
@@ -66,23 +65,19 @@ export function create_renderer(options) {
 
   const hydrate = (vnode, container) => {
     hydrate_node(vnode, container.firstChild);
-    if (typeof window !== "undefined" && window.__INITIAL_STATE__) {
-      window.__INITIAL_STATE__ = null;
-    }
   };
 
   const hydrate_node = (vnode, dom_node) => {
-    const isDynamicText = vnode.type === Text && vnode.props?.["w-dynamic"];
     while (
       dom_node &&
       ((dom_node.nodeType === 3 && !dom_node.textContent.trim()) ||
-        (dom_node.nodeType === 8 && vnode.type !== Comment && !isDynamicText))
+        (dom_node.nodeType === 8 && dom_node.data === "w"))
     ) {
       dom_node = dom_node.nextSibling;
     }
 
-    if (!dom_node) {
-      console.warn("DOM Mismatch during hydration.");
+    if (!dom_node && vnode.type !== Comment) {
+      console.warn("DOM Mismatch during hydration: Node not found.", vnode);
       return null;
     }
 
@@ -90,63 +85,32 @@ export function create_renderer(options) {
     vnode.el = dom_node;
 
     switch (type) {
-      case Fragment:
-      case Teleport:
-        return hydrate_children(children, dom_node.parentElement, dom_node);
-      case Text: {
-        const vnode_text = String(children);
-
+      case Text:
         if (props && props["w-dynamic"]) {
-          if (dom_node.nodeType !== 8 || dom_node.data !== "[") {
-            console.warn(
-              "Hydration mismatch: expected dynamic text opening comment.",
-            );
+          if (dom_node.nodeType !== 8 || dom_node.data !== "[")
             return dom_node.nextSibling;
-          }
-
-          const text_node = dom_node.nextSibling;
-          if (!text_node || text_node.nodeType !== 3) {
-            console.warn(
-              "Hydration mismatch: expected text node after opening comment.",
-            );
-            return dom_node.nextSibling;
-          }
-
-          if (text_node.textContent !== vnode_text) {
-            text_node.textContent = vnode_text;
-          }
-          vnode.el = text_node;
-
-          const closing_comment = text_node.nextSibling;
+          const textNode = dom_node.nextSibling;
+          const closingComment = textNode.nextSibling;
           if (
-            !closing_comment ||
-            closing_comment.nodeType !== 8 ||
-            closing_comment.data !== "]"
-          ) {
-            console.warn(
-              "Hydration mismatch: expected dynamic text closing comment.",
-            );
+            !closingComment ||
+            closingComment.nodeType !== 8 ||
+            closingComment.data !== "]"
+          )
             return dom_node.nextSibling;
-          }
-          return closing_comment.nextSibling;
+          vnode.el = textNode;
+          return closingComment.nextSibling;
         }
+        if (dom_node.nodeType !== 3) return dom_node.nextSibling;
+        return dom_node.nextSibling;
 
-        if (dom_node.nodeType === 3) {
-          if (dom_node.textContent !== vnode_text) {
-            console.warn(
-              `Hydration text mismatch: "${vnode_text}" vs DOM: "${dom_node.textContent}"`,
-            );
-          }
+      case Comment:
+        if (dom_node && dom_node.nodeType === 8) {
           return dom_node.nextSibling;
         }
+        return dom_node;
 
-        console.warn(
-          `Hydration mismatch: expected text node, but got nodeType ${dom_node.nodeType}`,
-        );
-        return dom_node.nextSibling;
-      }
-      case Comment:
-        return dom_node.nextSibling;
+      case Fragment:
+        return hydrate_children(children, dom_node.parentElement, dom_node);
 
       default:
         if (is_object(type)) {
@@ -158,32 +122,32 @@ export function create_renderer(options) {
               host_patch_prop(dom_node, key, null, props[key]);
             }
           }
-          if (children) {
-            hydrate_children(children, dom_node, dom_node.firstChild);
-          }
+          hydrate_children(children, dom_node, dom_node.firstChild);
           return dom_node.nextSibling;
         }
     }
-    return dom_node.nextSibling;
+    return dom_node ? dom_node.nextSibling : null;
   };
 
-  const hydrate_children = (children, _, start_node) => {
+  const hydrate_children = (children, parent_dom, start_node) => {
     let next_dom_node = start_node;
     const child_vnodes = Array.isArray(children) ? children : [children];
     for (const child_vnode of child_vnodes) {
-      if (!next_dom_node) break;
+      if (!child_vnode) continue;
       next_dom_node = hydrate_node(child_vnode, next_dom_node);
     }
     return next_dom_node;
   };
 
   const unmount = (vnode) => {
-    if (vnode.type === Fragment || vnode.type === Teleport) {
-      return unmount_children(vnode.children);
-    }
     if (vnode.component) {
       vnode.component.hooks.onUnmounted?.forEach((h) => h());
       unmount(vnode.component.sub_tree);
+      return;
+    }
+    if (vnode.type === Fragment || vnode.type === Teleport) {
+      unmount_children(vnode.children);
+      return;
     }
     host_remove(vnode.el);
   };
@@ -375,7 +339,11 @@ export function create_renderer(options) {
             instance.ctx,
             instance.ctx,
           ));
-          patch(prev_tree, next_tree, container, anchor, instance);
+
+          const parent_container = prev_tree.el.parentElement;
+          const anchor = prev_tree.el.nextSibling;
+
+          patch(prev_tree, next_tree, parent_container, anchor, instance);
           vnode.el = next_tree.el;
 
           if (next_tree.type !== Fragment) {
@@ -435,7 +403,6 @@ export function create_renderer(options) {
       for (const key in props_options) {
         const options = props_options[key];
         let new_value;
-
         if (next_props.hasOwnProperty(key)) {
           new_value = next_props[key];
         } else if (options?.hasOwnProperty("default")) {
@@ -444,7 +411,6 @@ export function create_renderer(options) {
         } else {
           new_value = undefined;
         }
-
         instance.internal_ctx[key] = new_value;
       }
     }
@@ -553,7 +519,7 @@ export function create_component(
     },
     parent,
     provides: parent
-      ? Object.create(parent.provides)
+      ? Object.create(parent.provides || {})
       : Object.create(app_context.provides || {}),
     hooks: {},
   };
@@ -582,10 +548,11 @@ export function create_component(
     for (const key in props_options) {
       if (!resolved_props.hasOwnProperty(key)) {
         const options = props_options[key];
-        if (options?.hasOwnProperty("default")) {
-          const def = options.default;
-          resolved_props[key] = is_function(def) ? def() : def;
-        }
+        const def = options?.hasOwnProperty("default")
+          ? options.default
+          : undefined;
+        const new_value = is_function(def) ? def() : def;
+        resolved_props[key] = new_value;
       }
     }
   }
@@ -624,18 +591,6 @@ export function create_component(
       ...initial_state_from_data,
       ...setup_result,
     };
-  }
-
-  if (!is_ssr) {
-    for (const key in final_state) {
-      if (key.startsWith("$")) {
-        const storage_key = `${instance.type.name}:${key}`;
-        const persisted_value = get_persisted_state(storage_key);
-        if (persisted_value !== null) {
-          final_state[key] = persisted_value;
-        }
-      }
-    }
   }
 
   if (is_ssr) {
@@ -694,22 +649,12 @@ export function create_component(
     },
   );
 
-  if (!is_ssr) {
-    for (const key in instance.internal_ctx) {
-      if (key.startsWith("$")) {
-        const storage_key = `${instance.type.name}:${key}`;
-        effect(() => {
-          persist_state(storage_key, instance.ctx[key]);
-        });
-      }
-    }
-  }
-
   if (methods) {
     for (const key in methods) {
       instance.methods[key] = methods[key].bind(instance.ctx);
     }
   }
+
   if (!is_ssr && actions) {
     for (const key in actions) {
       instance.actions[key] = async (...args) => {
@@ -749,10 +694,6 @@ export function create_component(
   return instance;
 }
 
-export function camel_to_kebab(camel) {
-  return camel.replace(/([a-z0-9]|(?=[A-Z]))([A-Z])/g, "$1-$2").toLowerCase();
-}
-
 export { Fragment, Comment, Teleport, Text };
 
 export class VNode {
@@ -779,208 +720,3 @@ export function create_vnode(type, props, children) {
 }
 
 export const h = create_vnode;
-
-export const NODE_TYPES = {
-  ELEMENT_NODE: 1,
-  TEXT_NODE: 3,
-  COMMENT_NODE: 8,
-};
-
-export class DOM_node {
-  constructor(node_type) {
-    this.node_type = node_type;
-    this.parent_node = null;
-    this.child_nodes = [];
-  }
-  insert_before(new_child, ref_child) {
-    if (new_child.parent_node) {
-      new_child.parent_node.remove_child(new_child);
-    }
-
-    new_child.parent_node = this;
-    const index = ref_child ? this.child_nodes.indexOf(ref_child) : -1;
-    if (index !== -1) {
-      this.child_nodes.splice(index, 0, new_child);
-    } else {
-      this.child_nodes.push(new_child);
-    }
-  }
-  remove_child(child) {
-    const index = this.child_nodes.indexOf(child);
-    if (index !== -1) {
-      this.child_nodes.splice(index, 1);
-      child.parent_node = null;
-    }
-  }
-}
-
-export class DOM_text_node extends DOM_node {
-  constructor(text) {
-    super(NODE_TYPES.TEXT_NODE);
-    this.node_value = text;
-  }
-  get text_content() {
-    return this.node_value;
-  }
-  set text_content(value) {
-    this.node_value = String(value);
-  }
-  get outer_html() {
-    return this.text_content;
-  }
-}
-
-export class DOM_comment_node extends DOM_node {
-  constructor(text) {
-    super(NODE_TYPES.COMMENT_NODE);
-    this.node_value = text;
-  }
-  get text_content() {
-    return this.node_value;
-  }
-  get outer_html() {
-    return `<!--${this.text_content}-->`;
-  }
-}
-
-export function parse_selector(selector) {
-  const tag_match = selector.match(/^[a-zA-Z0-9\-]+/);
-  const id_match = selector.match(/#([a-zA-Z0-9\-_]+)/);
-  const class_matches = selector.match(/\.([a-zA-Z0-9\-_]+)/g) || [];
-  return {
-    tag: tag_match ? tag_match[0].toLowerCase() : null,
-    id: id_match ? id_match[1] : null,
-    classes: class_matches.map((c) => c.substring(1)),
-  };
-}
-
-export class DOM_element extends DOM_node {
-  constructor(tag_name) {
-    super(NODE_TYPES.ELEMENT_NODE);
-    this.tag_name = tag_name.toUpperCase();
-    this._attributes = null;
-    this._listeners = null;
-    this._class_list = null;
-    this._style = null;
-  }
-  get class_list() {
-    if (!this._class_list) {
-      this._class_list = {
-        add: (...class_names) => {
-          const current_classes = new Set(
-            (this.get_attribute("class") || "").split(" ").filter(Boolean),
-          );
-          class_names.forEach((cn) => current_classes.add(cn));
-          this.set_attribute("class", [...current_classes].join(" "));
-        },
-        remove: (...class_names) => {
-          const current_classes = new Set(
-            (this.get_attribute("class") || "").split(" ").filter(Boolean),
-          );
-          class_names.forEach((cn) => current_classes.delete(cn));
-          this.set_attribute("class", [...current_classes].join(" "));
-        },
-        contains: (class_name) => {
-          const current_classes = new Set(
-            (this.get_attribute("class") || "").split(" "),
-          );
-          return current_classes.has(class_name);
-        },
-      };
-    }
-    return this._class_list;
-  }
-  get style() {
-    if (!this._style) {
-      this._style = new Proxy(
-        {},
-        {
-          set: (_, prop, value) => {
-            const styles = this.get_attribute("style") || "";
-            const new_style_string = `${styles}${camel_to_kebab(prop)}:${value};`;
-            this.set_attribute("style", new_style_string);
-            return true;
-          },
-        },
-      );
-    }
-    return this._style;
-  }
-  add_event_listener(name, listener) {
-    if (!this._listeners) this._listeners = {};
-    this._listeners[name.toLowerCase()] = listener;
-  }
-  set_attribute(name, value) {
-    if (!this._attributes) this._attributes = {};
-    this._attributes[name.toLowerCase()] = String(value);
-  }
-  get_attribute(name) {
-    return this._attributes ? this._attributes[name.toLowerCase()] : undefined;
-  }
-  remove_attribute(name) {
-    if (this._attributes) delete this._attributes[name.toLowerCase()];
-    if (this._listeners) delete this._listeners[name.toLowerCase()];
-  }
-  matches(selector) {
-    if (typeof selector !== "string" || !selector) return false;
-    const { tag, id, classes } = parse_selector(selector);
-    if (tag && this.tag_name.toLowerCase() !== tag) return false;
-    if (id && this.get_attribute("id") !== id) return false;
-    if (classes.length > 0) {
-      const element_classes = new Set(
-        (this.get_attribute("class") || "").split(" ").filter(Boolean),
-      );
-      for (const cls of classes) {
-        if (!element_classes.has(cls)) return false;
-      }
-    }
-    return true;
-  }
-  query_selector(selector) {
-    for (const child of this.child_nodes) {
-      if (child.node_type !== NODE_TYPES.ELEMENT_NODE) continue;
-      if (child.matches(selector)) return child;
-      const found = child.query_selector(selector);
-      if (found) return found;
-    }
-    return null;
-  }
-  get text_content() {
-    return this.child_nodes.map((c) => c.text_content).join("");
-  }
-  set text_content(value) {
-    this.child_nodes.length = 0;
-    if (value !== null && value !== undefined) {
-      this.insert_before(new DOM_text_node(String(value)), null);
-    }
-  }
-  get outer_html() {
-    const self_closing_tags = new Set([
-      "input",
-      "br",
-      "hr",
-      "img",
-      "meta",
-      "link",
-    ]);
-    let all_props = "";
-    if (this._attributes) {
-      all_props =
-        " " +
-        Object.entries(this._attributes)
-          .map(([k, v]) => (v === "" || v === "true" ? k : `${k}="${v}"`))
-          .join(" ");
-    }
-    if (self_closing_tags.has(this.tag_name.toLowerCase())) {
-      return `<${this.tag_name.toLowerCase()}${all_props}>`;
-    }
-    const children_html = this.child_nodes
-      .map((c) => c.outer_html || c.text_content)
-      .join("");
-    return `<${this.tag_name.toLowerCase()}${all_props}>${children_html}</${this.tag_name.toLowerCase()}>`;
-  }
-}
-
-export function element_factory(tag_name) {
-  return new DOM_element(tag_name);
-}
