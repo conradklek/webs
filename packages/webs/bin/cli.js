@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * @fileoverview The command-line interface for the framework. Handles building
- * for production, running the development server with HMR, and starting the server.
+ * for production, running the development server, and starting the server.
  */
 
 import { rm, mkdir, exists, watch } from "fs/promises";
@@ -19,7 +19,6 @@ const TMP_CSS = resolve(TMPDIR, "tmp.css");
 const TMP_APP_JS = resolve(TMPDIR, "app.js");
 const PORT = process.env.PORT || 3000;
 const IS_PROD = process.env.NODE_ENV === "production";
-const HMR_WS_PATH = "/hmr-ws";
 
 async function main() {
   await ensureTmpDir();
@@ -34,7 +33,6 @@ async function main() {
     outdir: OUTDIR,
     manifest: {},
     is_prod: IS_PROD,
-    hmr_ws_path: HMR_WS_PATH,
   };
 
   if (IS_PROD) {
@@ -66,21 +64,7 @@ async function main() {
   const server = Bun.serve({
     port: PORT,
     development: !IS_PROD,
-    /**
-     * This is the main fetch handler. It now correctly handles the WebSocket
-     * upgrade handshake before passing regular requests to our main handler.
-     */
-    fetch: (req, server) => {
-      const url = new URL(req.url);
-      if (!IS_PROD && url.pathname === HMR_WS_PATH) {
-        if (server.upgrade(req)) {
-          return;
-        }
-        return new Response("WebSocket upgrade failed", { status: 500 });
-      }
-      return request_handler(req);
-    },
-    websocket: IS_PROD ? undefined : hmr_websocket_handler,
+    fetch: (req) => request_handler(req),
     error: (error) => {
       console.error(error);
       return new Response("Internal Server Error", { status: 500 });
@@ -88,17 +72,16 @@ async function main() {
   });
 
   if (!IS_PROD) {
-    console.log("--- Running in development mode with HMR ---");
-    setup_hmr_watcher({
+    console.log("--- Running in dev :", server.port);
+    setup_file_watcher({
       cwd: CWD,
       outdir: OUTDIR,
-      server: server,
       entrypoint: TMP_APP_JS,
       on_rebuild: async ({ manifest: new_manifest, routes: new_routes }) => {
         server_context.manifest = new_manifest;
         server_context.app_routes = new_routes;
         request_handler = create_request_handler(server_context);
-        console.log("[HMR] Server context updated.");
+        console.log("Server context updated after rebuild.");
       },
     });
   }
@@ -123,7 +106,7 @@ async function build_assets(outdir, entrypoint) {
     target: "browser",
     splitting: true,
     minify: IS_PROD,
-    naming: IS_PROD ? "[name]-[hash].[ext]" : "[name].[ext]",
+    naming: "[name]-[hash].[ext]",
     plugins: [tailwind],
     sourcemap: IS_PROD ? "none" : "inline",
   });
@@ -192,8 +175,9 @@ async function load_and_generate_routes(cwd) {
   }
   const glob = new Glob("*.js");
   let client_route_entries = [];
+  const cache_buster = Date.now();
   for await (const file of glob.scan(app_dir)) {
-    const component_path = `${join(app_dir, file)}?t=${Date.now()}`;
+    const component_path = `${join(app_dir, file)}?t=${cache_buster}`;
     try {
       const module = await import(component_path);
       const component = module.default;
@@ -217,21 +201,10 @@ const routes = { \n  ${client_route_entries.join(",\n  ")} \n};
 create_router(routes);`;
   return { routes: server_routes, client_entry_code };
 }
-const HMR_TOPIC = "reload";
-const hmr_websocket_handler = {
-  open(ws) {
-    ws.subscribe(HMR_TOPIC);
-    console.log("[HMR] WebSocket client connected");
-  },
-  close(ws) {
-    ws.unsubscribe(HMR_TOPIC);
-    console.log("[HMR] WebSocket client disconnected");
-  },
-  message(ws, message) {},
-};
-function setup_hmr_watcher({ cwd, outdir, server, on_rebuild, entrypoint }) {
+
+function setup_file_watcher({ cwd, outdir, on_rebuild, entrypoint }) {
   const srcDir = resolve(cwd, "src");
-  console.log(`[HMR] Watching for changes in ${srcDir}`);
+  console.log(`Watching for changes in ${srcDir}`);
   let is_rebuilding = false;
   watch(srcDir, { recursive: true }, async (event, filename) => {
     if (
@@ -242,7 +215,7 @@ function setup_hmr_watcher({ cwd, outdir, server, on_rebuild, entrypoint }) {
     )
       return;
     is_rebuilding = true;
-    console.log(`[HMR] Detected ${event} in ${filename}. Rebuilding...`);
+    console.log(`Detected ${event} in ${filename}. Rebuilding...`);
     const { routes, client_entry_code } = await load_and_generate_routes(cwd);
     await Bun.write(entrypoint, client_entry_code);
     const new_build_result = await build_assets(outdir, entrypoint);
@@ -253,17 +226,18 @@ function setup_hmr_watcher({ cwd, outdir, server, on_rebuild, entrypoint }) {
           ?.path,
       };
       await on_rebuild({ manifest, routes });
-      server.publish(HMR_TOPIC, "reload");
     }
     setTimeout(() => {
       is_rebuilding = false;
     }, 100);
   });
 }
+
 async function clean_directory(dirPath) {
   await rm(dirPath, { recursive: true, force: true });
   await mkdir(dirPath, { recursive: true });
 }
+
 async function ensureTmpDir() {
   await mkdir(TMPDIR, { recursive: true });
 }

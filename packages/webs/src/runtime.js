@@ -98,6 +98,7 @@ export function create_router(routes) {
     return console.error("Router creation failed: #root element not found.");
 
   const webs_state = deserialize_state(window.__WEBS_STATE__ || {});
+
   if (webs_state.componentState) {
     window.__INITIAL_STATE__ = webs_state.componentState;
   }
