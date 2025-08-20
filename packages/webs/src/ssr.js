@@ -1,8 +1,3 @@
-/**
- * @fileoverview Implements the server-side rendering (SSR) logic. It takes a
- * virtual DOM tree (VNode) and renders it to an HTML string.
- */
-
 import {
   create_component,
   Fragment,

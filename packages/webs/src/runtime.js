@@ -128,11 +128,30 @@ export function create_router(routes) {
   if (!root)
     return console.error("Router creation failed: #root element not found.");
 
-  const app = create_app({ render: () => null });
-  let current_vnode = null;
+  const page_context = reactive({
+    component: null,
+    props: {},
+  });
+
+  let previous_path = window.location.pathname;
+
+  const AppRoot = {
+    name: "AppRoot",
+    setup() {
+      return { page_context };
+    },
+    render(ctx) {
+      const page = ctx.page_context.component;
+      return page
+        ? create_vnode(page, ctx.page_context.props)
+        : create_vnode(Comment, null, "empty");
+    },
+  };
+
+  const app = create_app(AppRoot);
+  app.mount(root, true);
 
   const webs_state = deserialize_state(window.__WEBS_STATE__ || {});
-
   const initial_component_state = webs_state.componentState || {};
   console.log("[Router] Initial state from server:", initial_component_state);
 
@@ -143,8 +162,7 @@ export function create_router(routes) {
 
   async function loadRoute(shouldHydrate = true) {
     const to_path = window.location.pathname;
-    const from_path = current_vnode?.component.type.name;
-    const from_route = { path: from_path };
+    const from_route = { path: previous_path };
     const route_loader = routes[to_path];
 
     console.log(
@@ -158,12 +176,12 @@ export function create_router(routes) {
     }
 
     try {
-      const module = await route_loader();
-      const component = module.default;
+      const mod = await route_loader();
+      const component = mod.default || mod;
 
-      compile_templates(component);
+      compile_templates(mod);
 
-      const middleware = module.middleware || [];
+      const middleware = mod.middleware || [];
       const to_route = {
         path: to_path,
         params: parse_query_string(window.location.search),
@@ -180,36 +198,18 @@ export function create_router(routes) {
         } else {
           const props = {
             params: reactive(to_route.params),
-            initial_state: initial_component_state,
+            initial_state: shouldHydrate ? initial_component_state : {},
           };
 
           if (shouldHydrate && webs_state.user) {
             props.user = webs_state.user;
           }
 
-          console.log("[Router] Creating component with props:", props);
+          console.log("[Router] Setting page component with props:", props);
 
-          const new_vnode = create_vnode(to_route.component, props);
-          new_vnode.app_context = app._context;
-
-          Object.assign(
-            app._context.components,
-            to_route.component.components || {},
-          );
-
-          if (shouldHydrate) {
-            console.log("[Router] Hydrating component in container:", root);
-            app._context.hydrate(new_vnode, root);
-          } else {
-            console.log(
-              "[Router] Patching component. Old VNode:",
-              current_vnode,
-              "New VNode:",
-              new_vnode,
-            );
-            app._context.patch(current_vnode, new_vnode, root);
-          }
-          current_vnode = new_vnode;
+          page_context.component = to_route.component;
+          page_context.props = props;
+          previous_path = to_path; // Update path after successful navigation
 
           if (shouldHydrate) {
             console.log(
@@ -230,6 +230,18 @@ export function create_router(routes) {
   }
 
   window.addEventListener("popstate", () => loadRoute(false));
+
+  // Listen for pageshow event to detect navigation from browser's back/forward cache.
+  window.addEventListener("pageshow", (event) => {
+    // If event.persisted is true, the page was restored from the bfcache.
+    if (event.persisted) {
+      console.log(
+        "[Router] Page restored from bfcache. Reloading for auth consistency.",
+      );
+      window.location.reload();
+    }
+  });
+
   document.addEventListener("click", (event) => {
     const anchor = event.target.closest("a");
     if (
@@ -243,7 +255,7 @@ export function create_router(routes) {
     }
   });
 
-  loadRoute();
+  loadRoute(true);
 }
 
 /**

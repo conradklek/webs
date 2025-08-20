@@ -1,5 +1,4 @@
 import { parse_html, parse_js, tokenize_js } from "./parser";
-import { camelize } from "./utils";
 import * as Webs from "./renderer";
 
 export const NODE_TYPES = {
@@ -26,6 +25,29 @@ const DIR_ELSE_IF = "w-else-if";
 const DIR_ELSE = "w-else";
 const DIR_FOR = "w-for";
 const DIR_MODEL = "w-model";
+
+
+/**
+ * Creates a caching decorator for a function that takes a single string argument.
+ * @param {Function} fn - The function to memoize.
+ * @returns {Function} The memoized function.
+ */
+const cache_string_function = (fn) => {
+  const cache = Object.create(null);
+  return (str) => {
+    const hit = cache[str];
+    return hit || (cache[str] = fn(str));
+  };
+};
+
+/**
+ * Converts a kebab-case string to camelCase.
+ * e.g., "my-component-name" -> "myComponentName"
+ * @type {Function}
+ */
+const camelize = cache_string_function((str) => {
+  return str.replace(/-(\w)/g, (_, c) => (c ? c.toUpperCase() : ""));
+});
 
 /**
  * Generates a render function from a transformed Abstract Syntax Tree (AST).
@@ -458,9 +480,10 @@ export class Compiler {
           modifiers: new Set(modifiers),
         });
       } else if (name.startsWith(":")) {
+        const propName = name.substring(1);
         properties.push({
           type: ATTR_TYPES.DIRECTIVE,
-          name: camelize(name.substring(1)),
+          name: propName.includes("-") ? propName : camelize(propName),
           expression: this._parse_expr(attr.value),
         });
       } else if (name === DIR_MODEL) {
@@ -486,18 +509,32 @@ export class Compiler {
 /**
  * Compiles a component definition object into a render function.
  * This is the main entry point for the compiler.
- * @param {object} component_def - The component definition object, which must include a `template` string.
+ * @param {object} component_def - The component definition object.
  * @returns {Function} A render function.
  */
 export function compile(component_def) {
-  let template_string = component_def.template;
+  let template_content = component_def.template;
 
-  if (!template_string && typeof template_string !== "string") {
+  if (typeof template_content === "function") {
+    const html_tag_fn = (strings, ...values) => {
+      let result = "";
+      strings.forEach((string, i) => {
+        result += string;
+        if (i < values.length) {
+          result += String(values[i]);
+        }
+      });
+      return result;
+    };
+    template_content = template_content(html_tag_fn);
+  }
+
+  if (typeof template_content !== "string") {
     console.warn("Component is missing a valid template option.");
     return () => Webs.h(Webs.Comment, null, "Component missing template");
   }
 
-  const final_component_def = { ...component_def, template: template_string };
+  const final_component_def = { ...component_def, template: template_content };
   const compiler = new Compiler(final_component_def);
   return compiler.compile();
 }

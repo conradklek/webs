@@ -39,28 +39,62 @@ export function create_request_handler(context) {
   };
 }
 
-async function handle_page_request(req, route_definition, context) {
-  const { db, manifest } = context;
-  const url = new URL(req.url);
-  const session_id = req.headers
-    .get("cookie")
-    ?.match(/session_id=([^;]+)/)?.[1];
-  const user = get_user_from_session(db, session_id);
-  const params = parse_query_string(url.search);
-  const component_vnode = h(route_definition.component, { user, params });
-  const { html: app_html, componentState } =
-    await render_to_string(component_vnode);
-  const webs_state = { user, params, componentState };
-  const full_html = render_html_shell({
-    app_html,
-    webs_state,
-    manifest,
-    title: route_definition.component.name || "Webs App",
-  });
-  return new Response(full_html, {
-    headers: { "Content-Type": "text/html;charset=utf-8" },
+function handle_page_request(req, route_definition, context) {
+  return new Promise(async (resolve) => {
+    const { db, manifest } = context;
+    const url = new URL(req.url);
+    const session_id = req.headers
+      .get("cookie")
+      ?.match(/session_id=([^;]+)/)?.[1];
+    const user = get_user_from_session(db, session_id);
+    const params = parse_query_string(url.search);
+
+    const from_route = { path: req.headers.get("referer") || null };
+    const to_route = {
+      path: url.pathname,
+      params,
+      component: route_definition.component,
+    };
+
+    const middleware = route_definition.middleware || [];
+    let index = -1;
+
+    const next = async (path) => {
+      if (path) {
+        return resolve(
+          new Response(null, {
+            status: 302,
+            headers: { Location: path },
+          }),
+        );
+      }
+
+      index++;
+      if (index < middleware.length) {
+        middleware[index](to_route, from_route, next);
+      } else {
+        const component_vnode = h(route_definition.component, { user, params });
+        const { html: app_html, componentState } =
+          await render_to_string(component_vnode);
+        const webs_state = { user, params, componentState };
+        const full_html = render_html_shell({
+          app_html,
+          webs_state,
+          manifest,
+          title: route_definition.component.name || "Webs App",
+        });
+        resolve(
+          new Response(full_html, {
+            headers: { "Content-Type": "text/html;charset=utf-8" },
+          }),
+        );
+      }
+    };
+
+    next();
   });
 }
+
 async function handle_static_assets(req, pathname, outdir, is_prod) {
   const asset_path = join(outdir, basename(pathname));
   const file = Bun.file(asset_path);
@@ -120,7 +154,10 @@ function render_html_shell({ app_html, webs_state, manifest, title }) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${title}</title>
-    ${manifest.css ? `<link rel="stylesheet" href="/${basename(manifest.css)}">` : ""}
+    ${manifest.css
+      ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
+      : ""
+    }
 </head>
 <body>
     <div id="root" style="display: contents">${app_html}</div>
@@ -129,6 +166,7 @@ function render_html_shell({ app_html, webs_state, manifest, title }) {
 </body>
 </html>`;
 }
+
 function serialize_state(state) {
   return JSON.stringify(state, (_, value) => {
     if (value instanceof Set) return { __type: "Set", values: [...value] };

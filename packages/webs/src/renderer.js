@@ -16,12 +16,6 @@ export function provide(key, value) {
     );
     return;
   }
-  console.log(
-    `[Renderer] Component '${current_instance.type.name}' PROVIDING key:`,
-    key,
-    "with value:",
-    value,
-  );
   current_instance.provides[key] = value;
 }
 
@@ -34,14 +28,27 @@ export function inject(key, default_value) {
     return default_value;
   }
   const resolved = current_instance.provides[key];
-  console.log(
-    `[Renderer] Component '${current_instance.type.name}' INJECTING key:`,
-    key,
-    "Resolved value:",
-    resolved,
-  );
   return resolved !== undefined ? resolved : default_value;
 }
+
+function createLifecycleMethod(name) {
+  return (hook) => {
+    if (!current_instance) {
+      console.warn(`Lifecycle hook '${name}' called outside of setup.`);
+      return;
+    }
+    if (!current_instance.hooks[name]) {
+      current_instance.hooks[name] = [];
+    }
+    current_instance.hooks[name].push(hook);
+  };
+}
+
+export const onBeforeMount = createLifecycleMethod("onBeforeMount");
+export const onMounted = createLifecycleMethod("onMounted");
+export const onBeforeUpdate = createLifecycleMethod("onBeforeUpdate");
+export const onUpdated = createLifecycleMethod("onUpdated");
+export const onUnmounted = createLifecycleMethod("onUnmounted");
 
 function merge_props(vnode_props, fallthrough_attrs) {
   const merged = { ...vnode_props };
@@ -420,6 +427,9 @@ export function create_renderer(options) {
 
   const unmount = (vnode) => {
     if (vnode.component) {
+      if (vnode.component.update && vnode.component.update.effect) {
+        vnode.component.update.effect.stop();
+      }
       vnode.component.hooks.onUnmounted?.forEach((h) => h());
       unmount(vnode.component.sub_tree);
       return;
@@ -539,13 +549,8 @@ export function create_component(
   vnode,
   parent,
   is_ssr = false,
-  is_hydrating = false,
+  _is_hydrating = false,
 ) {
-  console.log(
-    `[Renderer] Creating component: ${vnode.type.name || "Anonymous"}. SSR: ${is_ssr}, Hydrating: ${is_hydrating}`,
-  );
-  console.log(`[Renderer] VNode props received:`, vnode.props);
-
   const parent_app_context = parent ? parent.app_context : null;
   const app_context = vnode.app_context || parent_app_context || {};
   app_context.globals = app_context.globals || {};
@@ -605,21 +610,23 @@ export function create_component(
 
   let setup_result = {};
   if (setup) {
-    console.log(`[Renderer] Running setup for ${instance.type.name}...`);
     set_current_instance(instance);
-    const res = setup(resolved_props, {
+    const res = setup({
+      props: resolved_props,
       attrs: instance.attrs,
       provide,
       inject,
+      reactive,
+      onBeforeMount,
+      onMounted,
+      onBeforeUpdate,
+      onUpdated,
+      onUnmounted,
     });
     set_current_instance(null);
     if (is_object(res)) {
       setup_result = res;
     }
-    console.log(
-      `[Renderer] Setup for ${instance.type.name} returned:`,
-      setup_result,
-    );
   }
 
   if (is_ssr && vnode.props.user && setup_result.session) {
@@ -629,17 +636,9 @@ export function create_component(
   const initial_state_from_data = state ? state.call(instance.ctx) : {};
   let final_state;
 
-  console.log(`[Renderer] State sources for ${instance.type.name}:`, {
-    props: resolved_props,
-    data_fn: initial_state_from_data,
-    setup: setup_result,
-    server_state_prop: vnode.props.initial_state,
-  });
-
   const server_state = vnode.props.initial_state;
 
   if (server_state && Object.keys(server_state).length > 0) {
-    console.log(`[Renderer] Using SERVER STATE for ${instance.type.name}.`);
     final_state = {
       ...resolved_props,
       ...initial_state_from_data,
@@ -647,18 +646,12 @@ export function create_component(
       ...setup_result,
     };
   } else {
-    console.log(`[Renderer] Using CLIENT STATE for ${instance.type.name}.`);
     final_state = {
       ...resolved_props,
       ...initial_state_from_data,
       ...setup_result,
     };
   }
-
-  console.log(
-    `[Renderer] Final combined state for ${instance.type.name}:`,
-    final_state,
-  );
 
   instance.internal_ctx = is_ssr ? final_state : reactive(final_state);
 

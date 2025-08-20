@@ -33,71 +33,72 @@
   --color-sidebar-ring: oklch(0.708 0 0);
 }
 
-@theme {
-      --color-primary: #1e40af;
-    }
-@layer components {
-      .btn {
-        @apply shrink-0 inline-flex items-center justify-center whitespace-nowrap rounded text-sm tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer;
-      }
+@layer base {
+  a {
+    @apply underline cursor-pointer active:opacity-50 whitespace-nowrap;
+  }
+}
 
-      .btn-default {
-        @apply bg-primary text-primary-foreground hover:bg-primary/90;
-      }
-      .btn-destructive {
-        @apply bg-destructive text-white hover:bg-destructive/90;
-      }
-      .btn-outline {
-        @apply border border-input bg-background hover:bg-accent hover:text-accent-foreground;
-      }
-      .btn-secondary {
-        @apply bg-secondary text-secondary-foreground hover:bg-secondary/80;
-      }
-      .btn-ghost {
-        @apply hover:bg-accent hover:text-accent-foreground;
-      }
-      .btn-link {
-        @apply text-primary underline-offset-4 hover:underline;
-      }
+@layer components {
+  .btn {
+    @apply shrink-0 inline-flex items-center justify-center whitespace-nowrap rounded text-sm tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer;
+  }
 
-      .btn-size-default {
-        @apply h-7 px-2;
-      }
-      .btn-size-sm {
-        @apply h-6 rounded-md px-1.5;
-      }
-      .btn-size-lg {
-        @apply h-8 px-2;
-      }
-      .btn-size-icon {
-        @apply w-7 h-7;
-      }
-    }
+  .btn-default {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90;
+  }
+  .btn-destructive {
+    @apply bg-destructive text-white hover:bg-destructive/90;
+  }
+  .btn-outline {
+    @apply border border-input bg-background hover:bg-accent hover:text-accent-foreground;
+  }
+  .btn-secondary {
+    @apply bg-secondary text-secondary-foreground hover:bg-secondary/80;
+  }
+  .btn-ghost {
+    @apply hover:bg-accent hover:text-accent-foreground;
+  }
+  .btn-link {
+    @apply text-primary underline-offset-4 hover:underline;
+  }
+
+  .btn-size-default {
+    @apply h-7 px-2;
+  }
+  .btn-size-sm {
+    @apply h-6 rounded-md px-1.5;
+  }
+  .btn-size-lg {
+    @apply h-8 px-2;
+  }
+  .btn-size-icon {
+    @apply w-7 h-7;
+  }
+
+  .input {
+    @apply flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm;
+  }
+
+  .textarea {
+    @apply flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm;
+  }
+}
+
+
 @layer components {
-      .textarea {
-        @apply flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm;
-      }
+    .tabs-content {
+      @apply w-full mt-2 p-4 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
     }
+  }
 @layer components {
-      .input {
-        @apply flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm;
-      }
+    .tabs-trigger {
+      @apply inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
     }
-@layer components {
-      .card-footer {
-        @apply flex items-center p-6 pt-0;
-      }
+    .tabs-trigger[data-state="active"] {
+      @apply bg-background text-foreground shadow-sm;
     }
-@layer components {
-      .card-title {
-        @apply text-lg font-medium leading-none;
-      }
-    }
-@layer components {
-      .card-header {
-        @apply flex flex-col space-y-1.5 p-6;
-      }
-    }
+  }
 @layer components {
       .card-content {
         @apply p-6 pt-0;
@@ -109,10 +110,22 @@
       }
     }
 @layer components {
-      .card {
-        @apply rounded-lg border bg-card text-card-foreground;
+      .card-footer {
+        @apply flex items-center p-6 pt-0;
       }
     }
-@layer base {
-      a { @apply underline cursor-pointer active:opacity-50 whitespace-nowrap; }
+@layer components {
+      .card-header {
+        @apply flex flex-col space-y-1.5 p-6;
+      }
+    }
+@layer components {
+      .card-title {
+        @apply text-lg font-medium leading-none;
+      }
+    }
+@layer components {
+      .card {
+        @apply rounded-lg border border-border bg-card text-card-foreground;
+      }
     }

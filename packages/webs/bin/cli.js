@@ -4,7 +4,7 @@
  * for production, running the development server, and starting the server.
  */
 
-import { rm, mkdir, exists, watch } from "fs/promises";
+import { rm, mkdir, exists } from "fs/promises";
 import { resolve, join } from "path";
 import tailwind from "bun-plugin-tailwind";
 import { Database } from "bun:sqlite";
@@ -63,7 +63,7 @@ async function main() {
 
   const server = Bun.serve({
     port: PORT,
-    development: !IS_PROD,
+    development: false,
     fetch: (req) => request_handler(req),
     error: (error) => {
       console.error(error);
@@ -73,17 +73,6 @@ async function main() {
 
   if (!IS_PROD) {
     console.log("--- Running in dev :", server.port);
-    setup_file_watcher({
-      cwd: CWD,
-      outdir: OUTDIR,
-      entrypoint: TMP_APP_JS,
-      on_rebuild: async ({ manifest: new_manifest, routes: new_routes }) => {
-        server_context.manifest = new_manifest;
-        server_context.app_routes = new_routes;
-        request_handler = create_request_handler(server_context);
-        console.log("Server context updated after rebuild.");
-      },
-    });
   }
 
   console.log(`--- Server ready at http://localhost:${PORT} ---`);
@@ -125,19 +114,30 @@ async function collectComponentStyles() {
   let style_chunks = [];
   const src_dir = resolve(CWD, "src");
   if (!(await exists(src_dir))) return { themes: "", styles: "" };
+
   const theme_regex = /@theme\s*\{[\s\S]*?\}/g;
-  const styles_regex =
-    /styles\s*:\s*`([\s\S]*?)`|export\s+const\s+styles\s*=\s*`([\s\S]*?)`/;
+  // This new regex is more flexible, capturing all 'styles: `' blocks in the file.
+  const all_styles_regex = /styles\s*:\s*`([\s\S]*?)`/g;
+
   for await (const file of glob.scan(src_dir)) {
     const file_path = join(src_dir, file);
     const src = await Bun.file(file_path).text();
-    const match = src.match(styles_regex);
-    let css = match ? match[1] || match[2] : "";
-    if (css) {
-      const themes = css.match(theme_regex);
-      if (themes) theme_chunks.push(...themes);
-      const styles_only = css.replace(theme_regex, "").trim();
-      if (styles_only) style_chunks.push(styles_only);
+    let match;
+
+    // Find all matches for the styles regex in the file.
+    while ((match = all_styles_regex.exec(src)) !== null) {
+      let css = match[1];
+      if (css) {
+        // Collect and remove @theme blocks
+        const themes = css.match(theme_regex);
+        if (themes) {
+          theme_chunks.push(...themes);
+        }
+        const styles_only = css.replace(theme_regex, "").trim();
+        if (styles_only) {
+          style_chunks.push(styles_only);
+        }
+      }
     }
   }
   return { themes: theme_chunks.join("\n"), styles: style_chunks.join("\n") };
@@ -179,18 +179,35 @@ async function load_and_generate_routes(cwd) {
   for await (const file of glob.scan(app_dir)) {
     const component_path = `${join(app_dir, file)}?t=${cache_buster}`;
     try {
-      const module = await import(component_path);
-      const component = module.default;
-      if (component && component.name) {
-        const route_name = file === "index.js" ? "" : file.replace(".js", "");
-        const route_path = `/${route_name}`;
-        server_routes[route_path] = {
-          component,
-          middleware: module.middleware || [],
-        };
-        client_route_entries.push(
-          `"${route_path}": () => import("../src/app/${file}")`,
-        );
+      const mod = await import(component_path);
+      const file_name = file.replace(".js", "");
+
+      // Loop through all named exports in the module
+      for (const export_name of Object.keys(mod)) {
+        const component = mod[export_name];
+        // Check if the export is a component-like object with a 'name' property
+        if (
+          typeof component === "object" &&
+          component !== null &&
+          component.name
+        ) {
+          // If it's the default export, use the file name as the route.
+          // Otherwise, use a combination of file name and export name.
+          const route_name =
+            export_name === "default"
+              ? file_name === "index"
+                ? ""
+                : file_name
+              : `${file_name}/${export_name}`;
+          const route_path = `/${route_name}`;
+          server_routes[route_path] = {
+            component,
+            middleware: mod.middleware || [],
+          };
+          client_route_entries.push(
+            `"${route_path}": () => import("../src/app/${file}").then(m => m['${export_name}'])`,
+          );
+        }
       }
     } catch (e) {
       console.error(`Failed to load component ${file}:`, e);
@@ -200,37 +217,6 @@ async function load_and_generate_routes(cwd) {
 const routes = { \n  ${client_route_entries.join(",\n  ")} \n};
 create_router(routes);`;
   return { routes: server_routes, client_entry_code };
-}
-
-function setup_file_watcher({ cwd, outdir, on_rebuild, entrypoint }) {
-  const srcDir = resolve(cwd, "src");
-  console.log(`Watching for changes in ${srcDir}`);
-  let is_rebuilding = false;
-  watch(srcDir, { recursive: true }, async (event, filename) => {
-    if (
-      !filename ||
-      filename.includes(".tmp") ||
-      filename.endsWith("~") ||
-      is_rebuilding
-    )
-      return;
-    is_rebuilding = true;
-    console.log(`Detected ${event} in ${filename}. Rebuilding...`);
-    const { routes, client_entry_code } = await load_and_generate_routes(cwd);
-    await Bun.write(entrypoint, client_entry_code);
-    const new_build_result = await build_assets(outdir, entrypoint);
-    if (new_build_result) {
-      const manifest = {
-        js: new_build_result.outputs.find((o) => o.path.endsWith(".js"))?.path,
-        css: new_build_result.outputs.find((o) => o.path.endsWith(".css"))
-          ?.path,
-      };
-      await on_rebuild({ manifest, routes });
-    }
-    setTimeout(() => {
-      is_rebuilding = false;
-    }, 100);
-  });
 }
 
 async function clean_directory(dirPath) {
