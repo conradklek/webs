@@ -26,12 +26,6 @@ const DIR_ELSE = "w-else";
 const DIR_FOR = "w-for";
 const DIR_MODEL = "w-model";
 
-
-/**
- * Creates a caching decorator for a function that takes a single string argument.
- * @param {Function} fn - The function to memoize.
- * @returns {Function} The memoized function.
- */
 const cache_string_function = (fn) => {
   const cache = Object.create(null);
   return (str) => {
@@ -40,20 +34,10 @@ const cache_string_function = (fn) => {
   };
 };
 
-/**
- * Converts a kebab-case string to camelCase.
- * e.g., "my-component-name" -> "myComponentName"
- * @type {Function}
- */
 const camelize = cache_string_function((str) => {
   return str.replace(/-(\w)/g, (_, c) => (c ? c.toUpperCase() : ""));
 });
 
-/**
- * Generates a render function from a transformed Abstract Syntax Tree (AST).
- * @param {object} ast - The transformed AST of the component template.
- * @returns {Function} A render function that takes the component context and returns a VNode tree.
- */
 export function generate_render_fn(ast) {
   const ctx = {
     scope: new Set(),
@@ -213,9 +197,6 @@ return ${generated_code || "null"};
   }
 }
 
-/**
- * The main Compiler class that orchestrates the template compilation process.
- */
 export class Compiler {
   constructor(component_def, options = null) {
     this.definition = component_def;
@@ -240,10 +221,6 @@ export class Compiler {
     this.options = options;
   }
 
-  /**
-   * Compiles the component's template into a render function.
-   * @returns {Function} The generated render function.
-   */
   compile() {
     const raw_ast = parse_html(this.definition.template);
     const transformed_ast = this._transform_node(raw_ast);
@@ -506,12 +483,6 @@ export class Compiler {
   }
 }
 
-/**
- * Compiles a component definition object into a render function.
- * This is the main entry point for the compiler.
- * @param {object} component_def - The component definition object.
- * @returns {Function} A render function.
- */
 export function compile(component_def) {
   let template_content = component_def.template;
 

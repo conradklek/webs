@@ -1,14 +1,5 @@
-/**
- * @fileoverview Database initialization and migration utility.
- */
 import { resolve } from "path";
 
-/**
- * Initializes a database connection and applies any pending migrations.
- * @param {object} Database - The database driver constructor (e.g., from `better-sqlite3`).
- * @param {string} cwd - The current working directory of the application.
- * @returns {Promise<object|null>} A promise that resolves to the database instance.
- */
 export async function create_database(Database, cwd) {
   console.log("Initializing database service...");
   const db_config_path = resolve(cwd, "src/sql.js");

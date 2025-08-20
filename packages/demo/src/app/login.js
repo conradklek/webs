@@ -9,11 +9,17 @@ export default {
     return {
       email: "anon@webs.site",
       password: "password",
+      error: null,
     };
   },
   methods: {
-    handle_login() {
-      use_session.login(this.email, this.password);
+    async handle_login() {
+      this.error = null;
+      try {
+        await use_session.login(this.email, this.password);
+      } catch (err) {
+        this.error = err.message;
+      }
     },
   },
   template: `
@@ -31,8 +37,8 @@ export default {
         <input w-model="password" type="password" placeholder="Password" class="shrink-0" />
         <button type="submit" class="mt-4">Submit</button>
       </form>
-      <div w-if="use_session.error">
-        <p class="text-red-700">{{ use_session.error }}</p>
+      <div w-if="error">
+        <p class="text-red-700">{{ error }}</p>
       </div>
     </div>
   `,

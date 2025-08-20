@@ -1,5 +1,5 @@
-const MenubarRoot = {
-  name: "MenubarRoot",
+const Menubar = {
+  name: "Menubar",
   setup({ provide, reactive, onMounted, onUnmounted }) {
     const state = reactive({
       activeMenu: null,
@@ -22,11 +22,11 @@ const MenubarRoot = {
     };
 
     onMounted(() => {
-      console.log("Mounted!");
+      console.log("Menubar Mounted!");
     });
 
     onUnmounted(() => {
-      console.log("Dismounted!");
+      console.log("Menubar Dismounted!");
     });
 
     provide("menubar", {
@@ -197,22 +197,18 @@ const MenubarSubContent = {
   `,
 };
 
-const Menubar = {
-  ...MenubarRoot,
-  name: "Menubar",
-  components: {
-    MenubarMenu,
-    MenubarTrigger,
-    MenubarContent,
-    MenubarItem,
-    MenubarSeparator,
-    MenubarShortcut,
-    MenubarLabel,
-    MenubarGroup,
-    MenubarSub,
-    MenubarSubTrigger,
-    MenubarSubContent,
-  },
+Menubar.components = {
+  MenubarMenu,
+  MenubarTrigger,
+  MenubarContent,
+  MenubarItem,
+  MenubarSeparator,
+  MenubarShortcut,
+  MenubarLabel,
+  MenubarGroup,
+  MenubarSub,
+  MenubarSubTrigger,
+  MenubarSubContent,
 };
 
 export default Menubar;

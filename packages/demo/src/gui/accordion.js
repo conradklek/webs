@@ -1,4 +1,4 @@
-const AccordionRoot = {
+const Accordion = {
   name: "Accordion",
   props: {
     type: {
@@ -16,11 +16,6 @@ const AccordionRoot = {
     });
 
     const toggle = (value) => {
-      console.log(
-        `[Accordion] Toggling value: '${value}'. Current state:`,
-        Array.from(state.openItems),
-      );
-
       if (props.type === "single") {
         if (state.openItems.has(value)) {
           if (props.collapsible) {
@@ -78,10 +73,6 @@ const AccordionTrigger = {
   setup({ inject }) {
     const accordion = inject("accordion");
     const value = inject("itemValue");
-    console.log(
-      `[AccordionTrigger for value='${value}'] Injected context:`,
-      accordion,
-    );
     return { accordion, value };
   },
   template: `
@@ -93,9 +84,6 @@ const AccordionTrigger = {
       >
         <span class="flex-1 flex flex-row items-start justify-start font-medium">
           <slot></slot>
-        </span>
-        <span class="accordion-chevron">
-          {{ accordion.is_open(value) ? '-' : '+' }}
         </span>
       </button>
     </h3>
@@ -118,10 +106,10 @@ const AccordionContent = {
 `,
 };
 
-AccordionRoot.components = {
+Accordion.components = {
   AccordionItem,
   AccordionTrigger,
   AccordionContent,
 };
 
-export default AccordionRoot;
+export default Accordion;

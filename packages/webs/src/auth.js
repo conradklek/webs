@@ -1,9 +1,3 @@
-/**
- * @fileoverview Provides authentication and session management utilities.
- * This file contains functions for user creation, login, logout, and session validation.
- * It is designed to work with a database instance and handles HTTP requests.
- */
-
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7;
 
 async function hash_password(password) {

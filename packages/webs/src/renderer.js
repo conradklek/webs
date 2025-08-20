@@ -309,6 +309,10 @@ export function create_renderer(options) {
     parent_component,
     is_hydrating = false,
   ) => {
+    console.log(
+      `[Hydration] Mounting component: ${vnode.type.name || "Anonymous"}`,
+      { is_hydrating },
+    );
     const instance = (vnode.component = create_component(
       vnode,
       parent_component,
@@ -448,6 +452,7 @@ export function create_renderer(options) {
   };
 
   const hydrate = (vnode, container) => {
+    console.log("[Hydration] Starting hydration process.");
     hydrate_node(vnode, container.firstChild, null);
   };
 
@@ -459,8 +464,27 @@ export function create_renderer(options) {
     ) {
       dom_node = dom_node.nextSibling;
     }
+
+    const vnode_type_name = is_object(vnode.type)
+      ? vnode.type.name || "Component"
+      : is_string(vnode.type)
+        ? vnode.type
+        : vnode.type.toString();
+    const dom_node_info = dom_node
+      ? `${dom_node.nodeName} (${dom_node.nodeValue ? `value: ${dom_node.nodeValue.trim()}` : ""})`
+      : "null";
+    console.log(
+      `[Hydration] Matching VNode: ${vnode_type_name}`,
+      "with DOM Node:",
+      dom_node_info,
+      { vnode, dom_node },
+    );
+
     if (!dom_node && vnode.type !== Comment) {
-      console.warn("DOM Mismatch during hydration: Node not found.", vnode);
+      console.error(
+        "[Hydration Error] DOM Mismatch: Server-rendered DOM node not found for VNode.",
+        vnode,
+      );
       return null;
     }
 
@@ -470,20 +494,36 @@ export function create_renderer(options) {
     switch (type) {
       case Text:
         if (props && props["w-dynamic"]) {
-          if (dom_node.nodeType !== 8 || dom_node.data !== "[")
+          if (dom_node.nodeType !== 8 || dom_node.data !== "[") {
+            console.error(
+              "[Hydration Error] Mismatch for dynamic text. Expected opening comment `<!--[-->`.",
+              { dom_node },
+            );
             return dom_node.nextSibling;
+          }
           const textNode = dom_node.nextSibling;
-          const closingComment = textNode.nextSibling;
+          const closingComment = textNode ? textNode.nextSibling : null;
           if (
             !closingComment ||
             closingComment.nodeType !== 8 ||
             closingComment.data !== "]"
-          )
+          ) {
+            console.error(
+              "[Hydration Error] Mismatch for dynamic text. Expected closing comment `<!--]-->`.",
+              { closingComment },
+            );
             return dom_node.nextSibling;
+          }
           vnode.el = textNode;
           return closingComment.nextSibling;
         }
-        if (dom_node.nodeType !== 3) return dom_node.nextSibling;
+        if (dom_node.nodeType !== 3) {
+          console.error(
+            "[Hydration Error] Mismatch: VNode is a Text node but DOM node is not.",
+            { dom_node },
+          );
+          return dom_node.nextSibling;
+        }
         return dom_node.nextSibling;
       case Comment:
         if (dom_node && dom_node.nodeType === 8) {
@@ -503,7 +543,13 @@ export function create_renderer(options) {
           return dom_node.nextSibling;
         } else if (is_string(type)) {
           if (props) {
+            console.log(`[Hydration] Patching props for <${type}>`, props);
             for (const key in props) {
+              if (/^on[A-Z]/.test(key)) {
+                console.log(
+                  `[Hydration] Attaching event listener: ${key} to <${type}>`,
+                );
+              }
               host_patch_prop(dom_node, key, null, props[key]);
             }
           }
@@ -629,20 +675,22 @@ export function create_component(
     }
   }
 
-  if (is_ssr && vnode.props.user && setup_result.session) {
-    setup_result.session.user = vnode.props.user;
-  }
-
   const initial_state_from_data = state ? state.call(instance.ctx) : {};
   let final_state;
 
   const server_state = vnode.props.initial_state;
+  if (!is_ssr) {
+    console.log(
+      `[Hydration] Creating component: ${instance.type.name || "Anonymous"}. Received server state:`,
+      JSON.parse(JSON.stringify(server_state || {})),
+    );
+  }
 
   if (server_state && Object.keys(server_state).length > 0) {
     final_state = {
       ...resolved_props,
-      ...initial_state_from_data,
       ...server_state,
+      ...initial_state_from_data,
       ...setup_result,
     };
   } else {
@@ -651,6 +699,13 @@ export function create_component(
       ...initial_state_from_data,
       ...setup_result,
     };
+  }
+
+  if (!is_ssr) {
+    console.log(
+      `[Hydration] Final state for ${instance.type.name || "Anonymous"} before reactive():`,
+      JSON.parse(JSON.stringify(final_state)),
+    );
   }
 
   instance.internal_ctx = is_ssr ? final_state : reactive(final_state);

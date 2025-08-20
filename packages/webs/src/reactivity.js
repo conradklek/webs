@@ -1,9 +1,3 @@
-/**
- * @fileoverview This file implements the core reactivity system for the framework.
- * It provides tools to create reactive objects, computed properties, and effects
- * that automatically track dependencies and re-run when those dependencies change.
- */
-
 import { is_object } from "./utils";
 
 let active_effect = null;

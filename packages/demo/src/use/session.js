@@ -30,6 +30,7 @@ export const use_session = create_store({
       } catch (err) {
         this.error = err.message;
         console.error("Registration failed:", err);
+        throw err;
       }
     },
     async login(email, password) {
@@ -44,13 +45,18 @@ export const use_session = create_store({
           const error_text = await response.text();
           throw new Error(error_text || "Login failed");
         }
-        const data = await response.json();
-        console.log({ data });
-        this.user = data;
-        window.location.href = "/";
+        const user_data = await response.json();
+        this.user = user_data;
+
+        if (user_data && user_data.username) {
+          window.location.href = `/profile/${user_data.username}`;
+        } else {
+          window.location.href = "/";
+        }
       } catch (err) {
         this.error = err.message;
         console.error("Login failed:", err);
+        throw err;
       }
     },
     async logout() {

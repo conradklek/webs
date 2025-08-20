@@ -8,11 +8,6 @@ import {
 import { void_elements, is_string, is_object, is_function } from "./utils";
 import { compile } from "./compiler.js";
 
-/**
- * Renders a root VNode to an HTML string for server-side rendering.
- * @param {object} vnode - The root VNode of the application.
- * @returns {Promise<{html: string, componentState: object}>} An object containing the rendered HTML and the initial state.
- */
 export async function render_to_string(vnode) {
   try {
     if (vnode && vnode.type) {
@@ -28,10 +23,6 @@ export async function render_to_string(vnode) {
   }
 }
 
-/**
- * The core recursive function that renders a single VNode to an HTML string.
- * @private
- */
 async function render_vnode(vnode, parent_component, context) {
   if (vnode == null) return "";
   if (is_string(vnode) || typeof vnode === "number")
@@ -66,11 +57,7 @@ async function render_vnode(vnode, parent_component, context) {
       } else if (is_object(type)) {
         if (!type.render) compile_templates(type);
 
-        const instance = create_component(
-          vnode,
-          parent_component,
-          true /* is_ssr */,
-        );
+        const instance = create_component(vnode, parent_component, true);
         if (!parent_component && context) {
           context.component_state = instance.internal_ctx;
         }
@@ -85,10 +72,6 @@ async function render_vnode(vnode, parent_component, context) {
   }
 }
 
-/**
- * Renders an array of child VNodes to an HTML string.
- * @private
- */
 async function render_children(children, parent_component, context) {
   if (!children) return "";
   const child_array = Array.isArray(children) ? children : [children];
@@ -99,10 +82,6 @@ async function render_children(children, parent_component, context) {
   return result;
 }
 
-/**
- * Renders a VNode's props into an HTML attribute string.
- * @private
- */
 function render_props(props) {
   let result = "";
   for (const key in props) {
@@ -117,10 +96,6 @@ function render_props(props) {
   return result;
 }
 
-/**
- * Escapes special HTML characters to prevent XSS attacks.
- * @private
- */
 function escape_html(str) {
   if (str == null) return "";
   return String(str).replace(/[&<>"']/g, (match) => {
@@ -141,10 +116,6 @@ function escape_html(str) {
   });
 }
 
-/**
- * Recursively compiles templates and flattens the component registry.
- * @private
- */
 function compile_templates(component_def) {
   if (component_def.components) {
     for (const key in component_def.components) {

@@ -1,12 +1,3 @@
-/**
- * @fileoverview This file contains the parsing logic for both JavaScript expressions
- * and HTML templates used by the framework. It is divided into two main sections:
- * 1. JavaScript Expression Parser: Handles tokenizing and parsing JS-like
- * expressions found in template bindings.
- * 2. HTML Parser: A state-machine-based tokenizer and tree builder for
- * component templates.
- */
-
 import { void_elements } from "./utils";
 
 const js_token_cache = new Map();
@@ -26,11 +17,6 @@ const is_ident_start = (c) =>
   (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c === "$" || c === "_";
 const is_ident_part = (c) => is_ident_start(c) || is_digit(c);
 
-/**
- * Tokenizes a JavaScript expression string. Caches results for performance.
- * @param {string} expression - The expression string to tokenize.
- * @returns {Array<object>} An array of token objects.
- */
 export function tokenize_js(expression) {
   if (js_token_cache.has(expression)) {
     return js_token_cache.get(expression);
@@ -136,12 +122,6 @@ export function tokenize_js(expression) {
   return tokens;
 }
 
-/**
- * Parses an array of JavaScript expression tokens into an AST. This is a Pratt
- * parser implementation that handles operator precedence.
- * @param {Array<object>} tokens - The array of tokens from `tokenize_js`.
- * @returns {object} An expression AST object.
- */
 export function parse_js(tokens) {
   let i = 0;
   const peek = () => tokens[i];
@@ -372,12 +352,6 @@ const HTML_TOKENIZER_STATE = {
 const html_is_whitespace = (c) =>
   c === " " || c === "\n" || c === "\t" || c === "\r";
 
-/**
- * A state-machine based tokenizer for HTML. It's designed to be fast and
- * handle the specific syntax required by the template compiler.
- * @param {string} html - The HTML string to tokenize.
- * @returns {Array<object>} An array of token objects.
- */
 function tokenize_html(html) {
   let state = HTML_TOKENIZER_STATE.DATA;
   let i = 0;
@@ -521,12 +495,6 @@ function tokenize_html(html) {
   return tokens;
 }
 
-/**
- * Builds a parse tree from an array of HTML tokens. Uses a stack to handle
- * nested elements and implicitly closes tags.
- * @param {Array<object>} tokens - The array of tokens from `tokenize_html`.
- * @returns {object} A root node of the parsed tree.
- */
 export function build_tree(tokens) {
   const root = { type: "root", children: [] };
   const stack = [root];
@@ -570,12 +538,6 @@ export function build_tree(tokens) {
   return root;
 }
 
-/**
- * Parses an HTML string into a simplified AST. Caches the result for performance.
- * This is the main public-facing function for HTML parsing.
- * @param {string} html - The HTML string to parse.
- * @returns {object} The root of the HTML AST.
- */
 export function parse_html(html) {
   if (html_ast_cache.has(html)) {
     return html_ast_cache.get(html);

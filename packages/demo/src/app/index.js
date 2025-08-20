@@ -1,10 +1,12 @@
-import { use_session } from "../use/session.js";
 import { use_logger } from "../use/logger.js";
+
 import Breadcrumb from "../gui/breadcrumb.js";
 import Accordion from "../gui/accordion.js";
 import Menubar from "../gui/menubar.js";
 import Tabs from "../gui/tabs.js";
 import Card from "../gui/card.js";
+import Toggle from "../gui/toggle.js";
+import ToggleGroup from "../gui/toggle-group.js";
 
 export const middleware = [use_logger];
 
@@ -13,23 +15,12 @@ export default {
   state() {
     return {
       count: 0,
-      username: "",
-      email: "",
-    };
-  },
-  setup() {
-    return {
-      session: use_session,
+      toggleDefaults: ["bold", "italic"],
     };
   },
   methods: {
     increment() {
       this.count++;
-    },
-    handleInput(event) {
-      const { name, value } = event.target;
-      this[name] = value;
-      console.log(`${name} updated to: ${value}`);
     },
   },
   template(html) {
@@ -39,28 +30,13 @@ export default {
       <div class="w-full flex flex-row items-center justify-start gap-4">
         <h1>webs</h1>
         <div class="w-full flex flex-row items-center justify-end gap-4">
-          <div
-            w-if="!session.user.username"
-            class="flex flex-row items-center justify-start gap-4"
-          >
+          <div class="flex flex-row items-center justify-start gap-4">
             <a href="/login">Login</a>
             <span>|</span>
             <a href="/signup">Signup</a>
           </div>
-          <div w-else class="flex flex-row items-center justify-start gap-4">
-            <button
-              type="button"
-              @click="session.logout()"
-              class="btn btn-default btn-size-default"
-            >
-              Logout
-            </button>
-            <span>|</span>
-            <a href="/profile">Profile &rarr;</a>
-          </div>
         </div>
       </div>
-
       <Menubar>
         <MenubarMenu value="file">
           <MenubarTrigger>File</MenubarTrigger>
@@ -117,14 +93,7 @@ export default {
           </MenubarContent>
         </MenubarMenu>
       </Menubar>
-
-      <div
-        w-if="session.user.username"
-        class="flex-1 flex flex-col items-start justify-start gap-2"
-      >
-        <p>Welcome back, @{{ session.user.username }}!</p>
-      </div>
-      <div w-else class="flex-1 flex flex-col items-start justify-start gap-6">
+      <div class="flex-1 flex flex-col items-start justify-start gap-6">
         <Card>
           <CardHeader>
             <CardTitle>Create project</CardTitle>
@@ -145,7 +114,7 @@ export default {
               class="btn btn-default btn-size-default"
             >
               This button has been clicked {{ count }} time{{ count === 1 ? '' :
-              's' }}!
+              's' }}.
             </button>
           </CardFooter>
         </Card>
@@ -189,6 +158,33 @@ export default {
             Change your password here.
           </TabsContent>
         </Tabs>
+
+        <div class="flex flex-col items-start gap-4">
+          <h2 class="text-lg font-semibold">Toggles</h2>
+          <div class="flex items-center gap-4">
+            <Toggle variant="outline">Toggle Me</Toggle>
+            <Toggle variant="default" size="sm">Small</Toggle>
+            <Toggle variant="outline" size="lg">Large</Toggle>
+          </div>
+
+          <h3 class="text-md font-semibold mt-4">Toggle Group (Single)</h3>
+          <ToggleGroup type="single" variant="outline" defaultValue="center">
+            <ToggleGroupItem value="left">Left</ToggleGroupItem>
+            <ToggleGroupItem value="center">Center</ToggleGroupItem>
+            <ToggleGroupItem value="right">Right</ToggleGroupItem>
+          </ToggleGroup>
+
+          <h3 class="text-md font-semibold mt-4">Toggle Group (Multiple)</h3>
+          <ToggleGroup
+            type="multiple"
+            variant="default"
+            :defaultValue="toggleDefaults"
+          >
+            <ToggleGroupItem value="bold"><b>B</b></ToggleGroupItem>
+            <ToggleGroupItem value="italic"><i>I</i></ToggleGroupItem>
+            <ToggleGroupItem value="underline"><u>U</u></ToggleGroupItem>
+          </ToggleGroup>
+        </div>
       </div>
     </div>`;
   },
@@ -198,5 +194,7 @@ export default {
     Card,
     Tabs,
     Menubar,
+    Toggle,
+    ToggleGroup,
   },
 };

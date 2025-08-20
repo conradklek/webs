@@ -1,4 +1,4 @@
-export const TabsRoot = {
+const Tabs = {
   name: "Tabs",
   props: {
     defaultValue: {
@@ -12,7 +12,6 @@ export const TabsRoot = {
     });
 
     const activateTab = (value) => {
-      console.log(`[Tabs] Activating tab: '${value}'.`);
       state.activeTab = value;
     };
 
@@ -32,7 +31,7 @@ export const TabsRoot = {
   `,
 };
 
-export const TabsContent = {
+const TabsContent = {
   name: "TabsContent",
   props: {
     value: {
@@ -58,7 +57,7 @@ export const TabsContent = {
   `,
 };
 
-export const TabsTrigger = {
+const TabsTrigger = {
   name: "TabsTrigger",
   props: {
     value: {
@@ -73,7 +72,7 @@ export const TabsTrigger = {
   styles: `
   @layer components {
     .tabs-trigger {
-      @apply inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+      @apply inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
     }
     .tabs-trigger[data-state="active"] {
       @apply bg-background text-foreground shadow-sm;
@@ -92,7 +91,7 @@ export const TabsTrigger = {
   `,
 };
 
-export const TabsList = {
+const TabsList = {
   name: "TabsList",
   template: `
     <div class="inline-flex w-full h-10 items-center justify-start rounded-md bg-muted p-1 text-muted-foreground">
@@ -101,10 +100,10 @@ export const TabsList = {
   `,
 };
 
-TabsRoot.components = {
+Tabs.components = {
   TabsList,
   TabsTrigger,
   TabsContent,
 };
 
-export default TabsRoot;
+export default Tabs;

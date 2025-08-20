@@ -1,20 +1,6 @@
-/**
- * @fileoverview This file contains the framework's client-side runtime. It's
- * responsible for creating an application instance, mounting it to the DOM,
- * handling hydration from SSR, and managing the client-side router.
- */
-
 import { create_renderer, create_vnode } from "./renderer";
-import { reactive } from "./reactivity";
 import { compile } from "./compiler";
 
-/**
- * Normalizes a class binding value (string, object, or array) into a
- * final class string.
- * @param {*} value - The value to normalize.
- * @returns {string} The normalized class string.
- * @private
- */
 function normalize_class(value) {
   let res = "";
   if (typeof value === "string") {
@@ -36,12 +22,6 @@ function normalize_class(value) {
   return res.trim();
 }
 
-/**
- * Creates a factory for generating application instances. This allows for creating
- * multiple app instances with different renderer options.
- * @param {object} renderer_options - Platform-specific DOM manipulation functions.
- * @returns {function} A `create_app` function.
- */
 export function create_app_api(renderer_options) {
   const renderer = create_renderer(renderer_options);
 
@@ -57,21 +37,10 @@ export function create_app_api(renderer_options) {
         hydrate: renderer.hydrate,
         params: root_props.params || {},
       },
-      /**
-       * Mounts the application to a container element.
-       * @param {HTMLElement} root_container - The DOM element to mount the app into.
-       * @param {boolean} [is_hydrating=false] - If true, attempts to hydrate existing SSR content.
-       */
-      mount(root_container, is_hydrating = false) {
+      mount(root_container) {
         const vnode = create_vnode(root_component, root_props);
         vnode.app_context = app._context;
-
-        if (is_hydrating) {
-          app._context.hydrate(vnode, root_container);
-        } else {
-          root_container.innerHTML = "";
-          app._context.patch(null, vnode, root_container);
-        }
+        app._context.hydrate(vnode, root_container);
         app._container = root_container;
         return vnode;
       },
@@ -80,10 +49,6 @@ export function create_app_api(renderer_options) {
   };
 }
 
-/**
- * The primary `create_app` function for browser environments, pre-configured
- * with DOM-specific renderer options.
- */
 export const create_app = create_app_api({
   create_element: (tag) => document?.createElement(tag),
   create_text: (text) => document?.createTextNode(text),
@@ -116,154 +81,52 @@ export const create_app = create_app_api({
   query_selector: (selector) => document?.querySelector(selector),
 });
 
-/**
- * Initializes a client-side router that handles navigation and component loading.
- * @param {object} routes - An object mapping URL paths to dynamic component import functions.
- * e.g., { "/": () => import("./pages/Home.js") }
- */
-export function create_router(routes) {
+export async function hydrate(components) {
   if (typeof window === "undefined") return;
 
   const root = document.getElementById("root");
-  if (!root)
-    return console.error("Router creation failed: #root element not found.");
-
-  const page_context = reactive({
-    component: null,
-    props: {},
-  });
-
-  let previous_path = window.location.pathname;
-
-  const AppRoot = {
-    name: "AppRoot",
-    setup() {
-      return { page_context };
-    },
-    render(ctx) {
-      const page = ctx.page_context.component;
-      return page
-        ? create_vnode(page, ctx.page_context.props)
-        : create_vnode(Comment, null, "empty");
-    },
-  };
-
-  const app = create_app(AppRoot);
-  app.mount(root, true);
+  if (!root) {
+    return console.error("Hydration failed: #root element not found.");
+  }
 
   const webs_state = deserialize_state(window.__WEBS_STATE__ || {});
-  const initial_component_state = webs_state.componentState || {};
-  console.log("[Router] Initial state from server:", initial_component_state);
+  const { component_name, user, params, componentState } = webs_state;
 
-  async function navigate(path) {
-    history.pushState({}, "", path);
-    await loadRoute(false);
+  if (!component_name) {
+    console.error("Hydration failed: No component name provided in state.");
+    return;
   }
 
-  async function loadRoute(shouldHydrate = true) {
-    const to_path = window.location.pathname;
-    const from_route = { path: previous_path };
-    const route_loader = routes[to_path];
-
-    console.log(
-      `[Router] Navigating to: ${to_path}. Hydrating: ${shouldHydrate}`,
+  const component_loader = components[component_name];
+  if (!component_loader) {
+    console.error(
+      `Hydration failed: No component loader found for "${component_name}".`,
     );
-
-    if (!route_loader) {
-      console.error(`No component found for path: ${to_path}`);
-      root.innerHTML = `<div>404 - Not Found</div>`;
-      return;
-    }
-
-    try {
-      const mod = await route_loader();
-      const component = mod.default || mod;
-
-      compile_templates(mod);
-
-      const middleware = mod.middleware || [];
-      const to_route = {
-        path: to_path,
-        params: parse_query_string(window.location.search),
-        component,
-        middleware,
-      };
-
-      let index = -1;
-      const next = (path) => {
-        if (path) return navigate(path);
-        index++;
-        if (index < to_route.middleware.length) {
-          to_route.middleware[index](to_route, from_route, next);
-        } else {
-          const props = {
-            params: reactive(to_route.params),
-            initial_state: shouldHydrate ? initial_component_state : {},
-          };
-
-          if (shouldHydrate && webs_state.user) {
-            props.user = webs_state.user;
-          }
-
-          console.log("[Router] Setting page component with props:", props);
-
-          page_context.component = to_route.component;
-          page_context.props = props;
-          previous_path = to_path; // Update path after successful navigation
-
-          if (shouldHydrate) {
-            console.log(
-              "[Router] Hydration complete. Clearing __WEBS_STATE__.",
-            );
-            window.__WEBS_STATE__ = null;
-          }
-        }
-      };
-      next();
-    } catch (error) {
-      console.error(
-        `Failed to load route component for path: ${to_path}`,
-        error,
-      );
-      root.innerHTML = `<div>Error loading page.</div>`;
-    }
+    return;
   }
 
-  window.addEventListener("popstate", () => loadRoute(false));
+  try {
+    const component_module = await component_loader();
+    const root_component = component_module.default;
 
-  // Listen for pageshow event to detect navigation from browser's back/forward cache.
-  window.addEventListener("pageshow", (event) => {
-    // If event.persisted is true, the page was restored from the bfcache.
-    if (event.persisted) {
-      console.log(
-        "[Router] Page restored from bfcache. Reloading for auth consistency.",
-      );
-      window.location.reload();
-    }
-  });
+    const props = {
+      user,
+      params,
+      initial_state: componentState,
+    };
 
-  document.addEventListener("click", (event) => {
-    const anchor = event.target.closest("a");
-    if (
-      anchor &&
-      anchor.host === window.location.host &&
-      !anchor.hasAttribute("download") &&
-      anchor.target !== "_blank"
-    ) {
-      event.preventDefault();
-      navigate(anchor.href);
-    }
-  });
+    const app = create_app(root_component, props);
+    app.mount(root);
 
-  loadRoute(true);
+    window.__WEBS_STATE__ = null;
+    console.log(
+      `[Hydration] Page component "${component_name}" hydrated successfully.`,
+    );
+  } catch (error) {
+    console.error(`Failed to hydrate component "${component_name}":`, error);
+  }
 }
 
-/**
- * Recursively traverses a component definition and compiles any `template` strings
- * into `render` functions. It also flattens nested component registrations.
- * @param {object} component_def - The component definition object.
- * @private
- */
 function compile_templates(component_def) {
   if (!component_def) return;
   if (component_def.components) {
@@ -280,12 +143,6 @@ function compile_templates(component_def) {
   }
 }
 
-/**
- * Deserializes state from the server, reviving special object types like Set and Map.
- * @param {*} input - The serialized state (can be an object or JSON string).
- * @returns {*} The deserialized state.
- * @private
- */
 function deserialize_state(input) {
   const revive_special = (node) => {
     if (node && typeof node === "object" && "__type" in node) {
@@ -320,11 +177,6 @@ function deserialize_state(input) {
   return input;
 }
 
-/**
- * Parses a URL query string into a nested object.
- * @param {string} queryString - The query string (e.g., `window.location.search`).
- * @returns {object} The parsed parameters object.
- */
 export function parse_query_string(queryString) {
   const params = {};
   const searchParams = new URLSearchParams(queryString);

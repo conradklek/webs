@@ -1,4 +1,4 @@
-export const CardContent = {
+const CardContent = {
   name: "CardContent",
   styles: `
     @layer components {
@@ -14,7 +14,7 @@ export const CardContent = {
   `,
 };
 
-export const CardDescription = {
+const CardDescription = {
   name: "CardDescription",
   styles: `
     @layer components {
@@ -30,7 +30,7 @@ export const CardDescription = {
   `,
 };
 
-export const CardFooter = {
+const CardFooter = {
   name: "CardFooter",
   styles: `
     @layer components {
@@ -46,7 +46,7 @@ export const CardFooter = {
   `,
 };
 
-export const CardHeader = {
+const CardHeader = {
   name: "CardHeader",
   styles: `
     @layer components {
@@ -62,7 +62,7 @@ export const CardHeader = {
   `,
 };
 
-export const CardTitle = {
+const CardTitle = {
   name: "CardTitle",
   styles: `
     @layer components {
@@ -78,7 +78,7 @@ export const CardTitle = {
   `,
 };
 
-export const Card = {
+const Card = {
   name: "Card",
   styles: `
     @layer components {
@@ -94,14 +94,12 @@ export const Card = {
   `,
 };
 
-export default {
-  ...Card,
-  name: "Card",
-  components: {
-    CardHeader,
-    CardTitle,
-    CardDescription,
-    CardContent,
-    CardFooter,
-  },
+Card.components = {
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
 };
+
+export default Card;

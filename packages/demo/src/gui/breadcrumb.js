@@ -1,4 +1,4 @@
-export const BreadcrumbEllipsis = {
+const BreadcrumbEllipsis = {
   name: "BreadcrumbEllipsis",
   template: `
     <span role="presentation" aria-hidden="true" class="flex size-8 items-center justify-center">
@@ -7,7 +7,8 @@ export const BreadcrumbEllipsis = {
     </span>
   `,
 };
-export const BreadcrumbItem = {
+
+const BreadcrumbItem = {
   name: "BreadcrumbItem",
   template: `
     <li class="inline-flex items-center gap-1.5">
@@ -15,7 +16,8 @@ export const BreadcrumbItem = {
     </li>
   `,
 };
-export const BreadcrumbLink = {
+
+const BreadcrumbLink = {
   name: "BreadcrumbLink",
   template: `
     <a class="transition-colors hover:text-foreground">
@@ -23,7 +25,8 @@ export const BreadcrumbLink = {
     </a>
   `,
 };
-export const BreadcrumbList = {
+
+const BreadcrumbList = {
   name: "BreadcrumbList",
   template: `
     <ol class="flex flex-wrap items-center gap-1.5 break-words text-muted-foreground sm:gap-2.5">
@@ -31,7 +34,8 @@ export const BreadcrumbList = {
     </ol>
   `,
 };
-export const BreadcrumbPage = {
+
+const BreadcrumbPage = {
   name: "BreadcrumbPage",
   template: `
     <span role="link" aria-disabled="true" aria-current="page" class="font-normal text-foreground">
@@ -39,7 +43,8 @@ export const BreadcrumbPage = {
     </span>
   `,
 };
-export const BreadcrumbSeparator = {
+
+const BreadcrumbSeparator = {
   name: "BreadcrumbSeparator",
   template: `
     <li role="presentation" aria-hidden="true">
@@ -47,7 +52,8 @@ export const BreadcrumbSeparator = {
     </li>
   `,
 };
-export const Breadcrumb = {
+
+const Breadcrumb = {
   name: "Breadcrumb",
   template: `
     <nav aria-label="breadcrumb">

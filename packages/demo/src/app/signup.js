@@ -10,15 +10,21 @@ export default {
       email: "",
       username: "",
       password: "",
+      error: null,
     };
   },
   methods: {
-    handle_signup() {
-      use_session.register({
-        email: this.email,
-        username: this.username,
-        password: this.password,
-      });
+    async handle_signup() {
+      this.error = null;
+      try {
+        await use_session.register({
+          email: this.email,
+          username: this.username,
+          password: this.password,
+        });
+      } catch (err) {
+        this.error = use_session.error || "An unknown error occurred.";
+      }
     },
   },
   template: `
@@ -37,6 +43,9 @@ export default {
         <input w-model="password" type="password" placeholder="Password" required minlength="8" />
         <button type="submit" class="mt-4">Create Account</button>
       </form>
+      <div w-if="error">
+        <p class="text-red-700">{{ error }}</p>
+      </div>
     </div>
   `,
 };

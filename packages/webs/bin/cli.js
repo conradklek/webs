@@ -1,8 +1,4 @@
 #!/usr/bin/env bun
-/**
- * @fileoverview The command-line interface for the framework. Handles building
- * for production, running the development server, and starting the server.
- */
 
 import { rm, mkdir, exists } from "fs/promises";
 import { resolve, join } from "path";
@@ -23,13 +19,23 @@ const IS_PROD = process.env.NODE_ENV === "production";
 async function main() {
   await ensureTmpDir();
 
-  const { routes: initial_routes, client_entry_code } =
-    await load_and_generate_routes(CWD);
+  const { client_entry_code, component_files } = await generate_client_entry();
   await Bun.write(TMP_APP_JS, client_entry_code);
+
+  const api_path = resolve(CWD, "src/api.js");
+  let app_routes = {};
+  if (await exists(api_path)) {
+    const api_module = await import(`${api_path}?t=${Date.now()}`);
+    app_routes = api_module.routes || {};
+  } else {
+    console.warn(
+      "[Warning] src/api.js not found. No routes will be available.",
+    );
+  }
 
   const server_context = {
     db: await framework.create_database(Database, CWD),
-    app_routes: initial_routes,
+    app_routes: app_routes,
     outdir: OUTDIR,
     manifest: {},
     is_prod: IS_PROD,
@@ -80,6 +86,31 @@ async function main() {
 
 main().catch(console.error);
 
+async function generate_client_entry() {
+  const app_dir = resolve(CWD, "src/app");
+  const glob = new Glob("*.js");
+  const client_import_entries = [];
+  const component_files = [];
+
+  if (await exists(app_dir)) {
+    for await (const file of glob.scan(app_dir)) {
+      const component_name = file.replace(".js", "");
+      client_import_entries.push(
+        `'${component_name}': () => import('../src/app/${file}')`,
+      );
+      component_files.push(file);
+    }
+  }
+
+  const client_entry_code = `import { hydrate } from "@conradklek/webs";
+const components = {
+  ${client_import_entries.join(",\n  ")}
+};
+hydrate(components);`;
+
+  return { client_entry_code, component_files };
+}
+
 async function build_assets(outdir, entrypoint) {
   console.log("Building client assets...");
   await clean_directory(outdir);
@@ -116,7 +147,6 @@ async function collectComponentStyles() {
   if (!(await exists(src_dir))) return { themes: "", styles: "" };
 
   const theme_regex = /@theme\s*\{[\s\S]*?\}/g;
-  // This new regex is more flexible, capturing all 'styles: `' blocks in the file.
   const all_styles_regex = /styles\s*:\s*`([\s\S]*?)`/g;
 
   for await (const file of glob.scan(src_dir)) {
@@ -124,11 +154,9 @@ async function collectComponentStyles() {
     const src = await Bun.file(file_path).text();
     let match;
 
-    // Find all matches for the styles regex in the file.
     while ((match = all_styles_regex.exec(src)) !== null) {
       let css = match[1];
       if (css) {
-        // Collect and remove @theme blocks
         const themes = css.match(theme_regex);
         if (themes) {
           theme_chunks.push(...themes);
@@ -164,59 +192,6 @@ async function compress_assets(outputs) {
     }),
   );
   return sizes;
-}
-async function load_and_generate_routes(cwd) {
-  console.log("Loading routes and generating client entrypoint...");
-  const server_routes = {};
-  const app_dir = resolve(cwd, "src/app");
-  if (!(await exists(app_dir))) {
-    console.warn(`[Warning] Route directory not found at ${app_dir}.`);
-    return { routes: {}, client_entry_code: "" };
-  }
-  const glob = new Glob("*.js");
-  let client_route_entries = [];
-  const cache_buster = Date.now();
-  for await (const file of glob.scan(app_dir)) {
-    const component_path = `${join(app_dir, file)}?t=${cache_buster}`;
-    try {
-      const mod = await import(component_path);
-      const file_name = file.replace(".js", "");
-
-      // Loop through all named exports in the module
-      for (const export_name of Object.keys(mod)) {
-        const component = mod[export_name];
-        // Check if the export is a component-like object with a 'name' property
-        if (
-          typeof component === "object" &&
-          component !== null &&
-          component.name
-        ) {
-          // If it's the default export, use the file name as the route.
-          // Otherwise, use a combination of file name and export name.
-          const route_name =
-            export_name === "default"
-              ? file_name === "index"
-                ? ""
-                : file_name
-              : `${file_name}/${export_name}`;
-          const route_path = `/${route_name}`;
-          server_routes[route_path] = {
-            component,
-            middleware: mod.middleware || [],
-          };
-          client_route_entries.push(
-            `"${route_path}": () => import("../src/app/${file}").then(m => m['${export_name}'])`,
-          );
-        }
-      }
-    } catch (e) {
-      console.error(`Failed to load component ${file}:`, e);
-    }
-  }
-  const client_entry_code = `import { create_router } from "@conradklek/webs";
-const routes = { \n  ${client_route_entries.join(",\n  ")} \n};
-create_router(routes);`;
-  return { routes: server_routes, client_entry_code };
 }
 
 async function clean_directory(dirPath) {
