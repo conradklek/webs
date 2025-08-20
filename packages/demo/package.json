@@ -7,7 +7,7 @@
     "start": "NODE_ENV=production webs"
   },
   "dependencies": {
-    "@conradklek/webs": "workspace:*"
+    "@conradklek/webs": "file:../webs"
   },
   "devDependencies": {
     "tailwindcss": "^4.1.11"

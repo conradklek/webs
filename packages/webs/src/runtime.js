@@ -97,7 +97,7 @@ export async function hydrate(components) {
     return;
   }
 
-  const component_loader = components[component_name];
+  const component_loader = components.get(component_name);
   if (!component_loader) {
     console.error(
       `Hydration failed: No component loader found for "${component_name}".`,

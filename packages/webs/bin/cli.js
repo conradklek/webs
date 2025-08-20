@@ -90,26 +90,24 @@ main().catch(console.error);
 async function generate_client_entry() {
   const app_dir = resolve(CWD, "src/app");
   const glob = new Glob("*.js");
-  const client_import_entries = [];
-  const component_files = [];
+  const component_map_entries = [];
 
   if (await exists(app_dir)) {
     for await (const file of glob.scan(app_dir)) {
       const component_name = file.replace(".js", "");
-      client_import_entries.push(
-        `'${component_name}': () => import('../src/app/${file}')`,
+      component_map_entries.push(
+        `['${component_name}', () => import('../src/app/${file}')]`,
       );
-      component_files.push(file);
     }
   }
 
-  const client_entry_code = `import { hydrate } from "@conradklek/webs";
-const components = {
-  ${client_import_entries.join(",\n  ")}
-};
+  const client_entry_code = `import { hydrate } from "@conradklek/webs/runtime";
+const components = new Map([
+  ${component_map_entries.join(",\n  ")}
+]);
 hydrate(components);`;
 
-  return { client_entry_code, component_files };
+  return { client_entry_code };
 }
 
 async function build_assets(outdir, entrypoint) {
@@ -127,7 +125,7 @@ async function build_assets(outdir, entrypoint) {
     target: "browser",
     splitting: true,
     minify: IS_PROD,
-    naming: "[name]-[hash].[ext]",
+    naming: IS_PROD ? "[name]-[hash].[ext]" : "[name].[ext]",
     plugins: [tailwind],
     sourcemap: IS_PROD ? "none" : "inline",
   });

@@ -1,4 +1,4 @@
-import { create_store } from "@conradklek/webs";
+import { create_store } from "@conradklek/webs/reactivity";
 
 const initial_user =
   typeof window !== "undefined" ? window.__WEBS_STATE__?.user : null;
