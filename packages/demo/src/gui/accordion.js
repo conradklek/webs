@@ -43,11 +43,13 @@ const Accordion = {
       is_open,
     });
   },
-  template: `
-    <div class="w-full flex flex-col items-start justify-start gap-3">
-      <slot></slot>
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div class="w-full flex flex-col items-start justify-start gap-3">
+        <slot></slot>
+      </div>
+    `;
+  },
 };
 
 const AccordionItem = {
@@ -61,11 +63,13 @@ const AccordionItem = {
   setup({ props, provide }) {
     provide("itemValue", props.value);
   },
-  template: `
-    <div class="w-full flex flex-col gap-1.5">
-      <slot></slot>
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div class="w-full flex flex-col gap-1.5">
+        <slot></slot>
+      </div>
+    `;
+  },
 };
 
 const AccordionTrigger = {
@@ -75,19 +79,23 @@ const AccordionTrigger = {
     const value = inject("itemValue");
     return { accordion, value };
   },
-  template: `
-    <h3>
-      <button 
-        type="button" 
-        @click="accordion.toggle(value)"
-        class="w-full flex flex-row items-start justify-start cursor-pointer"
-      >
-        <span class="flex-1 flex flex-row items-start justify-start font-medium">
-          <slot></slot>
-        </span>
-      </button>
-    </h3>
-  `,
+  template(html) {
+    return html`
+      <h3>
+        <button
+          type="button"
+          @click="accordion.toggle(value)"
+          class="w-full flex flex-row items-start justify-start cursor-pointer"
+        >
+          <span
+            class="flex-1 flex flex-row items-start justify-start font-medium"
+          >
+            <slot></slot>
+          </span>
+        </button>
+      </h3>
+    `;
+  },
 };
 
 const AccordionContent = {
@@ -97,13 +105,15 @@ const AccordionContent = {
     const value = inject("itemValue");
     return { accordion, value };
   },
-  template: `
-  <div w-if="accordion.is_open(value)" class="contents">
-    <div class="pb-3 pt-1">
-      <slot></slot>
-    </div>
-  </div>
-`,
+  template(html) {
+    return html`
+      <div w-if="accordion.is_open(value)" class="contents">
+        <div class="pb-3 pt-1">
+          <slot></slot>
+        </div>
+      </div>
+    `;
+  },
 };
 
 Accordion.components = {

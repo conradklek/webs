@@ -36,11 +36,15 @@ const Menubar = {
       is_open,
     });
   },
-  template: `
-    <div class="flex h-10 items-center space-x-1 border border-border rounded-md bg-background p-1">
-      <slot></slot>
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div
+        class="flex h-10 items-center space-x-1 border border-border rounded-md bg-background p-1"
+      >
+        <slot></slot>
+      </div>
+    `;
+  },
 };
 
 const MenubarMenu = {
@@ -54,11 +58,13 @@ const MenubarMenu = {
   setup({ props, provide }) {
     provide("menuValue", props.value);
   },
-  template: `
-    <div class="relative">
-      <slot></slot>
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div class="relative">
+        <slot></slot>
+      </div>
+    `;
+  },
 };
 
 const MenubarTrigger = {
@@ -68,16 +74,18 @@ const MenubarTrigger = {
     const menuValue = inject("menuValue");
     return { menubar, menuValue };
   },
-  template: `
-    <button
-      type="button"
-      @click="menubar.toggleMenu(menuValue)"
-      :data-state="menubar.is_open(menuValue) ? 'open' : 'closed'"
-      class="flex cursor-default select-none items-center rounded-sm px-3 py-1.5 text-sm font-medium outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
-    >
-      <slot></slot>
-    </button>
-  `,
+  template(html) {
+    return html`
+      <button
+        type="button"
+        @click="menubar.toggleMenu(menuValue)"
+        :data-state="menubar.is_open(menuValue) ? 'open' : 'closed'"
+        class="flex cursor-default select-none items-center rounded-sm px-3 py-1.5 text-sm font-medium outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
+      >
+        <slot></slot>
+      </button>
+    `;
+  },
 };
 
 const MenubarContent = {
@@ -87,14 +95,16 @@ const MenubarContent = {
     const menuValue = inject("menuValue");
     return { menubar, menuValue };
   },
-  template: `
-    <div
-      w-if="menubar.is_open(menuValue)"
-      class="absolute z-50 min-w-[12rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md top-full translate-y-2 origin-top"
-    >
-      <slot></slot>
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div
+        w-if="menubar.is_open(menuValue)"
+        class="absolute z-50 min-w-[12rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md top-full translate-y-2 origin-top"
+      >
+        <slot></slot>
+      </div>
+    `;
+  },
 };
 
 const MenubarItem = {
@@ -103,40 +113,50 @@ const MenubarItem = {
     const menubar = inject("menubar");
     return { menubar };
   },
-  template: `
-    <div
-      @click="menubar.closeMenu()"
-      class="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-    >
-      <slot></slot>
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div
+        @click="menubar.closeMenu()"
+        class="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+      >
+        <slot></slot>
+      </div>
+    `;
+  },
 };
 
 const MenubarSeparator = {
   name: "MenubarSeparator",
-  template: `
-    <div class="-mx-1 my-1 h-px bg-muted"></div>
-  `,
+  template(html) {
+    return html` <div class="-mx-1 my-1 h-px bg-muted"></div> `;
+  },
 };
 
 const MenubarShortcut = {
   name: "MenubarShortcut",
-  template: `
-    <span class="ml-auto text-xs tracking-widest text-muted-foreground">
-      <slot></slot>
-    </span>
-  `,
+  template(html) {
+    return html`
+      <span class="ml-auto text-xs tracking-widest text-muted-foreground">
+        <slot></slot>
+      </span>
+    `;
+  },
 };
 
 const MenubarLabel = {
   name: "MenubarLabel",
-  template: `<div class="px-2 py-1.5 text-sm font-semibold"><slot></slot></div>`,
+  template(html) {
+    return html`<div class="px-2 py-1.5 text-sm font-semibold">
+      <slot></slot>
+    </div>`;
+  },
 };
 
 const MenubarGroup = {
   name: "MenubarGroup",
-  template: `<div><slot></slot></div>`,
+  template(html) {
+    return html`<div><slot></slot></div>`;
+  },
 };
 
 const MenubarSub = {
@@ -158,11 +178,17 @@ const MenubarSub = {
 
     provide("submenu", { open, close, is_open });
   },
-  template: `
-    <div class="relative" @mouseenter="submenu.open()" @mouseleave="submenu.close()">
-      <slot></slot>
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div
+        class="relative"
+        @mouseenter="submenu.open()"
+        @mouseleave="submenu.close()"
+      >
+        <slot></slot>
+      </div>
+    `;
+  },
 };
 
 const MenubarSubTrigger = {
@@ -171,14 +197,16 @@ const MenubarSubTrigger = {
     const submenu = inject("submenu");
     return { submenu };
   },
-  template: `
-    <div
-      :data-state="submenu.is_open() ? 'open' : 'closed'"
-      class="flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
-    >
-      <span class="flex-1"><slot></slot></span>
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div
+        :data-state="submenu.is_open() ? 'open' : 'closed'"
+        class="flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
+      >
+        <span class="flex-1"><slot></slot></span>
+      </div>
+    `;
+  },
 };
 
 const MenubarSubContent = {
@@ -187,14 +215,16 @@ const MenubarSubContent = {
     const submenu = inject("submenu");
     return { submenu };
   },
-  template: `
-    <div
-      w-if="submenu.is_open()"
-      class="absolute z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md left-full -top-2"
-    >
-      <slot></slot>
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div
+        w-if="submenu.is_open()"
+        class="absolute z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md left-full -top-2"
+      >
+        <slot></slot>
+      </div>
+    `;
+  },
 };
 
 Menubar.components = {

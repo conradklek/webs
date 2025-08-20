@@ -192,7 +192,6 @@ return ${generated_code || "null"};
     return fn;
   } catch (e) {
     console.error("Error compiling render function:", e);
-    console.log("Generated code:\n", function_body);
     return () => Webs.h(Webs.Comment, null, "Render function compile error");
   }
 }

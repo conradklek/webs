@@ -1,7 +1,4 @@
 import { use_session } from "../use/session.js";
-import { use_logger } from "../use/logger.js";
-
-export const middleware = [use_logger];
 
 export default {
   name: "Login",
@@ -22,24 +19,39 @@ export default {
       }
     },
   },
-  template: `
-    <div class="w-full p-8 flex flex-col items-start justify-start gap-8">
-      <div class="w-full flex flex-row items-center justify-start gap-4">
-        <a href="/" class="font-medium">webs</a>
-        <div class="w-full flex flex-row items-center justify-end gap-4">
-          <h1>Login</h1>
-          <span>|</span>
-          <a href="/signup">Signup</a>
+  template(html) {
+    return html`
+      <div class="w-full p-8 flex flex-col items-start justify-start gap-8">
+        <div class="w-full flex flex-row items-center justify-start gap-4">
+          <a href="/" class="font-medium">webs.site</a>
+          <div class="w-full flex flex-row items-center justify-end gap-4">
+            <h1>Login</h1>
+            <span>|</span>
+            <a href="/signup">Signup</a>
+          </div>
+        </div>
+        <form
+          @submit.prevent="handle_login"
+          class="flex-1 flex flex-col items-start justify-start gap-2"
+        >
+          <input
+            w-model="email"
+            type="email"
+            placeholder="Email"
+            class="shrink-0"
+          />
+          <input
+            w-model="password"
+            type="password"
+            placeholder="Password"
+            class="shrink-0"
+          />
+          <button type="submit" class="mt-4">Submit</button>
+        </form>
+        <div w-if="error">
+          <p class="text-red-700">{{ error }}</p>
         </div>
       </div>
-      <form @submit.prevent="handle_login" class="flex-1 flex flex-col items-start justify-start gap-2">
-        <input w-model="email" type="email" placeholder="Email" class="shrink-0" />
-        <input w-model="password" type="password" placeholder="Password" class="shrink-0" />
-        <button type="submit" class="mt-4">Submit</button>
-      </form>
-      <div w-if="error">
-        <p class="text-red-700">{{ error }}</p>
-      </div>
-    </div>
-  `,
+    `;
+  },
 };

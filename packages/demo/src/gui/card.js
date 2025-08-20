@@ -7,11 +7,13 @@ const CardContent = {
       }
     }
   `,
-  template: `
-    <div class="card-content">
-      <slot></slot>
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div class="card-content">
+        <slot></slot>
+      </div>
+    `;
+  },
 };
 
 const CardDescription = {
@@ -23,11 +25,13 @@ const CardDescription = {
       }
     }
   `,
-  template: `
-    <p class="card-description">
-      <slot></slot>
-    </p>
-  `,
+  template(html) {
+    return html`
+      <p class="card-description">
+        <slot></slot>
+      </p>
+    `;
+  },
 };
 
 const CardFooter = {
@@ -39,11 +43,13 @@ const CardFooter = {
       }
     }
   `,
-  template: `
-    <div class="card-footer">
-      <slot></slot>
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div class="card-footer">
+        <slot></slot>
+      </div>
+    `;
+  },
 };
 
 const CardHeader = {
@@ -55,11 +61,13 @@ const CardHeader = {
       }
     }
   `,
-  template: `
-    <div class="card-header">
-      <slot></slot>
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div class="card-header">
+        <slot></slot>
+      </div>
+    `;
+  },
 };
 
 const CardTitle = {
@@ -71,11 +79,13 @@ const CardTitle = {
       }
     }
   `,
-  template: `
-    <h3 class="card-title">
-      <slot></slot>
-    </h3>
-  `,
+  template(html) {
+    return html`
+      <h3 class="card-title">
+        <slot></slot>
+      </h3>
+    `;
+  },
 };
 
 const Card = {
@@ -87,11 +97,13 @@ const Card = {
       }
     }
   `,
-  template: `
-    <div class="card">
-      <slot></slot>
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div class="card">
+        <slot></slot>
+      </div>
+    `;
+  },
 };
 
 Card.components = {

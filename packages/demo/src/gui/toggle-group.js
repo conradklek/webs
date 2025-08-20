@@ -30,7 +30,8 @@ const ToggleGroupItem = {
       };
       const variant = props.variant || toggleGroup.variant;
       const size = props.size || toggleGroup.size;
-      return `${base} ${variants[variant] || variants.default} ${sizes[size] || sizes.default}`;
+      return `${base} ${variants[variant] || variants.default} ${sizes[size] || sizes.default
+        }`;
     };
 
     return {
@@ -39,18 +40,20 @@ const ToggleGroupItem = {
       getClasses,
     };
   },
-  template: `
-    <button
-      type="button"
-      role="radio"
-      :aria-checked="toggleGroup.is_on(value)"
-      @click="toggleGroup.toggle(value)"
-      :data-state="toggleGroup.is_on(value) ? 'on' : 'off'"
-      :class="getClasses()"
-    >
-      <slot></slot>
-    </button>
-  `,
+  template(html) {
+    return html`
+      <button
+        type="button"
+        role="radio"
+        :aria-checked="toggleGroup.is_on(value)"
+        @click="toggleGroup.toggle(value)"
+        :data-state="toggleGroup.is_on(value) ? 'on' : 'off'"
+        :class="getClasses()"
+      >
+        <slot></slot>
+      </button>
+    `;
+  },
 };
 
 const ToggleGroup = {
@@ -106,11 +109,13 @@ const ToggleGroup = {
       size: props.size,
     });
   },
-  template: `
-    <div role="group" class="flex items-center justify-center gap-1">
-      <slot></slot>
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div role="group" class="flex items-center justify-center gap-1">
+        <slot></slot>
+      </div>
+    `;
+  },
 };
 
 ToggleGroup.components = {

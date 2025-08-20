@@ -1,7 +1,6 @@
 import { resolve } from "path";
 
 export async function create_database(Database, cwd) {
-  console.log("Initializing database service...");
   const db_config_path = resolve(cwd, "src/sql.js");
   let db_config;
   try {

@@ -109,6 +109,18 @@ export async function hydrate(components) {
     const component_module = await component_loader();
     const root_component = component_module.default;
 
+    if (
+      !root_component ||
+      typeof root_component !== "object" ||
+      !root_component.name ||
+      !root_component.template
+    ) {
+      console.error(
+        `Hydration failed: Default export from component "${component_name}" is not a valid component.`,
+      );
+      return;
+    }
+
     const props = {
       user,
       params,
@@ -119,9 +131,6 @@ export async function hydrate(components) {
     app.mount(root);
 
     window.__WEBS_STATE__ = null;
-    console.log(
-      `[Hydration] Page component "${component_name}" hydrated successfully.`,
-    );
   } catch (error) {
     console.error(`Failed to hydrate component "${component_name}":`, error);
   }

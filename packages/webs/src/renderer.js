@@ -309,10 +309,6 @@ export function create_renderer(options) {
     parent_component,
     is_hydrating = false,
   ) => {
-    console.log(
-      `[Hydration] Mounting component: ${vnode.type.name || "Anonymous"}`,
-      { is_hydrating },
-    );
     const instance = (vnode.component = create_component(
       vnode,
       parent_component,
@@ -452,7 +448,6 @@ export function create_renderer(options) {
   };
 
   const hydrate = (vnode, container) => {
-    console.log("[Hydration] Starting hydration process.");
     hydrate_node(vnode, container.firstChild, null);
   };
 
@@ -464,21 +459,6 @@ export function create_renderer(options) {
     ) {
       dom_node = dom_node.nextSibling;
     }
-
-    const vnode_type_name = is_object(vnode.type)
-      ? vnode.type.name || "Component"
-      : is_string(vnode.type)
-        ? vnode.type
-        : vnode.type.toString();
-    const dom_node_info = dom_node
-      ? `${dom_node.nodeName} (${dom_node.nodeValue ? `value: ${dom_node.nodeValue.trim()}` : ""})`
-      : "null";
-    console.log(
-      `[Hydration] Matching VNode: ${vnode_type_name}`,
-      "with DOM Node:",
-      dom_node_info,
-      { vnode, dom_node },
-    );
 
     if (!dom_node && vnode.type !== Comment) {
       console.error(
@@ -543,13 +523,7 @@ export function create_renderer(options) {
           return dom_node.nextSibling;
         } else if (is_string(type)) {
           if (props) {
-            console.log(`[Hydration] Patching props for <${type}>`, props);
             for (const key in props) {
-              if (/^on[A-Z]/.test(key)) {
-                console.log(
-                  `[Hydration] Attaching event listener: ${key} to <${type}>`,
-                );
-              }
               host_patch_prop(dom_node, key, null, props[key]);
             }
           }
@@ -662,6 +636,7 @@ export function create_component(
       attrs: instance.attrs,
       provide,
       inject,
+      computed,
       reactive,
       onBeforeMount,
       onMounted,
@@ -675,16 +650,18 @@ export function create_component(
     }
   }
 
-  const initial_state_from_data = state ? state.call(instance.ctx) : {};
+  const state_context = {
+    $props: resolved_props,
+    $params: instance.app_context.params || {},
+    $app: instance.app_context,
+  };
+
+  const initial_state_from_data = state
+    ? state.call(instance.ctx, state_context)
+    : {};
   let final_state;
 
   const server_state = vnode.props.initial_state;
-  if (!is_ssr) {
-    console.log(
-      `[Hydration] Creating component: ${instance.type.name || "Anonymous"}. Received server state:`,
-      JSON.parse(JSON.stringify(server_state || {})),
-    );
-  }
 
   if (server_state && Object.keys(server_state).length > 0) {
     final_state = {
@@ -699,13 +676,6 @@ export function create_component(
       ...initial_state_from_data,
       ...setup_result,
     };
-  }
-
-  if (!is_ssr) {
-    console.log(
-      `[Hydration] Final state for ${instance.type.name || "Anonymous"} before reactive():`,
-      JSON.parse(JSON.stringify(final_state)),
-    );
   }
 
   instance.internal_ctx = is_ssr ? final_state : reactive(final_state);
@@ -760,11 +730,69 @@ export function create_component(
     },
   );
 
-  if (methods) {
-    for (const key in methods) {
-      instance.methods[key] = methods[key].bind(instance.ctx);
+  let methods_option = methods;
+  if (is_function(methods_option)) {
+    const query_vdom = (selector) => {
+      const results = [];
+      if (!instance.sub_tree) {
+        console.warn("Cannot query virtual DOM before component is rendered.");
+        return results;
+      }
+
+      const find_nodes = (node) => {
+        if (!node || !is_object(node)) return;
+
+        let match = false;
+        if (selector.startsWith(".")) {
+          const class_name = selector.substring(1);
+          const classes = (node.props?.class || "").split(" ");
+          if (classes.includes(class_name)) {
+            match = true;
+          }
+        } else if (selector.startsWith("#")) {
+          const id = selector.substring(1);
+          if (node.props?.id === id) {
+            match = true;
+          }
+        } else {
+          if (
+            is_string(node.type) &&
+            node.type.toLowerCase() === selector.toLowerCase()
+          ) {
+            match = true;
+          } else if (
+            is_object(node.type) &&
+            node.type.name?.toLowerCase() === selector.toLowerCase()
+          ) {
+            match = true;
+          }
+        }
+
+        if (match) {
+          results.push(node.component ? node.component.ctx : node);
+        }
+
+        if (node.children) {
+          const children_array = Array.isArray(node.children)
+            ? node.children
+            : [node.children];
+          children_array.forEach(find_nodes);
+        }
+      };
+
+      find_nodes(instance.sub_tree);
+      return results;
+    };
+
+    methods_option = methods_option(query_vdom);
+  }
+
+  if (methods_option) {
+    for (const key in methods_option) {
+      instance.methods[key] = methods_option[key].bind(instance.ctx);
     }
   }
+
   if (!is_ssr && actions) {
     for (const key in actions) {
       instance.actions[key] = async (...args) => {

@@ -19,7 +19,8 @@ const IS_PROD = process.env.NODE_ENV === "production";
 async function main() {
   await ensureTmpDir();
 
-  const { client_entry_code, component_files } = await generate_client_entry();
+  const { client_entry_code } = await generate_client_entry();
+
   await Bun.write(TMP_APP_JS, client_entry_code);
 
   const api_path = resolve(CWD, "src/api.js");
