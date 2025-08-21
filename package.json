@@ -1,5 +1,5 @@
 {
-  "name": "webs-framework",
+  "name": "webs",
   "private": true,
   "workspaces": [
     "packages/*"

@@ -13,6 +13,7 @@ export const Fragment = Symbol("Fragment");
 export const Teleport = Symbol("Teleport");
 
 let currentInstance = null;
+let instanceCounter = 0;
 
 export function provide(key, value) {
   if (!currentInstance) {
@@ -318,6 +319,16 @@ export function createRenderer(options) {
     ));
     const component = instance.type;
 
+    if (
+      process.env.NODE_ENV !== "production" &&
+      typeof window !== "undefined" &&
+      window.__WEBS_DEVELOPER__
+    ) {
+      instance.uid = instanceCounter++;
+      window.__WEBS_DEVELOPER__.componentInstances.set(instance.uid, instance);
+      window.__WEBS_DEVELOPER__.notify();
+    }
+
     if (!component.render) {
       console.warn(`Component is missing a render function.`, component);
       component.render = () => createVnode(Comment, null, "missing render");
@@ -417,9 +428,30 @@ export function createRenderer(options) {
         instance.internalCtx[key] = newValue;
       }
     }
+
+    if (
+      process.env.NODE_ENV !== "production" &&
+      typeof window !== "undefined" &&
+      window.__WEBS_DEVELOPER__
+    ) {
+      window.__WEBS_DEVELOPER__.notify();
+    }
   };
 
   const unmount = (vnode) => {
+    if (
+      process.env.NODE_ENV !== "production" &&
+      typeof window !== "undefined" &&
+      window.__WEBS_DEVELOPER__
+    ) {
+      if (vnode.component && vnode.component.uid !== undefined) {
+        window.__WEBS_DEVELOPER__.componentInstances.delete(
+          vnode.component.uid,
+        );
+        window.__WEBS_DEVELOPER__.notify();
+      }
+    }
+
     if (vnode.component) {
       if (vnode.component.update && vnode.component.update.effect) {
         vnode.component.update.effect.stop();
@@ -568,6 +600,7 @@ export function createComponent(
   appContext.provides = appContext.provides || {};
 
   const instance = {
+    uid: -1,
     vnode,
     type: vnode.type,
     slots: vnode.children || {},
@@ -581,7 +614,7 @@ export function createComponent(
     subTree: null,
     update: null,
     render: null,
-    appContext: appContext,
+    appContext,
     parent,
     provides: parent
       ? Object.create(parent.provides)

@@ -99,6 +99,28 @@ export const createApp = createAppApi({
 export async function hydrate(components) {
   if (typeof window === "undefined") return;
 
+  if (process.env.NODE_ENV !== "production") {
+    if (!window.__WEBS_DEVELOPER__) {
+      const listeners = [];
+      window.__WEBS_DEVELOPER__ = {
+        componentInstances: new Map(),
+        subscribe(fn) {
+          listeners.push(fn);
+          return () => {
+            const index = listeners.indexOf(fn);
+            if (index > -1) listeners.splice(index, 1);
+          };
+        },
+        notify() {
+          listeners.forEach((fn) => fn());
+        },
+      };
+      console.log(
+        "[Dev] Tools available within the browser extension",
+      );
+    }
+  }
+
   const root = document.getElementById("root");
   if (!root) {
     return console.error("Hydration failed: #root element not found.");
