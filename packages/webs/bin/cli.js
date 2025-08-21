@@ -1,102 +1,115 @@
 #!/usr/bin/env bun
 
-import { rm, mkdir, exists } from "fs/promises";
-import { resolve, join } from "path";
-import tailwind from "bun-plugin-tailwind";
+import { exists } from "fs/promises";
 import { Database } from "bun:sqlite";
-import { Glob } from "bun";
-import { create_request_handler } from "../src/server.js";
-import * as framework from "../src/index.js";
+import { createRequestHandler } from "../src/server.js";
+import * as framework from "../src/client.js";
+import { performBuild } from "../scripts/build.js";
+import { config } from "../src/config.js";
+import { join, relative } from "path";
 
-const CWD = process.cwd();
-const OUTDIR = resolve(CWD, "dist");
-const TMPDIR = resolve(CWD, ".tmp");
-const TMP_CSS = resolve(TMPDIR, "tmp.css");
-const TMP_APP_JS = resolve(TMPDIR, "app.js");
-const PORT = process.env.PORT || 3000;
-const IS_PROD = process.env.NODE_ENV === "production";
-
-async function main() {
-  await ensureTmpDir();
-
-  const server_context = {
-    db: await framework.create_database(Database, CWD),
-    app_routes: {},
-    outdir: OUTDIR,
-    manifest: {},
-    is_prod: IS_PROD,
-  };
-
-  let request_handler = null;
-
-  async function performBuildAndUpdateManifest() {
-    console.log("--- Performing build and updating manifest ---");
-    const api_path = resolve(CWD, "src/api.js");
-    if (await exists(api_path)) {
-      const api_module = await import(`${api_path}?t=${Date.now()}`);
-      server_context.app_routes = api_module.routes || {};
-    } else {
-      console.warn(
-        "[Warning] src/api.js not found. No routes will be available.",
-      );
-      server_context.app_routes = {};
-    }
-
-    const { client_entry_code } = await generate_client_entry();
-    await Bun.write(TMP_APP_JS, client_entry_code);
-
-    const build_result = await build_assets(OUTDIR, TMP_APP_JS);
-    if (!build_result) {
-      console.error("Build failed, server will not start or reload.");
-      return null;
-    }
-    const manifest = {
-      js: build_result.outputs.find((o) => o.path.endsWith(".js"))?.path,
-      css: build_result.outputs.find((o) => o.path.endsWith(".css"))?.path,
-    };
-    if (IS_PROD) {
-      const asset_sizes = await compress_assets(build_result.outputs);
-      manifest.sizes = asset_sizes;
-    }
-    server_context.manifest = manifest;
-    console.log("Manifest updated:", JSON.stringify(manifest, null, 2));
-
-    request_handler = create_request_handler(server_context);
-    console.log("Request handler updated with new manifest.");
-
-    return manifest;
+async function generateRoutesFromFileSystem() {
+  console.log("--- Scanning for routes in src/app ---");
+  const appDir = config.APP_DIR;
+  if (!(await exists(appDir))) {
+    console.warn(
+      `[Warning] App directory not found at ${appDir}. No routes will be generated.`,
+    );
+    return {};
   }
 
-  await performBuildAndUpdateManifest();
+  const glob = new Bun.Glob("**/*.js");
+  const routeDefinitions = [];
 
-  const server = Bun.serve({
-    port: PORT,
-    development: false,
-    fetch: (req, server) => {
-      if (req.headers.get("Upgrade") === "websocket") {
-        const success = server.upgrade(req);
-        if (success) {
-          return undefined;
-        }
+  for await (const file of glob.scan(appDir)) {
+    const fullPath = join(appDir, file);
+    const module = await import(`${fullPath}?t=${Date.now()}`);
+
+    if (!module.default) {
+      console.warn(`[Skipping] ${file} does not have a default export.`);
+      continue;
+    }
+
+    let urlPath = relative(appDir, fullPath)
+      .replace(/\.js$/, "")
+      .replace(/\[(\w+)\]/g, ":$1");
+
+    if (urlPath.endsWith("index")) {
+      urlPath = urlPath.slice(0, -5) || "/";
+    }
+    if (urlPath !== "/" && urlPath.endsWith("/")) {
+      urlPath = urlPath.slice(0, -1);
+    }
+    if (!urlPath.startsWith("/")) {
+      urlPath = "/" + urlPath;
+    }
+
+    routeDefinitions.push({
+      path: urlPath,
+      definition: {
+        component: module.default,
+        componentName: relative(appDir, fullPath).replace(/\.js$/, ""),
+        middleware: module.middleware || [],
+      },
+    });
+  }
+
+  routeDefinitions.sort((a, b) => {
+    const aDyn = (a.path.match(/:/g) || []).length;
+    const bDyn = (b.path.match(/:/g) || []).length;
+    if (aDyn !== bDyn) return aDyn - bDyn;
+    return b.path.length - a.path.length;
+  });
+
+  const appRoutes = routeDefinitions.reduce((acc, { path, definition }) => {
+    acc[path] = definition;
+    return acc;
+  }, {});
+
+  console.log("--- Discovered Routes ---");
+  console.log(Object.keys(appRoutes).join("\n") || "No routes found.");
+
+  return appRoutes;
+}
+
+async function main() {
+  const serverContext = {
+    db: await framework.createDatabase(Database, config.CWD),
+    appRoutes: {},
+    outdir: config.OUTDIR,
+    manifest: {},
+    isProd: config.IS_PROD,
+  };
+
+  let requestHandler = null;
+
+  async function buildAndReload() {
+    serverContext.appRoutes = await generateRoutesFromFileSystem();
+
+    const manifest = await performBuild();
+    if (!manifest) {
+      console.error("Build failed, server will not start or reload.");
+      return;
+    }
+    serverContext.manifest = manifest;
+    console.log("Manifest updated:", JSON.stringify(manifest, null, 2));
+
+    requestHandler = createRequestHandler(serverContext);
+    console.log("Request handler updated.");
+  }
+
+  await buildAndReload();
+
+  Bun.serve({
+    port: config.PORT,
+    development: !config.IS_PROD,
+    fetch: (req) => {
+      if (!requestHandler) {
+        return new Response("Server is starting, please wait...", {
+          status: 503,
+        });
       }
-      return request_handler(req);
-    },
-    websocket: {
-      message(ws, message) {
-        console.log("A websocket message", message);
-      },
-      open(ws) {
-        ws.subscribe("reload-channel");
-        console.log(
-          "A new client has connected and is subscribed to reload-channel.",
-        );
-      },
-      close(ws, code, reason) {
-        console.log("A client has disconnected.");
-      },
-      drain(ws) {
-        console.log("The socket is ready to receive more data.");
-      },
+      return requestHandler(req);
     },
     error: (error) => {
       console.error(error);
@@ -104,126 +117,7 @@ async function main() {
     },
   });
 
-  console.log(`--- Server ready at http://localhost:${PORT} ---`);
+  console.log(`--- Server ready at http://localhost:${config.PORT} ---`);
 }
 
 main().catch(console.error);
-
-async function generate_client_entry() {
-  const app_dir = resolve(CWD, "src/app");
-  const glob = new Glob("*.js");
-  const component_map_entries = [];
-
-  if (await exists(app_dir)) {
-    for await (const file of glob.scan(app_dir)) {
-      const component_name = file.replace(".js", "");
-      component_map_entries.push(
-        `['${component_name}', () => import('../src/app/${file}')]`,
-      );
-    }
-  }
-
-  const client_entry_code = `
-import { hydrate } from "@conradklek/webs/runtime";
-
-const components = new Map([
-  ${component_map_entries.join(",\n  ")}
-]);
-
-hydrate(components);
-`;
-
-  return { client_entry_code };
-}
-
-async function build_assets(outdir, entrypoint) {
-  console.log("Building client assets...");
-  await clean_directory(outdir);
-
-  const { themes, styles } = await collectComponentStyles();
-  const global_css = await get_global_css();
-  const full_css = `@import "tailwindcss";\n${global_css}\n${themes}\n${styles}\n`;
-  await Bun.write(TMP_CSS, full_css);
-
-  const build_result = await Bun.build({
-    entrypoints: [entrypoint, TMP_CSS],
-    outdir: outdir,
-    target: "browser",
-    splitting: true,
-    minify: IS_PROD,
-    naming: IS_PROD ? "[name]-[hash].[ext]" : "[name].[ext]",
-    plugins: [tailwind],
-    sourcemap: IS_PROD ? "none" : "inline",
-  });
-
-  if (!build_result.success) {
-    console.error("Client build failed:", build_result.logs);
-    return null;
-  }
-  console.log("Client assets built successfully.");
-  return build_result;
-}
-
-async function collectComponentStyles() {
-  const glob = new Glob("**/*.js");
-  let theme_chunks = [];
-  let style_chunks = [];
-  const src_dir = resolve(CWD, "src");
-  if (!(await exists(src_dir))) return { themes: "", styles: "" };
-
-  const theme_regex = /@theme\s*\{[\s\S]*?\}/g;
-  const all_styles_regex = /styles\s*:\s*`([\s\S]*?)`/g;
-
-  for await (const file of glob.scan(src_dir)) {
-    const file_path = join(src_dir, file);
-    const src = await Bun.file(file_path).text();
-    let match;
-
-    while ((match = all_styles_regex.exec(src)) !== null) {
-      let css = match[1];
-      if (css) {
-        const themes = css.match(theme_regex);
-        if (themes) {
-          theme_chunks.push(...themes);
-        }
-        const styles_only = css.replace(theme_regex, "").trim();
-        if (styles_only) {
-          style_chunks.push(styles_only);
-        }
-      }
-    }
-  }
-  return { themes: theme_chunks.join("\n"), styles: style_chunks.join("\n") };
-}
-async function get_global_css() {
-  const global_css_path = resolve(CWD, "src/app.css");
-  if (await exists(global_css_path)) {
-    return Bun.file(global_css_path).text();
-  }
-  return "";
-}
-async function compress_assets(outputs) {
-  if (!IS_PROD) return {};
-  console.log("Compressing assets...");
-  const sizes = {};
-  await Promise.all(
-    outputs.map(async (output) => {
-      if (/\.(js|css|html)$/.test(output.path)) {
-        const content = await Bun.file(output.path).arrayBuffer();
-        const compressed = Bun.gzipSync(Buffer.from(content));
-        await Bun.write(`${output.path}.gz`, compressed);
-        sizes[output.path] = compressed.byteLength;
-      }
-    }),
-  );
-  return sizes;
-}
-
-async function clean_directory(dirPath) {
-  await rm(dirPath, { recursive: true, force: true });
-  await mkdir(dirPath, { recursive: true });
-}
-
-async function ensureTmpDir() {
-  await mkdir(TMPDIR, { recursive: true });
-}

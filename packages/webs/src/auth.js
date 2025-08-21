@@ -1,34 +1,34 @@
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7;
 
-async function hash_password(password) {
+async function hashPassword(password) {
   return Bun.password.hash(password, { algorithm: "bcrypt", cost: 10 });
 }
 
-async function verify_password(password, hash) {
+async function verifyPassword(password, hash) {
   return Bun.password.verify(password, hash);
 }
 
-export function create_session(db, user_id) {
-  const session_id = crypto.randomUUID();
-  const expires_at = new Date(Date.now() + SESSION_DURATION_MS);
+export function createSession(db, userId) {
+  const sessionId = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
   db.query(
     "INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)",
-  ).run(session_id, user_id, expires_at.toISOString());
-  return session_id;
+  ).run(sessionId, userId, expiresAt.toISOString());
+  return sessionId;
 }
 
-export function delete_session(db, session_id) {
-  db.query("DELETE FROM sessions WHERE id = ?").run(session_id);
+export function deleteSession(db, sessionId) {
+  db.query("DELETE FROM sessions WHERE id = ?").run(sessionId);
 }
 
-export function get_user_from_session(db, session_id) {
-  if (!session_id) return null;
+export function getUserFromSession(db, sessionId) {
+  if (!sessionId) return null;
   const session = db
     .query("SELECT user_id, expires_at FROM sessions WHERE id = ?")
-    .get(session_id);
+    .get(sessionId);
 
   if (!session || new Date(session.expires_at) < new Date()) {
-    if (session) delete_session(db, session_id);
+    if (session) deleteSession(db, sessionId);
     return null;
   }
   return db
@@ -36,16 +36,16 @@ export function get_user_from_session(db, session_id) {
     .get(session.user_id);
 }
 
-export async function create_user(db, { email, username, password }) {
-  const hashed_password = await hash_password(password);
+export async function createUser(db, { email, username, password }) {
+  const hashedPassword = await hashPassword(password);
   return db
     .query(
       "INSERT INTO users (email, username, password) VALUES ($email, $username, $password) RETURNING id, email, username",
     )
-    .get({ $email: email, $username: username, $password: hashed_password });
+    .get({ $email: email, $username: username, $password: hashedPassword });
 }
 
-export async function register_user(req, db) {
+export async function registerUser(req, db) {
   try {
     const { email, username, password } = await req.json();
     if (!email || !username || !password || password.length < 8) {
@@ -54,16 +54,16 @@ export async function register_user(req, db) {
         { status: 400 },
       );
     }
-    const existing_user = db
+    const existingUser = db
       .query("SELECT id FROM users WHERE email = ? OR username = ?")
       .get(email, username);
-    if (existing_user) {
+    if (existingUser) {
       return new Response(
         "A user with this email or username already exists.",
         { status: 409 },
       );
     }
-    const user = await create_user(db, { email, username, password });
+    const user = await createUser(db, { email, username, password });
     return Response.json(
       { id: user.id, username: user.username, email: user.email },
       { status: 201 },
@@ -74,7 +74,7 @@ export async function register_user(req, db) {
   }
 }
 
-export async function login_user(req, db) {
+export async function loginUser(req, db) {
   try {
     const { email, password } = await req.json();
     if (!email || !password) {
@@ -83,14 +83,14 @@ export async function login_user(req, db) {
     const user = db
       .query("SELECT id, username, email, password FROM users WHERE email = ?")
       .get(email);
-    if (!user || !(await verify_password(password, user.password))) {
+    if (!user || !(await verifyPassword(password, user.password))) {
       return new Response("Invalid credentials.", { status: 401 });
     }
-    const session_id = create_session(db, user.id);
+    const sessionId = createSession(db, user.id);
     const headers = new Headers();
     headers.append(
       "Set-Cookie",
-      `session_id=${session_id}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${SESSION_DURATION_MS / 1000}`,
+      `session_id=${sessionId}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${SESSION_DURATION_MS / 1000}`,
     );
     return new Response(
       JSON.stringify({
@@ -106,12 +106,10 @@ export async function login_user(req, db) {
   }
 }
 
-export async function logout_user(req, db) {
-  const session_id = req.headers
-    .get("cookie")
-    ?.match(/session_id=([^;]+)/)?.[1];
-  if (session_id) {
-    delete_session(db, session_id);
+export async function logoutUser(req, db) {
+  const sessionId = req.headers.get("cookie")?.match(/session_id=([^;]+)/)?.[1];
+  if (sessionId) {
+    deleteSession(db, sessionId);
   }
   const headers = new Headers();
   headers.append(

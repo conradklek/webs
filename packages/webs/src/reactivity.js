@@ -1,35 +1,35 @@
-const is_object = (val) =>
+const isObject = (val) =>
   val !== null && typeof val === "object" && !Array.isArray(val);
 
-let active_effect = null;
-const effect_stack = [];
-const target_map = new WeakMap();
-const proxy_map = new WeakMap();
+let activeEffect = null;
+const effectStack = [];
+const targetMap = new WeakMap();
+const proxyMap = new WeakMap();
 export const RAW_SYMBOL = Symbol("raw");
 
 export function track(target, key) {
-  if (active_effect) {
-    let deps_map = target_map.get(target);
-    if (!deps_map) {
-      target_map.set(target, (deps_map = new Map()));
+  if (activeEffect) {
+    let depsMap = targetMap.get(target);
+    if (!depsMap) {
+      targetMap.set(target, (depsMap = new Map()));
     }
-    let dep = deps_map.get(key);
+    let dep = depsMap.get(key);
     if (!dep) {
-      deps_map.set(key, (dep = new Set()));
+      depsMap.set(key, (dep = new Set()));
     }
-    dep.add(active_effect);
-    active_effect.deps.push(dep);
+    dep.add(activeEffect);
+    activeEffect.deps.push(dep);
   }
 }
 
 export function trigger(target, key) {
-  const deps_map = target_map.get(target);
-  if (!deps_map) return;
+  const depsMap = targetMap.get(target);
+  if (!depsMap) return;
 
-  const deps = deps_map.get(key);
+  const deps = depsMap.get(key);
   if (deps) {
-    const effects_to_run = [...deps];
-    for (const effect of effects_to_run) {
+    const effectsToRun = [...deps];
+    for (const effect of effectsToRun) {
       if (effect.scheduler) {
         effect.scheduler();
       } else {
@@ -48,7 +48,7 @@ function cleanup(effect) {
 }
 
 export function effect(fn, options = {}) {
-  const _effect = create_reactive_effect(fn, options.scheduler);
+  const _effect = createReactiveEffect(fn, options.scheduler);
   _effect.run();
 
   const runner = _effect.run.bind(_effect);
@@ -56,7 +56,7 @@ export function effect(fn, options = {}) {
   return runner;
 }
 
-function create_reactive_effect(fn, scheduler) {
+function createReactiveEffect(fn, scheduler) {
   const effect = {
     fn,
     scheduler,
@@ -64,16 +64,16 @@ function create_reactive_effect(fn, scheduler) {
     deps: [],
     run() {
       if (!effect.active) return effect.fn();
-      if (effect_stack.includes(effect)) return;
+      if (effectStack.includes(effect)) return;
 
       cleanup(effect);
       try {
-        effect_stack.push(effect);
-        active_effect = effect;
+        effectStack.push(effect);
+        activeEffect = effect;
         return effect.fn();
       } finally {
-        effect_stack.pop();
-        active_effect = effect_stack[effect_stack.length - 1];
+        effectStack.pop();
+        activeEffect = effectStack[effectStack.length - 1];
       }
     },
     stop() {
@@ -87,36 +87,36 @@ function create_reactive_effect(fn, scheduler) {
 }
 
 export function computed(getter) {
-  let computed_value;
-  let is_dirty = true;
+  let computedValue;
+  let isDirty = true;
 
   const scheduler = () => {
-    if (!is_dirty) {
-      is_dirty = true;
-      trigger(computed_ref, "value");
+    if (!isDirty) {
+      isDirty = true;
+      trigger(computedRef, "value");
     }
   };
 
-  const getter_effect = create_reactive_effect(getter, scheduler);
+  const getterEffect = createReactiveEffect(getter, scheduler);
 
-  const computed_ref = {
+  const computedRef = {
     get value() {
-      if (is_dirty) {
-        computed_value = getter_effect.run();
-        is_dirty = false;
+      if (isDirty) {
+        computedValue = getterEffect.run();
+        isDirty = false;
       }
-      track(computed_ref, "value");
-      return computed_value;
+      track(computedRef, "value");
+      return computedValue;
     },
     __is_ref: true,
     __is_computed: true,
   };
-  return computed_ref;
+  return computedRef;
 }
 
 export function reactive(target) {
-  if (!is_object(target)) return target;
-  if (proxy_map.has(target)) return proxy_map.get(target);
+  if (!isObject(target)) return target;
+  if (proxyMap.has(target)) return proxyMap.get(target);
 
   let handlers;
   if (target instanceof Map) {
@@ -128,7 +128,7 @@ export function reactive(target) {
   }
 
   const proxy = new Proxy(target, handlers);
-  proxy_map.set(target, proxy);
+  proxyMap.set(target, proxy);
   return proxy;
 }
 
@@ -137,12 +137,12 @@ const baseHandlers = {
     if (key === RAW_SYMBOL) return target;
     const value = Reflect.get(target, key, receiver);
     track(target, key);
-    return is_object(value) ? reactive(value) : value;
+    return isObject(value) ? reactive(value) : value;
   },
   set(target, key, value, receiver) {
-    const old_value = target[key];
+    const oldValue = target[key];
     const result = Reflect.set(target, key, value, receiver);
-    if (old_value !== value) {
+    if (oldValue !== value) {
       trigger(target, key);
     }
     return result;
@@ -180,11 +180,11 @@ const collectionHandlers = {
       if (key === "set") {
         return (k, v) => {
           const had = target.has(k);
-          const old_val = target.get(k);
+          const oldVal = target.get(k);
           const result = target.set(k, v);
           if (!had) {
             trigger(target, "size");
-          } else if (old_val !== v) {
+          } else if (oldVal !== v) {
             trigger(target, k);
           }
           return result;
@@ -263,21 +263,21 @@ const collectionHandlers = {
   },
 };
 
-export function create_store(options) {
+export function createStore(options) {
   const store = reactive(options.state());
-  const wrapped_actions = {};
-  const wrapped_getters = {};
+  const wrappedActions = {};
+  const wrappedGetters = {};
 
   if (options.actions) {
     for (const key in options.actions) {
-      wrapped_actions[key] = options.actions[key].bind(store);
+      wrappedActions[key] = options.actions[key].bind(store);
     }
   }
 
   if (options.getters) {
     for (const key in options.getters) {
       const computer = computed(() => options.getters[key].call(store));
-      Object.defineProperty(wrapped_getters, key, {
+      Object.defineProperty(wrappedGetters, key, {
         get: () => computer.value,
       });
     }
@@ -285,11 +285,11 @@ export function create_store(options) {
 
   return new Proxy(store, {
     get(target, key, receiver) {
-      if (key in wrapped_getters) {
-        return wrapped_getters[key];
+      if (key in wrappedGetters) {
+        return wrappedGetters[key];
       }
-      if (key in wrapped_actions) {
-        return wrapped_actions[key];
+      if (key in wrappedActions) {
+        return wrappedActions[key];
       }
       return Reflect.get(target, key, receiver);
     },

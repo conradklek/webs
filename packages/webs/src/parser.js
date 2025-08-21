@@ -1,4 +1,4 @@
-const void_elements = new Set([
+const voidElements = new Set([
   "area",
   "base",
   "br",
@@ -15,7 +15,7 @@ const void_elements = new Set([
   "wbr",
 ]);
 
-const js_token_cache = new Map();
+const jsTokenCache = new Map();
 
 const JS_ESCAPE_MAP = { n: "\n", t: "\t", r: "\r" };
 const JS_KEYWORDS = {
@@ -25,16 +25,16 @@ const JS_KEYWORDS = {
   undefined: "UNDEFINED",
 };
 
-const js_is_whitespace = (c) =>
+const jsIsWhitespace = (c) =>
   c === " " || c === "\n" || c === "\t" || c === "\r";
-const is_digit = (c) => c >= "0" && c <= "9";
-const is_ident_start = (c) =>
+const isDigit = (c) => c >= "0" && c <= "9";
+const isIdentStart = (c) =>
   (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c === "$" || c === "_";
-const is_ident_part = (c) => is_ident_start(c) || is_digit(c);
+const isIdentPart = (c) => isIdentStart(c) || isDigit(c);
 
-export function tokenize_js(expression) {
-  if (js_token_cache.has(expression)) {
-    return js_token_cache.get(expression);
+export function tokenizeJs(expression) {
+  if (jsTokenCache.has(expression)) {
+    return jsTokenCache.get(expression);
   }
 
   const tokens = [];
@@ -42,29 +42,29 @@ export function tokenize_js(expression) {
   while (i < expression.length) {
     let char = expression[i];
 
-    if (js_is_whitespace(char)) {
+    if (jsIsWhitespace(char)) {
       i++;
       continue;
     }
 
-    if (is_ident_start(char)) {
+    if (isIdentStart(char)) {
       let ident = char;
-      while (++i < expression.length && is_ident_part(expression[i])) {
+      while (++i < expression.length && isIdentPart(expression[i])) {
         ident += expression[i];
       }
       tokens.push({ type: JS_KEYWORDS[ident] || "IDENTIFIER", value: ident });
       continue;
     }
 
-    if (is_digit(char)) {
-      let num_str = char;
+    if (isDigit(char)) {
+      let numStr = char;
       while (
         ++i < expression.length &&
-        (is_digit(expression[i]) || expression[i] === ".")
+        (isDigit(expression[i]) || expression[i] === ".")
       ) {
-        num_str += expression[i];
+        numStr += expression[i];
       }
-      tokens.push({ type: "NUMBER", value: parseFloat(num_str) });
+      tokens.push({ type: "NUMBER", value: parseFloat(numStr) });
       continue;
     }
 
@@ -87,21 +87,19 @@ export function tokenize_js(expression) {
       continue;
     }
 
-    const two_char_op = char + expression[i + 1];
-    const three_char_op = two_char_op + expression[i + 2];
-    if (three_char_op === "===" || three_char_op === "!==") {
-      tokens.push({ type: "OPERATOR", value: three_char_op });
+    const twoCharOp = char + expression[i + 1];
+    const threeCharOp = twoCharOp + expression[i + 2];
+    if (threeCharOp === "===" || threeCharOp === "!==") {
+      tokens.push({ type: "OPERATOR", value: threeCharOp });
       i += 3;
       continue;
     }
     if (
-      ["==", "!=", "<=", ">=", "&&", "||", "??", "?.", "=>"].includes(
-        two_char_op,
-      )
+      ["==", "!=", "<=", ">=", "&&", "||", "??", "?.", "=>"].includes(twoCharOp)
     ) {
       tokens.push({
-        type: two_char_op === "=>" ? "ARROW" : "OPERATOR",
-        value: two_char_op,
+        type: twoCharOp === "=>" ? "ARROW" : "OPERATOR",
+        value: twoCharOp,
       });
       i += 2;
       continue;
@@ -133,18 +131,18 @@ export function tokenize_js(expression) {
     throw new Error(`Tokenizer Error: Unrecognized character '${char}'`);
   }
 
-  js_token_cache.set(expression, tokens);
+  jsTokenCache.set(expression, tokens);
   return tokens;
 }
 
-export function parse_js(tokens) {
+export function parseJs(tokens) {
   let i = 0;
   const peek = () => tokens[i];
   const consume = () => tokens[i++];
 
-  let parse_assignment;
+  let parseAssignment;
 
-  const parse_primary = () => {
+  const parsePrimary = () => {
     const token = peek();
     if (!token) throw new Error("Unexpected end of expression.");
     switch (token.type) {
@@ -165,31 +163,31 @@ export function parse_js(tokens) {
           consume();
           return { type: "EmptyParentheses" };
         }
-        const expr = parse_assignment();
+        const expr = parseAssignment();
         if (peek()?.type !== "RPAREN") throw new Error("Expected ')'");
         consume();
         return expr;
       }
       case "LBRACE":
-        return parse_object_literal();
+        return parseObjectLiteral();
       default:
         throw new Error(`Parser Error: Unexpected token ${token.type}`);
     }
   };
 
-  const parse_object_literal = () => {
+  const parseObjectLiteral = () => {
     consume();
     const properties = [];
     if (peek()?.type !== "RBRACE") {
       do {
-        const key = parse_primary();
+        const key = parsePrimary();
         if (key.type !== "Identifier" && key.type !== "Literal") {
           throw new Error("Invalid property key in object literal.");
         }
         if (peek()?.type !== "COLON")
           throw new Error("Expected ':' after property key.");
         consume();
-        const value = parse_assignment();
+        const value = parseAssignment();
         properties.push({ type: "Property", key, value });
       } while (peek()?.type === "COMMA" && consume());
     }
@@ -199,8 +197,8 @@ export function parse_js(tokens) {
     return { type: "ObjectLiteral", properties };
   };
 
-  const parse_accessors = () => {
-    let node = parse_primary();
+  const parseAccessors = () => {
+    let node = parsePrimary();
     while (peek()) {
       if (peek().value === "." || peek().value === "?.") {
         const optional = consume().value === "?.";
@@ -215,7 +213,7 @@ export function parse_js(tokens) {
         };
       } else if (peek().type === "LBRACKET") {
         consume();
-        const prop = parse_assignment();
+        const prop = parseAssignment();
         if (peek()?.type !== "RBRACKET") throw new Error("Expected ']'");
         consume();
         node = {
@@ -229,7 +227,7 @@ export function parse_js(tokens) {
         const args = [];
         if (peek().type !== "RPAREN") {
           do {
-            args.push(parse_assignment());
+            args.push(parseAssignment());
           } while (peek()?.type === "COMMA" && consume());
         }
         if (peek()?.type !== "RPAREN") throw new Error("Expected ')'");
@@ -247,65 +245,61 @@ export function parse_js(tokens) {
     return node;
   };
 
-  const parse_unary = () => {
+  const parseUnary = () => {
     if (
       peek()?.type === "OPERATOR" &&
       (peek().value === "!" || peek().value === "-")
     ) {
       const op = consume().value;
-      return { type: "UnaryExpression", operator: op, argument: parse_unary() };
+      return { type: "UnaryExpression", operator: op, argument: parseUnary() };
     }
-    return parse_accessors();
+    return parseAccessors();
   };
 
-  const build_binary_parser = (next_parser, operators) => () => {
-    let left = next_parser();
+  const buildBinaryParser = (nextParser, operators) => () => {
+    let left = nextParser();
     while (peek() && operators.includes(peek().value)) {
       const op = consume().value;
-      const right = next_parser();
+      const right = nextParser();
       left = { type: "BinaryExpression", operator: op, left, right };
     }
     return left;
   };
 
-  const parse_multiplicative = build_binary_parser(parse_unary, ["*", "/"]);
-  const parse_additive = build_binary_parser(parse_multiplicative, ["+", "-"]);
-  const parse_comparison = build_binary_parser(parse_additive, [
+  const parseMultiplicative = buildBinaryParser(parseUnary, ["*", "/"]);
+  const parseAdditive = buildBinaryParser(parseMultiplicative, ["+", "-"]);
+  const parseComparison = buildBinaryParser(parseAdditive, [
     "<",
     ">",
     "<=",
     ">=",
   ]);
-  const parse_equality = build_binary_parser(parse_comparison, [
+  const parseEquality = buildBinaryParser(parseComparison, [
     "==",
     "!=",
     "===",
     "!==",
   ]);
-  const parse_logical_and = build_binary_parser(parse_equality, ["&&"]);
-  const parse_nullish_coalescing = build_binary_parser(parse_logical_and, [
-    "??",
-  ]);
-  const parse_logical_or = build_binary_parser(parse_nullish_coalescing, [
-    "||",
-  ]);
+  const parseLogicalAnd = buildBinaryParser(parseEquality, ["&&"]);
+  const parseNullishCoalescing = buildBinaryParser(parseLogicalAnd, ["??"]);
+  const parseLogicalOr = buildBinaryParser(parseNullishCoalescing, ["||"]);
 
-  const parse_ternary = () => {
-    const test = parse_logical_or();
+  const parseTernary = () => {
+    const test = parseLogicalOr();
     if (peek()?.value === "?") {
       consume();
-      const consequent = parse_ternary();
+      const consequent = parseTernary();
       if (peek()?.type !== "COLON")
         throw new Error("Expected ':' for ternary operator.");
       consume();
-      const alternate = parse_ternary();
+      const alternate = parseTernary();
       return { type: "ConditionalExpression", test, consequent, alternate };
     }
     return test;
   };
 
-  const parse_arrow = () => {
-    const left = parse_ternary();
+  const parseArrow = () => {
+    const left = parseTernary();
     if (peek()?.type === "ARROW") {
       consume();
       const params =
@@ -319,14 +313,14 @@ export function parse_js(tokens) {
       return {
         type: "ArrowFunctionExpression",
         params,
-        body: parse_assignment(),
+        body: parseAssignment(),
       };
     }
     return left;
   };
 
-  parse_assignment = () => {
-    const left = parse_arrow();
+  parseAssignment = () => {
+    const left = parseArrow();
     if (peek()?.type === "EQUALS") {
       consume();
       if (
@@ -336,19 +330,19 @@ export function parse_js(tokens) {
       ) {
         throw new Error("Invalid left-hand side in assignment expression.");
       }
-      return { type: "AssignmentExpression", left, right: parse_assignment() };
+      return { type: "AssignmentExpression", left, right: parseAssignment() };
     }
     return left;
   };
 
-  const ast = parse_assignment();
+  const ast = parseAssignment();
   if (i < tokens.length) {
     throw new Error(`Parser Error: Unexpected tokens at end of expression.`);
   }
   return ast;
 }
 
-export const html_ast_cache = new Map();
+export const htmlAstCache = new Map();
 
 const HTML_TOKENIZER_STATE = {
   DATA: 1,
@@ -364,15 +358,15 @@ const HTML_TOKENIZER_STATE = {
   SELF_CLOSING_START_TAG: 11,
 };
 
-const html_is_whitespace = (c) =>
+const htmlIsWhitespace = (c) =>
   c === " " || c === "\n" || c === "\t" || c === "\r";
 
-function tokenize_html(html) {
+function tokenizeHtml(html) {
   let state = HTML_TOKENIZER_STATE.DATA;
   let i = 0;
   const tokens = [];
   let buffer = "";
-  let tag_token = null;
+  let tagToken = null;
 
   while (i < html.length) {
     const char = html[i];
@@ -394,31 +388,31 @@ function tokenize_html(html) {
             i += 2;
           }
         } else if (char === "/") {
-          tag_token = { type: "tagEnd", tagName: "" };
+          tagToken = { type: "tagEnd", tagName: "" };
           state = HTML_TOKENIZER_STATE.TAG_NAME;
         } else if (/[a-zA-Z]/.test(char)) {
-          tag_token = { type: "tagStart", tagName: char, attributes: [] };
+          tagToken = { type: "tagStart", tagName: char, attributes: [] };
           state = HTML_TOKENIZER_STATE.TAG_NAME;
         }
         break;
 
       case HTML_TOKENIZER_STATE.TAG_NAME:
-        if (html_is_whitespace(char)) {
+        if (htmlIsWhitespace(char)) {
           state = HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME;
         } else if (char === "/") {
           state = HTML_TOKENIZER_STATE.SELF_CLOSING_START_TAG;
         } else if (char === ">") {
-          tokens.push(tag_token);
+          tokens.push(tagToken);
           state = HTML_TOKENIZER_STATE.DATA;
         } else {
-          tag_token.tagName += char;
+          tagToken.tagName += char;
         }
         break;
 
       case HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME:
-        if (!html_is_whitespace(char)) {
+        if (!htmlIsWhitespace(char)) {
           if (char === ">") {
-            tokens.push(tag_token);
+            tokens.push(tagToken);
             state = HTML_TOKENIZER_STATE.DATA;
           } else if (char === "/") {
             state = HTML_TOKENIZER_STATE.SELF_CLOSING_START_TAG;
@@ -430,12 +424,12 @@ function tokenize_html(html) {
         break;
 
       case HTML_TOKENIZER_STATE.ATTRIBUTE_NAME:
-        if (char === "=" || html_is_whitespace(char) || char === ">") {
-          tag_token.attributes.push({ name: buffer, value: true });
+        if (char === "=" || htmlIsWhitespace(char) || char === ">") {
+          tagToken.attributes.push({ name: buffer, value: true });
           buffer = "";
           if (char === "=") state = HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_VALUE;
           else if (char === ">") {
-            tokens.push(tag_token);
+            tokens.push(tagToken);
             state = HTML_TOKENIZER_STATE.DATA;
           } else state = HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME;
         } else {
@@ -448,7 +442,7 @@ function tokenize_html(html) {
           state = HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_DOUBLE_QUOTED;
         else if (char === "'")
           state = HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_SINGLE_QUOTED;
-        else if (!html_is_whitespace(char)) {
+        else if (!htmlIsWhitespace(char)) {
           buffer = char;
           state = HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_UNQUOTED;
         }
@@ -461,7 +455,7 @@ function tokenize_html(html) {
             ? '"'
             : "'";
         if (char === quote) {
-          tag_token.attributes[tag_token.attributes.length - 1].value = buffer;
+          tagToken.attributes[tagToken.attributes.length - 1].value = buffer;
           buffer = "";
           state = HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME;
         } else {
@@ -470,14 +464,14 @@ function tokenize_html(html) {
         break;
 
       case HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_UNQUOTED:
-        if (html_is_whitespace(char) || char === ">") {
-          tag_token.attributes[tag_token.attributes.length - 1].value = buffer;
+        if (htmlIsWhitespace(char) || char === ">") {
+          tagToken.attributes[tagToken.attributes.length - 1].value = buffer;
           buffer = "";
           state =
             char === ">"
               ? HTML_TOKENIZER_STATE.DATA
               : HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME;
-          if (char === ">") tokens.push(tag_token);
+          if (char === ">") tokens.push(tagToken);
         } else {
           buffer += char;
         }
@@ -496,7 +490,7 @@ function tokenize_html(html) {
 
       case HTML_TOKENIZER_STATE.SELF_CLOSING_START_TAG:
         if (char === ">") {
-          tokens.push(tag_token);
+          tokens.push(tagToken);
           state = HTML_TOKENIZER_STATE.DATA;
         }
         break;
@@ -510,7 +504,7 @@ function tokenize_html(html) {
   return tokens;
 }
 
-export function build_tree(tokens) {
+export function buildTree(tokens) {
   const root = { type: "root", children: [] };
   const stack = [root];
 
@@ -525,15 +519,15 @@ export function build_tree(tokens) {
           children: [],
         };
         parent.children.push(node);
-        if (!void_elements.has(node.tagName)) {
+        if (!voidElements.has(node.tagName)) {
           stack.push(node);
         }
         break;
       }
       case "tagEnd": {
-        const tag_name_lower = token.tagName.toLowerCase();
+        const tagNameLower = token.tagName.toLowerCase();
         for (let i = stack.length - 1; i >= 0; i--) {
-          if (stack[i].tagName === tag_name_lower) {
+          if (stack[i].tagName === tagNameLower) {
             stack.length = i;
             break;
           }
@@ -553,12 +547,12 @@ export function build_tree(tokens) {
   return root;
 }
 
-export function parse_html(html) {
-  if (html_ast_cache.has(html)) {
-    return html_ast_cache.get(html);
+export function parseHtml(html) {
+  if (htmlAstCache.has(html)) {
+    return htmlAstCache.get(html);
   }
-  const tokens = tokenize_html(html);
-  const ast = build_tree(tokens);
-  html_ast_cache.set(html, ast);
+  const tokens = tokenizeHtml(html);
+  const ast = buildTree(tokens);
+  htmlAstCache.set(html, ast);
   return ast;
 }

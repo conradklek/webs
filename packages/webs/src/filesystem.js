@@ -1,15 +1,15 @@
 import {
   cp as copy,
-  mkdir as fs_mkdir,
+  mkdir as fsMkdir,
   readdir,
   rename,
-  rm as fs_rm,
-  stat as fs_stat,
+  rm as fsRm,
+  stat as fsStat,
 } from "node:fs/promises";
 
 async function exists(path) {
   try {
-    await fs_stat(path);
+    await fsStat(path);
     return true;
   } catch (error) {
     if (error.code === "ENOENT") return false;
@@ -26,18 +26,18 @@ export const fs = {
   touch: async (path, data = "") => await Bun.write(path, data),
   stat: async (path) => {
     if (!path) throw new Error("Missing 'path'");
-    const stats = await fs_stat(path);
+    const stats = await fsStat(path);
     return {
-      is_file: stats.isFile(),
-      is_directory: stats.isDirectory(),
+      isFile: stats.isFile(),
+      isDirectory: stats.isDirectory(),
       size: stats.size,
       mtime: stats.mtime,
       birthtime: stats.birthtime,
     };
   },
   rm: async (path, recursive = false) =>
-    await fs_rm(path, { recursive, force: true }),
-  mkdir: async (path, recursive = false) => await fs_mkdir(path, { recursive }),
+    await fsRm(path, { recursive, force: true }),
+  mkdir: async (path, recursive = false) => await fsMkdir(path, { recursive }),
   mv: async (from, to) => await rename(from, to),
   ls: async (path) => await readdir(path),
   glob: async (pattern, cwd = ".") => {

@@ -1,4 +1,7 @@
-import { use_session } from "../use/session.js";
+import { use_session } from "../../use/session.js";
+import { use_auth } from "../../use/auth.js";
+
+export const middleware = [use_auth];
 
 export default {
   name: "Profile",

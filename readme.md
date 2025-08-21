@@ -8,7 +8,7 @@ A JavaScript framework.
 
 The design of Webs is dictated by a single, foundational principle: the initial congestion window of a TCP connection. A payload exceeding approximately 14kB necessitates an additional network round trip, introducing significant, avoidable latency.
 
-Webs is therefore engineered from the ground up to ensure that the critical-path assets of an application remain well within this\*sub-14kB threshold\*\*. By adhering to this directive, we facilitate a near-instantaneous initial render, providing a user experience that is not merely fast, but fundamentally more efficient at the transport layer.
+Webs is therefore engineered from the ground up to ensure that the critical-path assets of an application remain well within this **sub-14kB threshold**. By adhering to this directive, we facilitate a near-instantaneous initial render, providing a user experience that is not merely fast, but fundamentally more efficient at the transport layer.
 
 ---
 
@@ -41,7 +41,14 @@ Routing in Webs is simple and intuitive. The framework automatically maps files 
 
 - `src/app/index.js` → `/`
 - `src/app/about.js` → `/about`
-- `src/app/profile.js` → `/profile`
+- `src/app/blog/index.js` → `/blog`
+
+**Dynamic Routes**
+
+To create a dynamic route, use square brackets in the filename. The value of the dynamic segment will be available in your component's `params` prop.
+
+- `src/app/profile/[username].js` → `/profile/:username`
+- `src/app/posts/[slug].js` → `/posts/:slug`
 
 To navigate between pages, use standard `<a>` tags. The Webs router intercepts these clicks to provide a fast, single-page application experience without full page reloads.
 
@@ -150,65 +157,43 @@ export default {
 
 ## Backend & Data
 
-### 3. Database & Migrations
+### 3. Database
 
-Webs includes a simple but powerful system for managing an SQLite database. All configuration happens in `src/sql.js`, where you define your database name and an array of migrations.
+Webs includes out-of-the-box support for an SQLite database, managed via Bun's native `bun:sqlite` driver. The framework does not enforce a specific migration strategy, allowing you to manage your database schema as you see fit.
 
-Migrations are versioned changes to your schema. When the server starts, Webs automatically applies any new migrations, ensuring your database is always in sync with your code.
+### 4. Server Actions
 
-```javascript
-// src/sql.js
-export default {
-  name: "app.db",
-  migrations: [
-    {
-      version: 1,
-      name: "initial_auth_schema",
-      up: (db) => {
-        db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL UNIQUE,
-    password TEXT NOT NULL
-  );
-`);
-      },
-    },
-  ],
-};
-```
+Server Actions are a key feature of Webs. They allow you to define functions inside your components that **only run on the server**. This makes it incredibly easy to perform secure operations like database queries without building a separate API.
 
-### 4. Server Actions & Filesystem API
-
-Server Actions are a key feature of Webs. They allow you to define functions inside your components that\*only run on the server\*\*. This makes it incredibly easy to perform secure operations like database queries or filesystem access without building a separate API.
-
-When you call a Server Action from the client, Webs handles the secure communication. These actions receive a `context` object with access to `db`, the authenticated `user`, the `fs` API, and more.
-
-The\*Filesystem API\*\* (`fs`) provides a convenient, promise-based way to interact with the server's file system directly within a Server Action.
+When you call a Server Action from the client, Webs handles the secure communication. These actions receive a `context` object with access to the `db` instance and the authenticated `user`.
 
 ```javascript
-// src/app/files.js
+// src/app/dashboard.js
 export default {
-  name: "Files",
+  name: "Dashboard",
   actions: {
-    async read_notes(context) {
-      const { fs, db } = context; // Safely access server resources
-      // Read a user-specific file from the server
-      const notes = await fs.cat(`./user_data/${user.id}/notes.txt`).text();
-      return { notes };
+    async fetch_user_posts(context) {
+      const { db, user } = context; // Safely access server resources
+      if (!user) throw new Error("Unauthorized");
+
+      // Perform a database query on the server
+      return db.query("SELECT * FROM posts WHERE user_id = ?").all(user.id);
     },
   },
+  // ...
 };
 ```
 
 ### 5. Authentication & Middleware
 
-Webs comes with a complete, cookie-based authentication system and automatically provides secure API endpoints for user registration, login, and logout.
+Webs comes with a complete, cookie-based authentication system and automatically provides secure API endpoints for user registration (`/api/auth/register`), login (`/api/auth/login`), and logout (`/api/auth/logout`).
 
-To protect routes or run code before a page is rendered, you use\*middleware\*\*. A middleware is a function that intercepts a navigation request. You can use it to check if a user is logged in and redirect them if they aren't. To apply middleware, you export a `middleware` array from a component file.
+To protect routes or run code before a page is rendered, you use **middleware**. A middleware is a function that intercepts a navigation request. You can use it to check if a user is logged in and redirect them if they aren't.
+
+To apply middleware, you export a named `middleware` array from a page component file.
 
 ```javascript
-// src/app/profile.js
+// src/app/profile/[username].js
 import { use_logger } from "../use/logger.js";
 import { use_auth } from "../use/auth.js";
 
@@ -229,27 +214,22 @@ export default {
 
 Webs templates are standard HTML supercharged with a simple syntax for data binding and event handling.
 
--\*Text Interpolation\*\*: Use mustaches `{{ }}` to display reactive state.
-
-```html
-<p>Welcome, {{ username }}!</p>
-```
-
--\*Event Handling\*\*: Use the `@` symbol to listen for DOM events.
-
-```html
-<button type="button" @click="increment">Click me</button>
-```
-
-- -\*Attribute Binding\*\*: Use the `:` shorthand to bind state to attributes. This is now more powerful than ever.
-
-```html
-<img :src="user_image" />
-```
+- **Text Interpolation**: Use mustaches `{{ }}` to display reactive state.
+  ```html
+  <p>Welcome, {{ username }}!</p>
+  ```
+- **Event Handling**: Use the `@` symbol to listen for DOM events.
+  ```html
+  <button type="button" @click="increment">Click me</button>
+  ```
+- **Attribute Binding**: Use the `:` shorthand to bind state to attributes.
+  ```html
+  <img :src="user_image" />
+  ```
 
 **Attribute Fallthrough**
 
-Any attribute you pass to a component that isnot\* a declared prop will automatically be applied to the root element of that component's template. This makes creating wrapper components incredibly clean.
+Any attribute you pass to a component that is _not_ a declared prop will automatically be applied to the root element of that component's template. This makes creating wrapper components incredibly clean.
 
 ```html
 <!-- If you write this: -->
@@ -276,7 +256,7 @@ The `:class` binding is supercharged. You can pass it an object to conditionally
 
 ### 7. Styling with Tailwind CSS
 
-Webs has a deep, native integration with the\*Tailwind CSS v4 engine\*\*. You can write component-scoped styles directly in a `styles` property. This block gives you access to the full power of Tailwind, including `@theme` for defining design tokens and `@apply` for creating reusable component classes.
+Webs has a deep, native integration with the **Tailwind CSS v4 engine**. You can write component-scoped styles directly in a `styles` property. This block gives you access to the full power of Tailwind, including `@theme` for defining design tokens and `@apply` for creating reusable component classes.
 
 Of course, you can also use standard Tailwind utility classes directly in your template for rapid development.
 

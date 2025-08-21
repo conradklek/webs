@@ -1,13 +1,13 @@
-import Accordion from "../gui/accordion.js";
-import Breadcrumb from "../gui/breadcrumb.js";
-import Card from "../gui/card.js";
-import Checkbox from "../gui/checkbox.js";
-import Menubar from "../gui/menubar.js";
-import Modal from "../gui/modal.js";
-import RadioGroup from "../gui/radio-group.js";
-import Tabs from "../gui/tabs.js";
-import Switch from "../gui/switch.js";
-import ToggleGroup from "../gui/toggle-group.js";
+import Accordion from "../../gui/accordion.js";
+import Breadcrumb from "../../gui/breadcrumb.js";
+import Card from "../../gui/card.js";
+import Checkbox from "../../gui/checkbox.js";
+import Menubar from "../../gui/menubar.js";
+import Modal from "../../gui/modal.js";
+import RadioGroup from "../../gui/radio-group.js";
+import Tabs from "../../gui/tabs.js";
+import Switch from "../../gui/switch.js";
+import ToggleGroup from "../../gui/toggle-group.js";
 
 const AccordionPage = {
   name: "AccordionPage",
@@ -332,16 +332,16 @@ const componentList = [
   { path: "breadcrumb", name: "Breadcrumb" },
   { path: "card", name: "Card" },
   { path: "checkbox", name: "Checkbox" },
-  { path: "modal", name: "Modal" },
   { path: "menubar", name: "Menubar" },
+  { path: "modal", name: "Modal" },
   { path: "radio-group", name: "Radio Group" },
-  { path: "tabs", name: "Tabs" },
   { path: "switch", name: "Switch" },
+  { path: "tabs", name: "Tabs" },
   { path: "toggle-group", name: "Toggle Group" },
 ];
 
-const Components = {
-  name: "Components",
+const ComponentsPages = {
+  name: "ComponentsPages",
   components: {
     AccordionPage,
     BreadcrumbPage,
@@ -360,22 +360,20 @@ const Components = {
       default: () => ({}),
     },
   },
-  setup({ props }) {
-    const currentIndex = componentList.findIndex(
-      (c) => c.path === props.params.component,
-    );
-
-    const prevComponent =
-      currentIndex > 0 ? componentList[currentIndex - 1] : null;
-    const nextComponent =
-      currentIndex < componentList.length - 1
-        ? componentList[currentIndex + 1]
+  computed: {
+    currentIndex() {
+      return componentList.findIndex((c) => c.path === this.params.component);
+    },
+    prevComponent() {
+      return this.currentIndex > 0
+        ? componentList[this.currentIndex - 1]
         : null;
-
-    return {
-      prevComponent,
-      nextComponent,
-    };
+    },
+    nextComponent() {
+      return this.currentIndex < componentList.length - 1
+        ? componentList[this.currentIndex + 1]
+        : null;
+    },
   },
   template(html) {
     return html`<main
@@ -431,4 +429,4 @@ const Components = {
   },
 };
 
-export default Components;
+export default ComponentsPages;

@@ -1,20 +1,14 @@
-import {
-  create_component,
-  Fragment,
-  Text,
-  Comment,
-  Teleport,
-} from "./renderer";
+import { createComponent, Fragment, Text, Comment, Teleport } from "./renderer";
 import { compile } from "./compiler.js";
 
-const is_object = (val) =>
+const isObject = (val) =>
   val !== null && typeof val === "object" && !Array.isArray(val);
 
-const is_string = (val) => typeof val === "string";
+const isString = (val) => typeof val === "string";
 
-const is_function = (val) => typeof val === "function";
+const isFunction = (val) => typeof val === "function";
 
-const void_elements = new Set([
+const voidElements = new Set([
   "area",
   "base",
   "br",
@@ -31,63 +25,62 @@ const void_elements = new Set([
   "wbr",
 ]);
 
-export async function render_to_string(vnode) {
+export async function renderToString(vnode) {
   try {
     if (vnode && vnode.type) {
-      compile_templates(vnode.type);
+      compileTemplates(vnode.type);
     }
-    const context = { component_state: {} };
-    const html = await render_vnode(vnode, null, context);
-    return { html, componentState: context.component_state };
+    const context = { componentState: {} };
+    const html = await renderVnode(vnode, null, context);
+    return { html, componentState: context.componentState };
   } catch (e) {
     console.error(`[SSR Error] ${e.message}\n${e.stack}`);
-    const html = `<div style="color:red; background:lightyellow; border: 1px solid red; padding: 1rem;">SSR Error: ${escape_html(e.message)}</div>`;
+    const html = `<div style="color:red; background:lightyellow; border: 1px solid red; padding: 1rem;">SSR Error: ${escapeHtml(e.message)}</div>`;
     return { html, componentState: {} };
   }
 }
 
-async function render_vnode(vnode, parent_component, context) {
+async function renderVnode(vnode, parentComponent, context) {
   if (vnode == null) return "";
-  if (is_string(vnode) || typeof vnode === "number")
-    return escape_html(String(vnode));
-  if (!is_object(vnode) || !vnode.type)
-    return `<!-- invalid vnode detected -->`;
+  if (isString(vnode) || typeof vnode === "number")
+    return escapeHtml(String(vnode));
+  if (!isObject(vnode) || !vnode.type) return `<!-- invalid vnode detected -->`;
 
   const { type, props, children } = vnode;
 
   switch (type) {
     case Text:
-      const content = escape_html(children);
+      const content = escapeHtml(children);
       return props && props["w-dynamic"]
         ? `<!--[-->${content}<!--]-->`
         : content;
     case Comment:
-      return `<!--${escape_html(children)}-->`;
+      return `<!--${escapeHtml(children)}-->`;
     case Fragment:
     case Teleport:
-      return render_children(children, parent_component, context);
+      return renderChildren(children, parentComponent, context);
     default:
-      if (is_string(type)) {
+      if (isString(type)) {
         const tag = type.toLowerCase();
-        let html = `<${tag}${render_props(props)}>`;
-        if (!void_elements.has(tag)) {
+        let html = `<${tag}${renderProps(props)}>`;
+        if (!voidElements.has(tag)) {
           html +=
-            (await render_children(children, parent_component, context)) ||
+            (await renderChildren(children, parentComponent, context)) ||
             "<!--w-->";
           html += `</${tag}>`;
         }
         return html;
-      } else if (is_object(type)) {
-        if (!type.render) compile_templates(type);
+      } else if (isObject(type)) {
+        if (!type.render) compileTemplates(type);
 
-        const instance = create_component(vnode, parent_component, true);
-        if (!parent_component && context) {
-          context.component_state = instance.internal_ctx;
+        const instance = createComponent(vnode, parentComponent, true);
+        if (!parentComponent && context) {
+          context.componentState = instance.internalCtx;
         }
 
-        if (is_function(instance.render)) {
-          const sub_tree = instance.render.call(instance.ctx, instance.ctx);
-          return await render_vnode(sub_tree, instance, context);
+        if (isFunction(instance.render)) {
+          const subTree = instance.render.call(instance.ctx, instance.ctx);
+          return await renderVnode(subTree, instance, context);
         }
         return `<!-- component failed to render -->`;
       }
@@ -95,17 +88,17 @@ async function render_vnode(vnode, parent_component, context) {
   }
 }
 
-async function render_children(children, parent_component, context) {
+async function renderChildren(children, parentComponent, context) {
   if (!children) return "";
-  const child_array = Array.isArray(children) ? children : [children];
+  const childArray = Array.isArray(children) ? children : [children];
   let result = "";
-  for (const child of child_array) {
-    result += await render_vnode(child, parent_component, context);
+  for (const child of childArray) {
+    result += await renderVnode(child, parentComponent, context);
   }
   return result;
 }
 
-function render_props(props) {
+function renderProps(props) {
   let result = "";
   for (const key in props) {
     if (key === "key" || key.startsWith("on") || key === "w-dynamic") continue;
@@ -113,13 +106,13 @@ function render_props(props) {
     if (value === true || value === "") {
       result += ` ${key}`;
     } else if (value != null && value !== false) {
-      result += ` ${key}="${escape_html(value)}"`;
+      result += ` ${key}="${escapeHtml(value)}"`;
     }
   }
   return result;
 }
 
-function escape_html(str) {
+function escapeHtml(str) {
   if (str == null) return "";
   return String(str).replace(/[&<>"']/g, (match) => {
     switch (match) {
@@ -139,17 +132,17 @@ function escape_html(str) {
   });
 }
 
-function compile_templates(component_def) {
-  if (component_def.components) {
-    for (const key in component_def.components) {
-      const sub_component = component_def.components[key];
-      compile_templates(sub_component);
-      if (sub_component.components) {
-        Object.assign(component_def.components, sub_component.components);
+function compileTemplates(componentDef) {
+  if (componentDef.components) {
+    for (const key in componentDef.components) {
+      const subComponent = componentDef.components[key];
+      compileTemplates(subComponent);
+      if (subComponent.components) {
+        Object.assign(componentDef.components, subComponent.components);
       }
     }
   }
-  if (!component_def.render && component_def.template) {
-    component_def.render = compile(component_def);
+  if (!componentDef.render && componentDef.template) {
+    componentDef.render = compile(componentDef);
   }
 }

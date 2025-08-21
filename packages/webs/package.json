@@ -31,7 +31,7 @@
   "scripts": {
     "dev": "NODE_ENV=development bun run ./bin/cli.js",
     "start": "NODE_ENV=production bun run ./bin/cli.js",
-    "build:js": "bun build ./src/index.js --outfile=./dist/index.js --format=cjs --minify --sourcemap=inline && bun build ./src/index.js --outfile=./dist/index.mjs --format=esm --minify --sourcemap=inline && bun build ./src/server.js --outfile=./dist/server.js --format=cjs --minify --sourcemap=inline && bun build ./src/server.js --outfile=./dist/server.mjs --format=esm --minify --sourcemap=inline",
+    "build:js": "bun build ./src/client.js ./src/server.js ./scripts/build.js ./src/config.js ./src/document.js ./src/handlers.js --outdir=./dist --format=esm --target=bun --minify --sourcemap=inline",
     "build:types": "tsc",
     "build": "rm -rf dist && bun run build:js && bun run build:types",
     "format": "prettier --write ."
