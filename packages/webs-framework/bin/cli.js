@@ -104,11 +104,6 @@ async function main() {
     port: config.PORT,
     development: !config.IS_PROD,
     fetch: (req) => {
-      if (!requestHandler) {
-        return new Response("Server is starting, please wait...", {
-          status: 503,
-        });
-      }
       return requestHandler(req);
     },
     error: (error) => {

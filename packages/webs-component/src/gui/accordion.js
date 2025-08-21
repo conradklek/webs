@@ -10,7 +10,7 @@ const Accordion = {
       default: true,
     },
   },
-  setup({ props, provide, reactive }) {
+  state({ props, provide, reactive }) {
     const state = reactive({
       openItems: new Set(),
     });
@@ -60,7 +60,7 @@ const AccordionItem = {
       required: true,
     },
   },
-  setup({ props, provide }) {
+  state({ props, provide }) {
     provide("itemValue", props.value);
   },
   template(html) {
@@ -74,7 +74,7 @@ const AccordionItem = {
 
 const AccordionTrigger = {
   name: "AccordionTrigger",
-  setup({ inject }) {
+  state({ inject }) {
     const accordion = inject("accordion");
     const value = inject("itemValue");
     return { accordion, value };
@@ -100,7 +100,7 @@ const AccordionTrigger = {
 
 const AccordionContent = {
   name: "AccordionContent",
-  setup({ inject }) {
+  state({ inject }) {
     const accordion = inject("accordion");
     const value = inject("itemValue");
     return { accordion, value };

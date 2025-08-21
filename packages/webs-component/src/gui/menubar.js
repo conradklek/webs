@@ -1,6 +1,6 @@
 const Menubar = {
   name: "Menubar",
-  setup({ provide, reactive, onMounted, onUnmounted }) {
+  state({ provide, reactive, onMounted, onUnmounted }) {
     const state = reactive({
       activeMenu: null,
     });
@@ -55,7 +55,7 @@ const MenubarMenu = {
       required: true,
     },
   },
-  setup({ props, provide }) {
+  state({ props, provide }) {
     provide("menuValue", props.value);
   },
   template(html) {
@@ -69,7 +69,7 @@ const MenubarMenu = {
 
 const MenubarTrigger = {
   name: "MenubarTrigger",
-  setup({ inject }) {
+  state({ inject }) {
     const menubar = inject("menubar");
     const menuValue = inject("menuValue");
     return { menubar, menuValue };
@@ -90,7 +90,7 @@ const MenubarTrigger = {
 
 const MenubarContent = {
   name: "MenubarContent",
-  setup({ inject }) {
+  state({ inject }) {
     const menubar = inject("menubar");
     const menuValue = inject("menuValue");
     return { menubar, menuValue };
@@ -109,7 +109,7 @@ const MenubarContent = {
 
 const MenubarItem = {
   name: "MenubarItem",
-  setup({ inject }) {
+  state({ inject }) {
     const menubar = inject("menubar");
     return { menubar };
   },
@@ -161,7 +161,7 @@ const MenubarGroup = {
 
 const MenubarSub = {
   name: "MenubarSub",
-  setup({ provide, reactive }) {
+  state({ provide, reactive }) {
     const state = reactive({ isOpen: false });
 
     let closeTimer = null;
@@ -193,7 +193,7 @@ const MenubarSub = {
 
 const MenubarSubTrigger = {
   name: "MenubarSubTrigger",
-  setup({ inject }) {
+  state({ inject }) {
     const submenu = inject("submenu");
     return { submenu };
   },
@@ -211,7 +211,7 @@ const MenubarSubTrigger = {
 
 const MenubarSubContent = {
   name: "MenubarSubContent",
-  setup({ inject }) {
+  state({ inject }) {
     const submenu = inject("submenu");
     return { submenu };
   },

@@ -1,5 +1,5 @@
 {
-  "name": "demo",
+  "name": "webs-component",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -7,7 +7,7 @@
     "start": "NODE_ENV=production webs"
   },
   "dependencies": {
-    "@conradklek/webs": "file:../webs"
+    "@conradklek/webs": "file:../webs-framework"
   },
   "devDependencies": {
     "tailwindcss": "^4.1.11"

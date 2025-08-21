@@ -115,9 +115,7 @@ export async function hydrate(components) {
           listeners.forEach((fn) => fn());
         },
       };
-      console.log(
-        "[Dev] Tools available within the browser extension",
-      );
+      console.log("[Dev] Tools available within the browser extension");
     }
   }
 
@@ -174,6 +172,48 @@ export async function hydrate(components) {
 }
 
 function installNavigationHandler(app, components) {
+  const prefetchCache = new Map();
+
+  const prefetch = async (url) => {
+    if (prefetchCache.has(url.href)) {
+      return;
+    }
+    try {
+      const response = await fetch(url.pathname + url.search, {
+        headers: { "X-Webs-Navigate": "true" },
+      });
+      if (response.ok) {
+        const data = deserializeState(await response.json());
+        prefetchCache.set(url.href, data);
+      }
+    } catch {}
+  };
+
+  window.addEventListener("mouseover", (e) => {
+    const link = e.target.closest("a");
+    if (
+      !link ||
+      link.target ||
+      link.hasAttribute("download") ||
+      e.metaKey ||
+      e.ctrlKey ||
+      e.shiftKey ||
+      e.altKey
+    ) {
+      return;
+    }
+
+    const href = link.getAttribute("href");
+    if (!href || href.startsWith("#")) return;
+
+    const url = new URL(href, window.location.origin);
+    if (url.origin !== window.location.origin) {
+      return;
+    }
+
+    prefetch(url);
+  });
+
   window.addEventListener("click", async (e) => {
     const link = e.target.closest("a");
     if (
@@ -206,14 +246,20 @@ function installNavigationHandler(app, components) {
     }
 
     try {
-      const response = await fetch(url.pathname + url.search, {
-        headers: { "X-Webs-Navigate": "true" },
-      });
-      if (!response.ok) {
-        window.location.assign(url.href);
-        return;
+      let data;
+      if (prefetchCache.has(url.href)) {
+        data = prefetchCache.get(url.href);
+        prefetchCache.delete(url.href);
+      } else {
+        const response = await fetch(url.pathname + url.search, {
+          headers: { "X-Webs-Navigate": "true" },
+        });
+        if (!response.ok) {
+          window.location.assign(url.href);
+          return;
+        }
+        data = deserializeState(await response.json());
       }
-      const data = deserializeState(await response.json());
 
       const componentLoader = components.get(data.componentName);
       if (!componentLoader) {

@@ -6,7 +6,7 @@ const RadioGroupItem = {
       required: true,
     },
   },
-  setup({ props, inject }) {
+  state({ props, inject }) {
     const radioGroup = inject("radioGroup");
     return {
       radioGroup,
@@ -41,7 +41,7 @@ const RadioGroup = {
       type: String,
     },
   },
-  setup({ props, provide, reactive }) {
+  state({ props, provide, reactive }) {
     const state = reactive({
       selectedValue: props.defaultValue,
     });

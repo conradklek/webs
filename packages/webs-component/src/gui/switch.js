@@ -18,7 +18,7 @@ const Switch = {
       default: false,
     },
   },
-  setup({ props, reactive }) {
+  state({ props, reactive }) {
     const state = reactive({
       is_on: props.defaultPressed,
     });

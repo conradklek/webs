@@ -6,7 +6,7 @@ const Checkbox = {
       default: false,
     },
   },
-  setup({ props, reactive }) {
+  state({ props, reactive }) {
     const state = reactive({
       isChecked: props.defaultChecked,
     });

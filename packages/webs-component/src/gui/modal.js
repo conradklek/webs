@@ -1,6 +1,6 @@
 const Modal = {
   name: "Modal",
-  setup({ provide, reactive }) {
+  state({ provide, reactive }) {
     const state = reactive({
       isOpen: false,
     });
@@ -18,7 +18,7 @@ const Modal = {
 
 const ModalTrigger = {
   name: "ModalTrigger",
-  setup({ inject }) {
+  state({ inject }) {
     return { modal: inject("modal") };
   },
   template(html) {
@@ -30,7 +30,7 @@ const ModalTrigger = {
 
 const ModalClose = {
   name: "ModalClose",
-  setup({ inject }) {
+  state({ inject }) {
     return { modal: inject("modal") };
   },
   template(html) {
@@ -42,14 +42,14 @@ const ModalClose = {
 
 const ModalContent = {
   name: "ModalContent",
-  setup({ inject }) {
+  state({ inject }) {
     return { modal: inject("modal") };
   },
   template(html) {
     return html`
       <div w-if="modal.is_open()">
         <div
-          class="fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-border bg-background p-6 shadow-md rounded-lg"
+          class="fixed left-[50%] top-[50%] z-50 grid w-full max-w-sm translate-x-[-50%] translate-y-[-50%] gap-4 border border-border bg-background p-6 shadow-md rounded-lg"
         >
           <slot></slot>
         </div>

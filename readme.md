@@ -61,7 +61,7 @@ Components are the heart of a Webs application. They are plain JavaScript object
 A component is defined by a few key properties:
 
 - `name`: A unique string identifier for the component.
-- `state()`: A function that returns an object of reactive data.
+- `state(context)`: A function that receives a context object (containing `props`, lifecycle hooks like `onMounted`, etc.) and returns an object of reactive data.
 - `methods`: An object containing functions that can be called from the template.
 - `template`: An HTML string that defines the component's structure.
 
@@ -69,7 +69,11 @@ A component is defined by a few key properties:
 // src/app/counter.js
 export default {
   name: "Counter",
-  state() {
+  state({ onMounted }) {
+    onMounted(() => {
+      console.log("Counter component has been mounted!");
+    });
+
     return {
       count: 0,
     };

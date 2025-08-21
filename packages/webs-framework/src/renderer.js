@@ -18,7 +18,7 @@ let instanceCounter = 0;
 export function provide(key, value) {
   if (!currentInstance) {
     console.warn(
-      `[Renderer] provide() called outside of setup. Cannot provide key:`,
+      `[Renderer] provide() called outside of state setup. Cannot provide key:`,
       key,
     );
     return;
@@ -29,7 +29,7 @@ export function provide(key, value) {
 export function inject(key, defaultValue) {
   if (!currentInstance) {
     console.warn(
-      `[Renderer] inject() called outside of setup. Cannot inject key:`,
+      `[Renderer] inject() called outside of state setup. Cannot inject key:`,
       key,
     );
     return defaultValue;
@@ -41,7 +41,7 @@ export function inject(key, defaultValue) {
 function createLifecycleMethod(name) {
   return (hook) => {
     if (!currentInstance) {
-      console.warn(`Lifecycle hook '${name}' called outside of setup.`);
+      console.warn(`Lifecycle hook '${name}' called outside of state setup.`);
       return;
     }
     if (!currentInstance.hooks[name]) {
@@ -503,7 +503,7 @@ export function createRenderer(options) {
         if (props && props["w-dynamic"]) {
           if (domNode.nodeType !== 8 || domNode.data !== "[") {
             console.error(
-              "[Hydration Error] Mismatch for dynamic text. Expected opening comment `<!--[-->`.",
+              "[Hydration Error] Mismatch for dynamic text. Expected opening comment ``.",
               { domNode },
             );
             return domNode.nextSibling;
@@ -516,7 +516,7 @@ export function createRenderer(options) {
             closingComment.data !== "]"
           ) {
             console.error(
-              "[Hydration Error] Mismatch for dynamic text. Expected closing comment `<!--]-->`.",
+              "[Hydration Error] Mismatch for dynamic text. Expected closing comment ``.",
               { closingComment },
             );
             return domNode.nextSibling;
@@ -627,7 +627,6 @@ export function createComponent(
     state,
     methods,
     computed: computedOptions,
-    setup,
     actions,
   } = instance.type;
   const vnodeProps = vnode.props || {};
@@ -652,12 +651,13 @@ export function createComponent(
     }
   }
 
-  let setupResult = {};
-  if (setup) {
+  let initialStateFromData = {};
+  if (state) {
     setCurrentInstance(instance);
-    const res = setup({
+    const stateContext = {
       props: resolvedProps,
       attrs: instance.attrs,
+      params: instance.appContext.params || {},
       provide,
       inject,
       computed,
@@ -667,27 +667,17 @@ export function createComponent(
       onBeforeUpdate,
       onUpdated,
       onUnmounted,
-    });
+    };
+    initialStateFromData = state.call(instance.ctx, stateContext) || {};
     setCurrentInstance(null);
-    if (isObject(res)) {
-      setupResult = res;
-    }
   }
 
-  const stateContext = {
-    $props: resolvedProps,
-    $params: instance.appContext.params || {},
-  };
-  const initialStateFromData = state
-    ? state.call(instance.ctx, stateContext)
-    : {};
   const serverState = vnode.props.initialState || {};
 
   const finalState = {
     ...resolvedProps,
     ...initialStateFromData,
     ...serverState,
-    ...setupResult,
   };
 
   instance.ctx = new Proxy(

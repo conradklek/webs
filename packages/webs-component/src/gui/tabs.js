@@ -6,7 +6,7 @@ const Tabs = {
       required: true,
     },
   },
-  setup({ props, provide, reactive }) {
+  state({ props, provide, reactive }) {
     const state = reactive({
       activeTab: props.defaultValue,
     });
@@ -39,7 +39,7 @@ const TabsContent = {
       required: true,
     },
   },
-  setup({ props, inject }) {
+  state({ props, inject }) {
     const tabs = inject("tabs");
     return { tabs, value: props.value };
   },
@@ -65,7 +65,7 @@ const TabsTrigger = {
       required: true,
     },
   },
-  setup({ props, inject }) {
+  state({ props, inject }) {
     const tabs = inject("tabs");
     return { tabs, value: props.value };
   },

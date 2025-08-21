@@ -62,11 +62,11 @@ const ModalPage = {
             <div class="grid gap-4 py-4">
               <div class="grid grid-cols-4 items-center gap-4">
                 <label for="name" class="text-right">Name</label>
-                <input id="name" value="Pedro Duarte" class="col-span-3" />
+                <input id="name" value="Pedro Duarte" class="input col-span-3" />
               </div>
               <div class="grid grid-cols-4 items-center gap-4">
                 <label for="username" class="text-right">Username</label>
-                <input id="username" value="@peduarte" class="col-span-3" />
+                <input id="username" value="@peduarte" class="input col-span-3" />
               </div>
             </div>
             <ModalFooter>

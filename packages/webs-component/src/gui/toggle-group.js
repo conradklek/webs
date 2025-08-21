@@ -12,7 +12,7 @@ const ToggleGroupItem = {
       type: String,
     },
   },
-  setup({ props, inject }) {
+  state({ props, inject }) {
     const toggleGroup = inject("toggleGroup");
 
     const getClasses = () => {
@@ -75,7 +75,7 @@ const ToggleGroup = {
       type: [String, Array],
     },
   },
-  setup({ props, provide, reactive }) {
+  state({ props, provide, reactive }) {
     const state = reactive({
       value:
         props.type === "multiple"
