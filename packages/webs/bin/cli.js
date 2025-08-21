@@ -19,68 +19,90 @@ const IS_PROD = process.env.NODE_ENV === "production";
 async function main() {
   await ensureTmpDir();
 
-  const { client_entry_code } = await generate_client_entry();
-
-  await Bun.write(TMP_APP_JS, client_entry_code);
-
-  const api_path = resolve(CWD, "src/api.js");
-  let app_routes = {};
-  if (await exists(api_path)) {
-    const api_module = await import(`${api_path}?t=${Date.now()}`);
-    app_routes = api_module.routes || {};
-  } else {
-    console.warn(
-      "[Warning] src/api.js not found. No routes will be available.",
-    );
-  }
-
   const server_context = {
     db: await framework.create_database(Database, CWD),
-    app_routes: app_routes,
+    app_routes: {},
     outdir: OUTDIR,
     manifest: {},
     is_prod: IS_PROD,
   };
 
-  if (IS_PROD) {
-    console.log("--- Running in production mode ---");
+  let request_handler = null;
+
+  async function performBuildAndUpdateManifest() {
+    console.log("--- Performing build and updating manifest ---");
+    const api_path = resolve(CWD, "src/api.js");
+    if (await exists(api_path)) {
+      const api_module = await import(`${api_path}?t=${Date.now()}`);
+      server_context.app_routes = api_module.routes || {};
+    } else {
+      console.warn(
+        "[Warning] src/api.js not found. No routes will be available.",
+      );
+      server_context.app_routes = {};
+    }
+
+    const { client_entry_code } = await generate_client_entry();
+    await Bun.write(TMP_APP_JS, client_entry_code);
+
     const build_result = await build_assets(OUTDIR, TMP_APP_JS);
-    if (!build_result) process.exit(1);
-    const asset_sizes = await compress_assets(build_result.outputs);
-    server_context.manifest = {
-      js: build_result.outputs.find(
-        (o) => o.kind === "entry-point" && o.path.endsWith(".js"),
-      )?.path,
+    if (!build_result) {
+      console.error("Build failed, server will not start or reload.");
+      return null;
+    }
+    const manifest = {
+      js: build_result.outputs.find((o) => o.path.endsWith(".js"))?.path,
       css: build_result.outputs.find((o) => o.path.endsWith(".css"))?.path,
-      sizes: asset_sizes,
     };
-  } else {
-    console.log("--- Performing initial build for development ---");
-    const initial_build_result = await build_assets(OUTDIR, TMP_APP_JS);
-    if (!initial_build_result) process.exit(1);
-    server_context.manifest = {
-      js: initial_build_result.outputs.find((o) => o.path.endsWith(".js"))
-        ?.path,
-      css: initial_build_result.outputs.find((o) => o.path.endsWith(".css"))
-        ?.path,
-    };
+    if (IS_PROD) {
+      const asset_sizes = await compress_assets(build_result.outputs);
+      manifest.sizes = asset_sizes;
+    }
+    server_context.manifest = manifest;
+    console.log("Manifest updated:", JSON.stringify(manifest, null, 2));
+
+    request_handler = create_request_handler(server_context);
+    console.log("Request handler updated with new manifest.");
+
+    return manifest;
   }
 
-  let request_handler = create_request_handler(server_context);
+  await performBuildAndUpdateManifest();
 
   const server = Bun.serve({
     port: PORT,
     development: false,
-    fetch: (req) => request_handler(req),
+    fetch: (req, server) => {
+      if (req.headers.get("Upgrade") === "websocket") {
+        const success = server.upgrade(req);
+        if (success) {
+          return undefined;
+        }
+      }
+      return request_handler(req);
+    },
+    websocket: {
+      message(ws, message) {
+        console.log("A websocket message", message);
+      },
+      open(ws) {
+        ws.subscribe("reload-channel");
+        console.log(
+          "A new client has connected and is subscribed to reload-channel.",
+        );
+      },
+      close(ws, code, reason) {
+        console.log("A client has disconnected.");
+      },
+      drain(ws) {
+        console.log("The socket is ready to receive more data.");
+      },
+    },
     error: (error) => {
       console.error(error);
       return new Response("Internal Server Error", { status: 500 });
     },
   });
-
-  if (!IS_PROD) {
-    console.log("--- Running in dev :", server.port);
-  }
 
   console.log(`--- Server ready at http://localhost:${PORT} ---`);
 }
@@ -101,11 +123,15 @@ async function generate_client_entry() {
     }
   }
 
-  const client_entry_code = `import { hydrate } from "@conradklek/webs/runtime";
+  const client_entry_code = `
+import { hydrate } from "@conradklek/webs/runtime";
+
 const components = new Map([
   ${component_map_entries.join(",\n  ")}
 ]);
-hydrate(components);`;
+
+hydrate(components);
+`;
 
   return { client_entry_code };
 }

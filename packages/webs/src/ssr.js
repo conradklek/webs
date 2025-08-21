@@ -5,8 +5,31 @@ import {
   Comment,
   Teleport,
 } from "./renderer";
-import { void_elements, is_string, is_object, is_function } from "./utils";
 import { compile } from "./compiler.js";
+
+const is_object = (val) =>
+  val !== null && typeof val === "object" && !Array.isArray(val);
+
+const is_string = (val) => typeof val === "string";
+
+const is_function = (val) => typeof val === "function";
+
+const void_elements = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
 
 export async function render_to_string(vnode) {
   try {

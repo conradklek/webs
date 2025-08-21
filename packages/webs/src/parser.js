@@ -1,4 +1,19 @@
-import { void_elements } from "./utils";
+const void_elements = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
 
 const js_token_cache = new Map();
 

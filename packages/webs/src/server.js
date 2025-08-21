@@ -57,11 +57,37 @@ export function create_request_handler(context) {
       const { route_definition, params: route_params } = route_match;
       const query_params = parse_query_string(url.search);
       const all_params = { ...route_params, ...query_params };
+      if (req.headers.get("X-Webs-Navigate")) {
+        return handle_data_request(req, route_definition, all_params, context);
+      }
       return handle_page_request(req, route_definition, all_params, context);
     }
 
     return new Response("Not Found", { status: 404 });
   };
+}
+
+async function handle_data_request(req, route_definition, params, context) {
+  const { db } = context;
+  const session_id = req.headers
+    .get("cookie")
+    ?.match(/session_id=([^;]+)/)?.[1];
+  const user = get_user_from_session(db, session_id);
+
+  const component_vnode = h(route_definition.component, { user, params });
+  const { componentState } = await render_to_string(component_vnode);
+
+  const webs_state = {
+    user,
+    params,
+    componentState,
+    component_name: route_definition.component_name,
+    title: route_definition.component.name || "Webs App",
+  };
+
+  return new Response(serialize_state(webs_state), {
+    headers: { "Content-Type": "application/json;charset=utf-8" },
+  });
 }
 
 function handle_page_request(req, route_definition, params, context) {

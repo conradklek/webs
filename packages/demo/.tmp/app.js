@@ -1,4 +1,6 @@
-import { hydrate } from "@conradklek/webs";
+
+import { hydrate } from "@conradklek/webs/runtime";
+
 const components = new Map([
   ['profile', () => import('../src/app/profile.js')],
   ['index', () => import('../src/app/index.js')],
@@ -6,4 +8,5 @@ const components = new Map([
   ['login', () => import('../src/app/login.js')],
   ['components', () => import('../src/app/components.js')]
 ]);
+
 hydrate(components);

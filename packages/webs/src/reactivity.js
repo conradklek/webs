@@ -1,4 +1,5 @@
-import { is_object } from "./utils";
+const is_object = (val) =>
+  val !== null && typeof val === "object" && !Array.isArray(val);
 
 let active_effect = null;
 const effect_stack = [];

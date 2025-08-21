@@ -30,19 +30,44 @@ export function create_app_api(renderer_options) {
     const app = {
       _component: root_component,
       _container: null,
+      _vnode: null, // Keep a reference to the current root VNode
       _context: {
         components: root_component.components || {},
         provides: {},
         patch: renderer.patch,
         hydrate: renderer.hydrate,
         params: root_props.params || {},
+        transition_queued: false,
+        with_transition: (update_fn) => {
+          if (!document.startViewTransition) {
+            console.warn("View Transitions API not supported in this browser.");
+            update_fn();
+            return;
+          }
+          app._context.transition_queued = true;
+          update_fn();
+        },
       },
-      mount(root_container) {
+      mount(root_container, components) {
+        console.log("[App] Mounting app to container.");
         const vnode = create_vnode(root_component, root_props);
         vnode.app_context = app._context;
-        app._context.hydrate(vnode, root_container);
+
+        // Store references on the app object
+        app._vnode = vnode;
         app._container = root_container;
-        return vnode;
+
+        const root_instance = app._context.hydrate(vnode, root_container);
+
+        if (root_instance) {
+          // Pass the whole app object to the navigation handler
+          install_navigation_handler(app, components);
+        } else {
+          console.error(
+            "Hydration did not return a root instance. Navigation handler not installed.",
+          );
+        }
+        return root_instance;
       },
     };
     return app;
@@ -70,6 +95,8 @@ export const create_app = create_app_api({
       if (next_val) el.addEventListener(event_name, next_val);
     } else if (key === "class") {
       el.className = normalize_class(next_val) || "";
+    } else if (key === "transition-name") {
+      el.style.viewTransitionName = next_val;
     } else {
       if (next_val == null) {
         el.removeAttribute(key);
@@ -128,12 +155,96 @@ export async function hydrate(components) {
     };
 
     const app = create_app(root_component, props);
-    app.mount(root);
+    app.mount(root, components);
 
     window.__WEBS_STATE__ = null;
   } catch (error) {
     console.error(`Failed to hydrate component "${component_name}":`, error);
   }
+}
+
+function install_navigation_handler(app, components) {
+  window.addEventListener("click", async (e) => {
+    const link = e.target.closest("a");
+    if (
+      !link ||
+      link.target ||
+      link.hasAttribute("download") ||
+      e.metaKey ||
+      e.ctrlKey ||
+      e.shiftKey ||
+      e.altKey
+    ) {
+      return;
+    }
+
+    const href = link.getAttribute("href");
+    if (!href || href.startsWith("#")) return;
+
+    const url = new URL(href, window.location.origin);
+    if (url.origin !== window.location.origin) {
+      return;
+    }
+
+    e.preventDefault();
+
+    if (
+      url.pathname === window.location.pathname &&
+      url.search === window.location.search
+    ) {
+      return;
+    }
+
+    try {
+      const response = await fetch(url.pathname + url.search, {
+        headers: { "X-Webs-Navigate": "true" },
+      });
+      if (!response.ok) {
+        window.location.assign(url.href);
+        return;
+      }
+      const data = deserialize_state(await response.json());
+
+      const component_loader = components.get(data.component_name);
+      if (!component_loader) {
+        throw new Error(
+          `Component loader not found for: ${data.component_name}`,
+        );
+      }
+      const component_module = await component_loader();
+      const new_component_def = component_module.default;
+
+      // *** THE FIX IS HERE ***
+      // Compile the newly loaded component's template into a render function.
+      compile_templates(new_component_def);
+
+      // Use the framework's own tools to perform the update.
+      app._context.with_transition(() => {
+        window.history.pushState({}, "", url.href);
+        document.title = data.title;
+
+        const old_vnode = app._vnode;
+        const new_props = {
+          user: data.user,
+          params: data.params,
+          initial_state: data.componentState,
+        };
+
+        // Create a new VNode for the new page.
+        const new_vnode = create_vnode(new_component_def, new_props);
+        new_vnode.app_context = app._context;
+
+        // Use the patch function to intelligently swap the components.
+        app._context.patch(old_vnode, new_vnode, app._container);
+
+        // Update the app's reference to the current VNode.
+        app._vnode = new_vnode;
+      });
+    } catch (err) {
+      console.error("Client-side navigation failed:", err);
+      window.location.assign(url.href);
+    }
+  });
 }
 
 function compile_templates(component_def) {

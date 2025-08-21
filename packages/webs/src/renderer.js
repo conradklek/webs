@@ -1,5 +1,11 @@
-import { is_function, is_object, is_string } from "./utils";
 import { effect, reactive, computed } from "./reactivity";
+
+const is_object = (val) =>
+  val !== null && typeof val === "object" && !Array.isArray(val);
+
+const is_string = (val) => typeof val === "string";
+
+const is_function = (val) => typeof val === "function";
 
 export const Text = Symbol("Text");
 export const Comment = Symbol("Comment");
@@ -376,10 +382,12 @@ export function create_renderer(options) {
       },
       {
         scheduler: () => {
-          if (instance.app_context.queue_job) {
-            instance.app_context.queue_job(instance.update);
+          const job = instance.update;
+          if (instance.app_context.transition_queued) {
+            instance.app_context.transition_queued = false;
+            document.startViewTransition(job);
           } else {
-            instance.update();
+            job();
           }
         },
       },
@@ -449,6 +457,8 @@ export function create_renderer(options) {
 
   const hydrate = (vnode, container) => {
     hydrate_node(vnode, container.firstChild, null);
+    // After hydrating, the instance is attached to the vnode. Return it.
+    return vnode.component;
   };
 
   const hydrate_node = (vnode, dom_node, parent_component = null) => {
@@ -687,6 +697,7 @@ export function create_component(
         key === "$params" ||
         key === "$slots" ||
         key === "$attrs" ||
+        key === "$app" ||
         key in instance.internal_ctx ||
         key in instance.methods ||
         key === "actions" ||
@@ -697,6 +708,7 @@ export function create_component(
         if (key === "$params") return instance.app_context.params;
         if (key === "$slots") return instance.slots;
         if (key === "$attrs") return instance.attrs;
+        if (key === "$app") return instance.app_context;
         if (key in instance.internal_ctx) {
           const val = instance.internal_ctx[key];
           return val && val.__is_ref && !is_ssr ? val.value : val;
