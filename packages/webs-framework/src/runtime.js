@@ -186,59 +186,12 @@ function installNavigationHandler(app, components) {
         const data = deserializeState(await response.json());
         prefetchCache.set(url.href, data);
       }
-    } catch {}
+    } catch { }
   };
 
-  window.addEventListener("mouseover", (e) => {
-    const link = e.target.closest("a");
+  const navigate = async (url, isPopState = false) => {
     if (
-      !link ||
-      link.target ||
-      link.hasAttribute("download") ||
-      e.metaKey ||
-      e.ctrlKey ||
-      e.shiftKey ||
-      e.altKey
-    ) {
-      return;
-    }
-
-    const href = link.getAttribute("href");
-    if (!href || href.startsWith("#")) return;
-
-    const url = new URL(href, window.location.origin);
-    if (url.origin !== window.location.origin) {
-      return;
-    }
-
-    prefetch(url);
-  });
-
-  window.addEventListener("click", async (e) => {
-    const link = e.target.closest("a");
-    if (
-      !link ||
-      link.target ||
-      link.hasAttribute("download") ||
-      e.metaKey ||
-      e.ctrlKey ||
-      e.shiftKey ||
-      e.altKey
-    ) {
-      return;
-    }
-
-    const href = link.getAttribute("href");
-    if (!href || href.startsWith("#")) return;
-
-    const url = new URL(href, window.location.origin);
-    if (url.origin !== window.location.origin) {
-      return;
-    }
-
-    e.preventDefault();
-
-    if (
+      !isPopState &&
       url.pathname === window.location.pathname &&
       url.search === window.location.search
     ) {
@@ -272,7 +225,9 @@ function installNavigationHandler(app, components) {
 
       compileTemplates(newComponentDef);
 
-      window.history.pushState({}, "", url.href);
+      if (!isPopState) {
+        window.history.pushState({}, "", url.href);
+      }
       document.title = data.title;
 
       const oldVnode = app._vnode;
@@ -292,6 +247,61 @@ function installNavigationHandler(app, components) {
       console.error("Client-side navigation failed:", err);
       window.location.assign(url.href);
     }
+  };
+
+  window.addEventListener("mouseover", (e) => {
+    const link = e.target.closest("a");
+    if (
+      !link ||
+      link.target ||
+      link.hasAttribute("download") ||
+      e.metaKey ||
+      e.ctrlKey ||
+      e.shiftKey ||
+      e.altKey
+    ) {
+      return;
+    }
+
+    const href = link.getAttribute("href");
+    if (!href || href.startsWith("#")) return;
+
+    const url = new URL(href, window.location.origin);
+    if (url.origin !== window.location.origin) {
+      return;
+    }
+
+    prefetch(url);
+  });
+
+  window.addEventListener("click", (e) => {
+    const link = e.target.closest("a");
+    if (
+      !link ||
+      link.target ||
+      link.hasAttribute("download") ||
+      e.metaKey ||
+      e.ctrlKey ||
+      e.shiftKey ||
+      e.altKey
+    ) {
+      return;
+    }
+
+    const href = link.getAttribute("href");
+    if (!href || href.startsWith("#")) return;
+
+    const url = new URL(href, window.location.origin);
+    if (url.origin !== window.location.origin) {
+      return;
+    }
+
+    e.preventDefault();
+    navigate(url, false);
+  });
+
+  window.addEventListener("popstate", () => {
+    navigate(new URL(window.location.href), true);
   });
 }
 
