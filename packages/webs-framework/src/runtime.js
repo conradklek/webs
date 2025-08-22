@@ -1,5 +1,6 @@
 import { createRenderer, createVnode } from "./renderer";
 import { compile } from "./compiler";
+import { useAction } from "./client";
 
 function normalizeClass(value) {
   let res = "";
@@ -125,6 +126,8 @@ export async function hydrate(components) {
   }
 
   const websState = deserializeState(window.__WEBS_STATE__ || {});
+  window.__WEBS_STATE__ = { componentName: websState.componentName };
+
   const { componentName, user, params, componentState } = websState;
 
   if (!componentName) {
@@ -164,8 +167,6 @@ export async function hydrate(components) {
 
     const app = createApp(rootComponent, props);
     app.mount(root, components);
-
-    window.__WEBS_STATE__ = null;
   } catch (error) {
     console.error(`Failed to hydrate component "${componentName}":`, error);
   }
@@ -187,66 +188,6 @@ function installNavigationHandler(app, components) {
         prefetchCache.set(url.href, data);
       }
     } catch { }
-  };
-
-  const navigate = async (url, isPopState = false) => {
-    if (
-      !isPopState &&
-      url.pathname === window.location.pathname &&
-      url.search === window.location.search
-    ) {
-      return;
-    }
-
-    try {
-      let data;
-      if (prefetchCache.has(url.href)) {
-        data = prefetchCache.get(url.href);
-        prefetchCache.delete(url.href);
-      } else {
-        const response = await fetch(url.pathname + url.search, {
-          headers: { "X-Webs-Navigate": "true" },
-        });
-        if (!response.ok) {
-          window.location.assign(url.href);
-          return;
-        }
-        data = deserializeState(await response.json());
-      }
-
-      const componentLoader = components.get(data.componentName);
-      if (!componentLoader) {
-        throw new Error(
-          `Component loader not found for: ${data.componentName}`,
-        );
-      }
-      const componentModule = await componentLoader();
-      const newComponentDef = componentModule.default;
-
-      compileTemplates(newComponentDef);
-
-      if (!isPopState) {
-        window.history.pushState({}, "", url.href);
-      }
-      document.title = data.title;
-
-      const oldVnode = app._vnode;
-      const newProps = {
-        user: data.user,
-        params: data.params,
-        initialState: data.componentState,
-      };
-
-      const newVnode = createVnode(newComponentDef, newProps);
-      newVnode.appContext = app._context;
-
-      app._context.patch(oldVnode, newVnode, app._container);
-
-      app._vnode = newVnode;
-    } catch (err) {
-      console.error("Client-side navigation failed:", err);
-      window.location.assign(url.href);
-    }
   };
 
   window.addEventListener("mouseover", (e) => {
@@ -274,7 +215,7 @@ function installNavigationHandler(app, components) {
     prefetch(url);
   });
 
-  window.addEventListener("click", (e) => {
+  window.addEventListener("click", async (e) => {
     const link = e.target.closest("a");
     if (
       !link ||
@@ -297,11 +238,63 @@ function installNavigationHandler(app, components) {
     }
 
     e.preventDefault();
-    navigate(url, false);
-  });
 
-  window.addEventListener("popstate", () => {
-    navigate(new URL(window.location.href), true);
+    if (
+      url.pathname === window.location.pathname &&
+      url.search === window.location.search
+    ) {
+      return;
+    }
+
+    try {
+      let data;
+      if (prefetchCache.has(url.href)) {
+        data = prefetchCache.get(url.href);
+        prefetchCache.delete(url.href);
+      } else {
+        const response = await fetch(url.pathname + url.search, {
+          headers: { "X-Webs-Navigate": "true" },
+        });
+        if (!response.ok) {
+          window.location.assign(url.href);
+          return;
+        }
+        data = deserializeState(await response.json());
+      }
+
+      window.__WEBS_STATE__ = { componentName: data.componentName };
+
+      const componentLoader = components.get(data.componentName);
+      if (!componentLoader) {
+        throw new Error(
+          `Component loader not found for: ${data.componentName}`,
+        );
+      }
+      const componentModule = await componentLoader();
+      const newComponentDef = componentModule.default;
+
+      compileTemplates(newComponentDef);
+
+      window.history.pushState({}, "", url.href);
+      document.title = data.title;
+
+      const oldVnode = app._vnode;
+      const newProps = {
+        user: data.user,
+        params: data.params,
+        initialState: data.componentState,
+      };
+
+      const newVnode = createVnode(newComponentDef, newProps);
+      newVnode.appContext = app._context;
+
+      app._context.patch(oldVnode, newVnode, app._container);
+
+      app._vnode = newVnode;
+    } catch (err) {
+      console.error("Client-side navigation failed:", err);
+      window.location.assign(url.href);
+    }
   });
 }
 
@@ -354,3 +347,5 @@ function deserializeState(input) {
   }
   return input;
 }
+
+export { useAction };

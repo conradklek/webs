@@ -1,7 +1,7 @@
 {
   "name": "@conradklek/webs",
   "author": "Conrad Klek",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "description": "A JavaScript Framework",
   "bin": {
     "webs": "bin/cli.js"

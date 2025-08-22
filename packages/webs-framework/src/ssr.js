@@ -51,18 +51,14 @@ async function renderVnode(vnode, parentComponent, context) {
   switch (type) {
     case Text:
       const content = escapeHtml(children);
-      // Dynamic text already had the correct markers, which was a good clue.
       return props && props["w-dynamic"]
         ? `<!--[-->${content}<!--]-->`
         : content;
     case Comment:
       return `<!--${escapeHtml(children)}-->`;
     case Fragment:
-    case Teleport: // Teleport rendering is simplified here, but for hydration this works.
-      // --- FIX ---
-      // Wrap the children of a Fragment with comment delimiters. This is the
-      // core fix that solves both the w-for and ternary issues.
-      return `<!--[-->${await renderChildren(children, parentComponent, context)}<!--]-->`;
+    case Teleport:
+      return await renderChildren(children, parentComponent, context);
     default:
       if (isString(type)) {
         const tag = type.toLowerCase();
@@ -70,7 +66,7 @@ async function renderVnode(vnode, parentComponent, context) {
         if (!voidElements.has(tag)) {
           html +=
             (await renderChildren(children, parentComponent, context)) ||
-            "<!--w-->"; // "w" comment for empty elements
+            "<!--w-->";
           html += `</${tag}>`;
         }
         return html;

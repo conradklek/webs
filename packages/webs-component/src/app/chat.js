@@ -1,4 +1,4 @@
-import { useSocket } from "@conradklek/webs/websocket";
+import { useAction } from "@conradklek/webs/client";
 
 export default {
   name: "Chat",
@@ -6,28 +6,53 @@ export default {
   state() {
     return {
       messages: [],
+      streamAction: null,
     };
   },
 
-  setup({ onMounted }) {
-    const socket = useSocket();
-    socket.connect();
-
-    onMounted(() => {
-      socket.onMessage((message) => {
-        console.log({ message });
-        this.messages.push(message);
-      });
+  setup({ onReady }) {
+    onReady(() => {
+      this.streamAction = useAction("streamMessage");
     });
   },
 
   methods: {
     sendMessage(event) {
-      const socket = useSocket();
-      const message = event.target.message.value;
-      if (!message.trim()) return;
-      socket.send(message);
-      event.target.reset();
+      if (!this.streamAction) return;
+
+      const form = event.target;
+      const input = form.message;
+      const messageContent = input.value.trim();
+
+      if (!messageContent) return;
+
+      this.messages.push({ role: "user", content: messageContent });
+
+      this.streamAction.stream(messageContent, {
+        onFinish: (finalResponse) => {
+          this.messages.push({
+            role: "assistant",
+            content: finalResponse,
+          });
+        },
+      });
+
+      form.reset();
+    },
+  },
+
+  actions: {
+    async *streamMessage(context, message) {
+      console.log(`[Server Action] Received message: "${message}"`);
+      const mockResponse =
+        "This is a mock streamed response from the server. Each word is sent as a separate chunk to demonstrate how the UI can update in real-time, just like a real AI chat application.".split(
+          " ",
+        );
+
+      for (const word of mockResponse) {
+        yield word + " ";
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
     },
   },
 
@@ -35,8 +60,19 @@ export default {
     return html`
       <div class="w-full max-w-2xl mx-auto p-4 flex flex-col h-[80vh]">
         <main class="flex-1 bg-muted rounded-lg p-4 overflow-y-auto">
-          <ul class="space-y-2">
-            <li w-for="message in messages">{{ message }}</li>
+          <ul class="space-y-4">
+            <li w-for="message in messages">
+              <div class="max-w-lg p-3">
+                <p class="font-bold capitalize mb-1">{{ message.role }}</p>
+                <p>{{ message.content }}</p>
+              </div>
+            </li>
+            <li w-if="streamAction && streamAction.state.isStreaming">
+              <div class="max-w-lg p-3">
+                <p class="font-bold capitalize mb-1">Assistant</p>
+                <p>{{ streamAction.state.currentResponse }}</p>
+              </div>
+            </li>
           </ul>
         </main>
 
@@ -47,6 +83,7 @@ export default {
               type="text"
               placeholder="Type a message..."
               class="input flex-1"
+              autocomplete="off"
             />
             <button type="submit" class="btn btn-default btn-size-lg">
               Send
@@ -55,30 +92,5 @@ export default {
         </footer>
       </div>
     `;
-  },
-
-  websocket: {
-    open(ws, context) {
-      const { user } = context;
-      const username = user ? user.username : "Anonymous";
-      ws.subscribe("global-chat");
-      const joinMsg = `[${username} has joined the chat]`;
-      ws.publish("global-chat", joinMsg);
-      ws.send(joinMsg);
-    },
-
-    message(ws, message, context) {
-      const { user } = context;
-      const username = user ? user.username : "Anonymous";
-      const formattedMessage = `${username}: ${message}`;
-      ws.publish("global-chat", formattedMessage);
-      ws.send(formattedMessage);
-    },
-
-    close(ws, _code, _message, context) {
-      const { user } = context;
-      const username = user ? user.username : "Anonymous";
-      ws.publish("global-chat", `[${username} has left the chat]`);
-    },
   },
 };

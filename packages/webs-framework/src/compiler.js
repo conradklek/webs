@@ -48,6 +48,19 @@ export function generateRenderFn(ast) {
           return this.scope.has(expr.name) ? expr.name : `_ctx.${expr.name}`;
         case "Literal":
           return JSON.stringify(expr.value);
+        case "ObjectExpression": {
+          const props = expr.properties
+            .map((p) => {
+              const key =
+                p.key.type === "Identifier"
+                  ? `'${p.key.name}'`
+                  : this.genExpr(p.key);
+              const value = this.genExpr(p.value);
+              return `${key}: ${value}`;
+            })
+            .join(",");
+          return `{${props}}`;
+        }
         case "BinaryExpression":
           return `(${this.genExpr(expr.left)}${expr.operator}${this.genExpr(
             expr.right,
@@ -135,7 +148,9 @@ export function generateRenderFn(ast) {
         case NODE_TYPES.TEXT:
           return `_h(_Text, null, ${JSON.stringify(node.value)})`;
         case NODE_TYPES.INTERPOLATION:
-          return `_h(_Text, { 'w-dynamic': true }, String(${this.genExpr(node.expression)}))`;
+          return `_h(_Text, { 'w-dynamic': true }, String(${this.genExpr(
+            node.expression,
+          )}))`;
         case NODE_TYPES.COMMENT:
           return `_h(_Comment, null, ${JSON.stringify(node.value)})`;
         case NODE_TYPES.SLOT: {

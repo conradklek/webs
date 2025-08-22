@@ -48,7 +48,7 @@ export async function handleServerActions(req, context) {
 
   const [, , componentName, actionName] = pathname.split("/");
   const routeDef = Object.values(appRoutes).find(
-    (r) => r.component.name === componentName,
+    (r) => r.componentName === componentName,
   );
   const action = routeDef?.component?.actions?.[actionName];
 
@@ -58,8 +58,31 @@ export async function handleServerActions(req, context) {
 
   try {
     const args = req.method === "POST" ? await req.json() : [];
-    const result = await action({ req, db, fs, user }, ...args);
-    return result instanceof Response ? result : Response.json(result);
+    const actionContext = { req, db, fs, user };
+
+    if (action.constructor.name === "AsyncGeneratorFunction") {
+      const iterator = action(actionContext, ...args);
+
+      const stream = new ReadableStream({
+        async pull(controller) {
+          const { value, done } = await iterator.next();
+          if (done) {
+            controller.close();
+          } else {
+            const chunk =
+              typeof value === "object" ? JSON.stringify(value) : String(value);
+            controller.enqueue(new TextEncoder().encode(chunk));
+          }
+        },
+      });
+
+      return new Response(stream, {
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    } else {
+      const result = await action(actionContext, ...args);
+      return result instanceof Response ? result : Response.json(result);
+    }
   } catch (e) {
     console.error(`Action Error: ${e.message}`);
     return new Response("Internal Server Error", { status: 500 });
@@ -81,6 +104,10 @@ export async function handleDataRequest(req, routeDefinition, params, context) {
     componentName: routeDefinition.componentName,
     title: routeDefinition.component.name || "Webs App",
   };
+
+  if (typeof window !== "undefined") {
+    window.__WEBS_STATE__ = websState;
+  }
 
   return new Response(serializeState(websState), {
     headers: { "Content-Type": "application/json;charset=utf-8" },

@@ -56,6 +56,7 @@ export const onMounted = createLifecycleMethod("onMounted");
 export const onBeforeUpdate = createLifecycleMethod("onBeforeUpdate");
 export const onUpdated = createLifecycleMethod("onUpdated");
 export const onUnmounted = createLifecycleMethod("onUnmounted");
+export const onReady = createLifecycleMethod("onReady");
 
 function mergeProps(vnodeProps, fallthroughAttrs) {
   const merged = { ...vnodeProps };
@@ -335,7 +336,13 @@ export function createRenderer(options) {
     }
     instance.render = component.render;
 
-    instance.update = effect(
+    const scheduler = () => {
+      if (instance.update) {
+        instance.update();
+      }
+    };
+
+    const runner = effect(
       () => {
         if (!instance.isMounted) {
           instance.hooks.onBeforeMount?.forEach((h) => h.call(instance.ctx));
@@ -383,12 +390,12 @@ export function createRenderer(options) {
           instance.hooks.onUpdated?.forEach((h) => h.call(instance.ctx));
         }
       },
-      {
-        scheduler: () => {
-          instance.update();
-        },
-      },
+      { scheduler },
     );
+
+    instance.update = runner;
+
+    instance.hooks.onReady?.forEach((h) => h.call(instance.ctx));
   };
 
   const updateComponent = (n1, n2) => {
@@ -669,6 +676,7 @@ export function createComponent(
       onBeforeUpdate,
       onUpdated,
       onUnmounted,
+      onReady,
     };
     initialStateFromData = state.call(instance.ctx, stateContext) || {};
     setCurrentInstance(null);
@@ -769,6 +777,7 @@ export function createComponent(
       onBeforeUpdate,
       onUpdated,
       onUnmounted,
+      onReady,
     };
     setup.call(instance.ctx, setupContext);
     setCurrentInstance(null);

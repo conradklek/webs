@@ -7,10 +7,9 @@ export function renderHtmlShell({ appHtml, websState, manifest, title }) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${title}</title>
-    ${
-      manifest.css
-        ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
-        : ""
+    ${manifest.css
+      ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
+      : ""
     }
 </head>
 <body>

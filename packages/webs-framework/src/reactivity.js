@@ -1,4 +1,4 @@
-const isObject = (val) => val !== null && typeof val === "object"; // Modified to include arrays
+const isObject = (val) => val !== null && typeof val === "object";
 
 let activeEffect = null;
 const effectStack = [];
@@ -118,7 +118,6 @@ export function reactive(target) {
   if (proxyMap.has(target)) return proxyMap.get(target);
 
   let handlers;
-  // NEW: Check if the target is an array to apply specific handlers
   if (Array.isArray(target)) {
     handlers = arrayHandlers;
   } else if (target instanceof Map) {
@@ -139,7 +138,10 @@ const baseHandlers = {
     if (key === RAW_SYMBOL) return target;
     const value = Reflect.get(target, key, receiver);
     track(target, key);
-    return isObject(value) ? reactive(value) : value;
+
+    const unwrapped = value && value.__is_ref ? value.value : value;
+
+    return isObject(unwrapped) ? reactive(unwrapped) : unwrapped;
   },
   set(target, key, value, receiver) {
     const oldValue = target[key];
@@ -151,29 +153,19 @@ const baseHandlers = {
   },
 };
 
-// NEW: Handlers specifically for arrays to intercept mutation methods
 const arrayHandlers = {
   get(target, key, receiver) {
-    // Intercept array methods that mutate the array
     const mutationMethods = ["push", "pop", "shift", "unshift", "splice"];
     if (mutationMethods.includes(key)) {
-      // Return a wrapped function that triggers a change notification
       return function(...args) {
-        // Call the original array method
         const result = Array.prototype[key].apply(target, args);
-        // Trigger an update. Notifying on 'length' is a common and effective
-        // way to signal that the array's structure has changed.
         trigger(target, "length");
         return result;
       };
     }
-    // For all other properties (e.g., accessing by index, .length, .map),
-    // use the base 'get' handler to ensure they are tracked.
     return baseHandlers.get(target, key, receiver);
   },
   set(target, key, value, receiver) {
-    // The base 'set' handler already correctly handles direct index assignments
-    // (e.g., messages[0] = 'new') and length modifications, so we can reuse it.
     return baseHandlers.set(target, key, value, receiver);
   },
 };
@@ -324,7 +316,9 @@ export function createStore(options) {
     },
     set(target, key, value, receiver) {
       console.warn(
-        `Attempted to directly set store property "${String(key)}". Use an action to modify state.`,
+        `Attempted to directly set store property "${String(
+          key,
+        )}". Use an action to modify state.`,
       );
       return Reflect.set(target, key, value, receiver);
     },
