@@ -1,15 +1,27 @@
 const Modal = {
   name: "Modal",
-  state({ provide, reactive }) {
-    const state = reactive({
+  state() {
+    return {
       isOpen: false,
+    };
+  },
+  setup({ provide }) {
+    provide("modal", {
+      open: this.open,
+      close: this.close,
+      is_open: this.is_open,
     });
-
-    const open = () => (state.isOpen = true);
-    const close = () => (state.isOpen = false);
-    const is_open = () => state.isOpen;
-
-    provide("modal", { open, close, is_open });
+  },
+  methods: {
+    open() {
+      this.isOpen = true;
+    },
+    close() {
+      this.isOpen = false;
+    },
+    is_open() {
+      return this.isOpen;
+    },
   },
   template(html) {
     return html`<slot></slot>`;

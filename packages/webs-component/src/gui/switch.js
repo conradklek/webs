@@ -18,16 +18,16 @@ const Switch = {
       default: false,
     },
   },
-  state({ props, reactive }) {
-    const state = reactive({
+  state({ props }) {
+    return {
       is_on: props.defaultPressed,
-    });
-
-    const toggle = () => {
-      state.is_on = !state.is_on;
     };
-
-    const getTrackClasses = () => {
+  },
+  methods: {
+    toggle() {
+      this.is_on = !this.is_on;
+    },
+    getTrackClasses() {
       const base =
         "group inline-flex flex-shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2";
 
@@ -37,12 +37,11 @@ const Switch = {
         lg: "h-7 w-12",
       };
 
-      const stateColor = state.is_on ? "bg-blue-600" : "bg-gray-200";
+      const stateColor = this.is_on ? "bg-blue-600" : "bg-gray-200";
 
-      return `${base} ${sizes[props.size] || sizes.default} ${stateColor}`;
-    };
-
-    const getThumbClasses = () => {
+      return `${base} ${sizes[this.size] || sizes.default} ${stateColor}`;
+    },
+    getThumbClasses() {
       const base =
         "pointer-events-none inline-block transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out";
 
@@ -53,21 +52,14 @@ const Switch = {
       };
 
       const translation = {
-        sm: state.is_on ? "translate-x-4" : "translate-x-0",
-        default: state.is_on ? "translate-x-5" : "translate-x-0",
-        lg: state.is_on ? "translate-x-5" : "translate-x-0",
+        sm: this.is_on ? "translate-x-4" : "translate-x-0",
+        default: this.is_on ? "translate-x-5" : "translate-x-0",
+        lg: this.is_on ? "translate-x-5" : "translate-x-0",
       };
 
-      return `${base} ${sizes[props.size] || sizes.default} ${translation[props.size] || translation.default
+      return `${base} ${sizes[this.size] || sizes.default} ${translation[this.size] || translation.default
         }`;
-    };
-
-    return {
-      state,
-      toggle,
-      getTrackClasses,
-      getThumbClasses,
-    };
+    },
   },
   template(html) {
     return html`
@@ -76,7 +68,7 @@ const Switch = {
           type="button"
           @click="toggle"
           :class="getTrackClasses()"
-          :aria-pressed="state.is_on"
+          :aria-pressed="is_on"
           role="switch"
         >
           <span :class="getThumbClasses()"></span>

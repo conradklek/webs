@@ -41,23 +41,24 @@ const RadioGroup = {
       type: String,
     },
   },
-  state({ props, provide, reactive }) {
-    const state = reactive({
+  state({ props }) {
+    return {
       selectedValue: props.defaultValue,
-    });
-
-    const select = (value) => {
-      state.selectedValue = value;
     };
-
-    const is_selected = (value) => {
-      return state.selectedValue === value;
-    };
-
+  },
+  setup({ provide }) {
     provide("radioGroup", {
-      select,
-      is_selected,
+      select: this.select,
+      is_selected: this.is_selected,
     });
+  },
+  methods: {
+    select(value) {
+      this.selectedValue = value;
+    },
+    is_selected(value) {
+      return this.selectedValue === value;
+    },
   },
   template(html) {
     return html`

@@ -6,23 +6,24 @@ const Tabs = {
       required: true,
     },
   },
-  state({ props, provide, reactive }) {
-    const state = reactive({
+  state({ props }) {
+    return {
       activeTab: props.defaultValue,
-    });
-
-    const activateTab = (value) => {
-      state.activeTab = value;
     };
-
-    const is_active = (value) => {
-      return state.activeTab === value;
-    };
-
+  },
+  setup({ provide }) {
     provide("tabs", {
-      activateTab,
-      is_active,
+      activateTab: this.activateTab,
+      is_active: this.is_active,
     });
+  },
+  methods: {
+    activateTab(value) {
+      this.activeTab = value;
+    },
+    is_active(value) {
+      return this.activeTab === value;
+    },
   },
   template: `
     <div class="w-full flex flex-col">

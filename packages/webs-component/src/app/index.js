@@ -86,6 +86,16 @@ export default {
             >
           </li>
         </ul>
+        <h2>Examples</h2>
+        <ul class="list-disc pl-8 space-y-0.5">
+          <li>
+            <a
+              href="/chat"
+              class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
+              >Chatbot</a
+            >
+          </li>
+        </ul>
       </div>
     </div>`;
   },

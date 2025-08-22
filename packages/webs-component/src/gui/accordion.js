@@ -10,38 +10,41 @@ const Accordion = {
       default: true,
     },
   },
-  state({ props, provide, reactive }) {
-    const state = reactive({
+  state() {
+    return {
       openItems: new Set(),
+    };
+  },
+  setup({ provide }) {
+    provide("accordion", {
+      toggle: this.toggle,
+      is_open: this.is_open,
     });
-
-    const toggle = (value) => {
-      if (props.type === "single") {
-        if (state.openItems.has(value)) {
-          if (props.collapsible) {
-            state.openItems.delete(value);
+  },
+  methods: {
+    toggle(value) {
+      const newOpenItems = new Set(this.openItems);
+      if (this.type === "single") {
+        if (newOpenItems.has(value)) {
+          if (this.collapsible) {
+            newOpenItems.delete(value);
           }
         } else {
-          state.openItems.clear();
-          state.openItems.add(value);
+          newOpenItems.clear();
+          newOpenItems.add(value);
         }
-      } else if (props.type === "multiple") {
-        if (state.openItems.has(value)) {
-          state.openItems.delete(value);
+      } else if (this.type === "multiple") {
+        if (newOpenItems.has(value)) {
+          newOpenItems.delete(value);
         } else {
-          state.openItems.add(value);
+          newOpenItems.add(value);
         }
       }
-    };
-
-    const is_open = (value) => {
-      return state.openItems.has(value);
-    };
-
-    provide("accordion", {
-      toggle,
-      is_open,
-    });
+      this.openItems = newOpenItems;
+    },
+    is_open(value) {
+      return this.openItems.has(value);
+    },
   },
   template(html) {
     return html`
@@ -60,7 +63,7 @@ const AccordionItem = {
       required: true,
     },
   },
-  state({ props, provide }) {
+  setup({ props, provide }) {
     provide("itemValue", props.value);
   },
   template(html) {
@@ -75,9 +78,10 @@ const AccordionItem = {
 const AccordionTrigger = {
   name: "AccordionTrigger",
   state({ inject }) {
-    const accordion = inject("accordion");
-    const value = inject("itemValue");
-    return { accordion, value };
+    return {
+      accordion: inject("accordion"),
+      value: inject("itemValue"),
+    };
   },
   template(html) {
     return html`
@@ -101,9 +105,10 @@ const AccordionTrigger = {
 const AccordionContent = {
   name: "AccordionContent",
   state({ inject }) {
-    const accordion = inject("accordion");
-    const value = inject("itemValue");
-    return { accordion, value };
+    return {
+      accordion: inject("accordion"),
+      value: inject("itemValue"),
+    };
   },
   template(html) {
     return html`

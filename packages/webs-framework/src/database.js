@@ -1,25 +1,25 @@
 import { resolve } from "path";
 
 export async function createDatabase(Database, cwd) {
-  const dbConfigPath = resolve(cwd, "src/sql.js");
+  const dbConfigPath = resolve(cwd, "src/sql/db.js");
   let dbConfig;
   try {
     const configFile = Bun.file(dbConfigPath);
     if (!(await configFile.exists())) {
       console.log(
-        "No src/sql.js file found. Skipping database initialization.",
+        "No src/sql/config.js file found. Skipping database initialization.",
       );
       return null;
     }
     const dbSchemaModule = await import(`${dbConfigPath}?t=${Date.now()}`);
     dbConfig = dbSchemaModule.default;
   } catch (e) {
-    console.error(`Could not load or parse src/sql.js:`, e);
+    console.error(`Could not load or parse src/sql/db.js:`, e);
     process.exit(1);
   }
 
   if (!dbConfig.name) {
-    console.error("Database file name not specified in src/sql.js.");
+    console.error("Database file name not specified in src/sql/db.js.");
     process.exit(1);
   }
 

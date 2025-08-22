@@ -1,5 +1,4 @@
-const isObject = (val) =>
-  val !== null && typeof val === "object" && !Array.isArray(val);
+const isObject = (val) => val !== null && typeof val === "object"; // Modified to include arrays
 
 let activeEffect = null;
 const effectStack = [];
@@ -119,7 +118,10 @@ export function reactive(target) {
   if (proxyMap.has(target)) return proxyMap.get(target);
 
   let handlers;
-  if (target instanceof Map) {
+  // NEW: Check if the target is an array to apply specific handlers
+  if (Array.isArray(target)) {
+    handlers = arrayHandlers;
+  } else if (target instanceof Map) {
     handlers = collectionHandlers.map;
   } else if (target instanceof Set) {
     handlers = collectionHandlers.set;
@@ -146,6 +148,33 @@ const baseHandlers = {
       trigger(target, key);
     }
     return result;
+  },
+};
+
+// NEW: Handlers specifically for arrays to intercept mutation methods
+const arrayHandlers = {
+  get(target, key, receiver) {
+    // Intercept array methods that mutate the array
+    const mutationMethods = ["push", "pop", "shift", "unshift", "splice"];
+    if (mutationMethods.includes(key)) {
+      // Return a wrapped function that triggers a change notification
+      return function(...args) {
+        // Call the original array method
+        const result = Array.prototype[key].apply(target, args);
+        // Trigger an update. Notifying on 'length' is a common and effective
+        // way to signal that the array's structure has changed.
+        trigger(target, "length");
+        return result;
+      };
+    }
+    // For all other properties (e.g., accessing by index, .length, .map),
+    // use the base 'get' handler to ensure they are tracked.
+    return baseHandlers.get(target, key, receiver);
+  },
+  set(target, key, value, receiver) {
+    // The base 'set' handler already correctly handles direct index assignments
+    // (e.g., messages[0] = 'new') and length modifications, so we can reuse it.
+    return baseHandlers.set(target, key, value, receiver);
   },
 };
 

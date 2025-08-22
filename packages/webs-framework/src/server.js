@@ -6,32 +6,7 @@ import {
   handlePageRequest,
 } from "./handlers.js";
 
-function findRouteMatch(appRoutes, pathname) {
-  for (const routePath in appRoutes) {
-    const routeDefinition = appRoutes[routePath];
-    const paramNames = [];
-    const regexPath =
-      "^" +
-      routePath.replace(/:(\w+)/g, (_, paramName) => {
-        paramNames.push(paramName);
-        return "([^\\/]+)";
-      }) +
-      "\\/?$";
-
-    const match = pathname.match(new RegExp(regexPath));
-
-    if (match) {
-      const params = {};
-      paramNames.forEach((name, index) => {
-        params[name] = match[index + 1];
-      });
-      return { routeDefinition, params };
-    }
-  }
-  return null;
-}
-
-export function createRequestHandler(context) {
+export function createRequestHandler(context, findRouteMatch) {
   return async function handleRequest(req) {
     const { db, appRoutes, outdir, isProd } = context;
     const url = new URL(req.url);

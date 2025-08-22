@@ -1,26 +1,11 @@
 const Menubar = {
   name: "Menubar",
-  state({ provide, reactive, onMounted, onUnmounted }) {
-    const state = reactive({
+  state() {
+    return {
       activeMenu: null,
-    });
-
-    const openMenu = (value) => {
-      state.activeMenu = value;
     };
-
-    const closeMenu = () => {
-      state.activeMenu = null;
-    };
-
-    const toggleMenu = (value) => {
-      state.activeMenu = state.activeMenu === value ? null : value;
-    };
-
-    const is_open = (value) => {
-      return state.activeMenu === value;
-    };
-
+  },
+  setup({ provide, onMounted, onUnmounted }) {
     onMounted(() => {
       console.log("Menubar Mounted!");
     });
@@ -30,11 +15,25 @@ const Menubar = {
     });
 
     provide("menubar", {
-      openMenu,
-      closeMenu,
-      toggleMenu,
-      is_open,
+      openMenu: this.openMenu,
+      closeMenu: this.closeMenu,
+      toggleMenu: this.toggleMenu,
+      is_open: this.is_open,
     });
+  },
+  methods: {
+    openMenu(value) {
+      this.activeMenu = value;
+    },
+    closeMenu() {
+      this.activeMenu = null;
+    },
+    toggleMenu(value) {
+      this.activeMenu = this.activeMenu === value ? null : value;
+    },
+    is_open(value) {
+      return this.activeMenu === value;
+    },
   },
   template(html) {
     return html`
@@ -55,7 +54,7 @@ const MenubarMenu = {
       required: true,
     },
   },
-  state({ props, provide }) {
+  setup({ props, provide }) {
     provide("menuValue", props.value);
   },
   template(html) {
@@ -70,9 +69,10 @@ const MenubarMenu = {
 const MenubarTrigger = {
   name: "MenubarTrigger",
   state({ inject }) {
-    const menubar = inject("menubar");
-    const menuValue = inject("menuValue");
-    return { menubar, menuValue };
+    return {
+      menubar: inject("menubar"),
+      menuValue: inject("menuValue"),
+    };
   },
   template(html) {
     return html`
@@ -91,9 +91,10 @@ const MenubarTrigger = {
 const MenubarContent = {
   name: "MenubarContent",
   state({ inject }) {
-    const menubar = inject("menubar");
-    const menuValue = inject("menuValue");
-    return { menubar, menuValue };
+    return {
+      menubar: inject("menubar"),
+      menuValue: inject("menuValue"),
+    };
   },
   template(html) {
     return html`
@@ -110,8 +111,7 @@ const MenubarContent = {
 const MenubarItem = {
   name: "MenubarItem",
   state({ inject }) {
-    const menubar = inject("menubar");
-    return { menubar };
+    return { menubar: inject("menubar") };
   },
   template(html) {
     return html`
@@ -161,30 +161,36 @@ const MenubarGroup = {
 
 const MenubarSub = {
   name: "MenubarSub",
-  state({ provide, reactive }) {
-    const state = reactive({ isOpen: false });
-
-    let closeTimer = null;
-    const open = () => {
-      clearTimeout(closeTimer);
-      state.isOpen = true;
+  state() {
+    return {
+      isOpen: false,
     };
-    const close = () => {
-      closeTimer = setTimeout(() => {
-        state.isOpen = false;
+  },
+  setup({ provide }) {
+    this.closeTimer = null;
+    provide("submenu", {
+      open: this.open,
+      close: this.close,
+      is_open: this.is_open,
+    });
+  },
+  methods: {
+    open() {
+      clearTimeout(this.closeTimer);
+      this.isOpen = true;
+    },
+    close() {
+      this.closeTimer = setTimeout(() => {
+        this.isOpen = false;
       }, 100);
-    };
-    const is_open = () => state.isOpen;
-
-    provide("submenu", { open, close, is_open });
+    },
+    is_open() {
+      return this.isOpen;
+    },
   },
   template(html) {
     return html`
-      <div
-        class="relative"
-        @mouseenter="submenu.open()"
-        @mouseleave="submenu.close()"
-      >
+      <div class="relative" @mouseenter="open" @mouseleave="close">
         <slot></slot>
       </div>
     `;
@@ -194,8 +200,7 @@ const MenubarSub = {
 const MenubarSubTrigger = {
   name: "MenubarSubTrigger",
   state({ inject }) {
-    const submenu = inject("submenu");
-    return { submenu };
+    return { submenu: inject("submenu") };
   },
   template(html) {
     return html`
@@ -212,8 +217,7 @@ const MenubarSubTrigger = {
 const MenubarSubContent = {
   name: "MenubarSubContent",
   state({ inject }) {
-    const submenu = inject("submenu");
-    return { submenu };
+    return { submenu: inject("submenu") };
   },
   template(html) {
     return html`

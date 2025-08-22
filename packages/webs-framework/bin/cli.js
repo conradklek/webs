@@ -7,6 +7,32 @@ import * as framework from "../src/client.js";
 import { performBuild } from "../scripts/build.js";
 import { config } from "../src/config.js";
 import { join, relative } from "path";
+import { getUserFromSession } from "../src/auth.js";
+
+function findRouteMatch(appRoutes, pathname) {
+  for (const routePath in appRoutes) {
+    const routeDefinition = appRoutes[routePath];
+    const paramNames = [];
+    const regexPath =
+      "^" +
+      routePath.replace(/:(\w+)/g, (_, paramName) => {
+        paramNames.push(paramName);
+        return "([^\\/]+)";
+      }) +
+      "\\/?$";
+
+    const match = pathname.match(new RegExp(regexPath));
+
+    if (match) {
+      const params = {};
+      paramNames.forEach((name, index) => {
+        params[name] = match[index + 1];
+      });
+      return { routeDefinition, params, path: routePath };
+    }
+  }
+  return null;
+}
 
 async function generateRoutesFromFileSystem() {
   console.log("--- Scanning for routes in src/app ---");
@@ -50,6 +76,7 @@ async function generateRoutesFromFileSystem() {
         component: module.default,
         componentName: relative(appDir, fullPath).replace(/\.js$/, ""),
         middleware: module.middleware || [],
+        websocket: module.default.websocket || null,
       },
     });
   }
@@ -94,7 +121,7 @@ async function main() {
     serverContext.manifest = manifest;
     console.log("Manifest updated:", JSON.stringify(manifest, null, 2));
 
-    requestHandler = createRequestHandler(serverContext);
+    requestHandler = createRequestHandler(serverContext, findRouteMatch);
     console.log("Request handler updated.");
   }
 
@@ -103,8 +130,72 @@ async function main() {
   Bun.serve({
     port: config.PORT,
     development: !config.IS_PROD,
-    fetch: (req) => {
+    fetch: (req, server) => {
+      if (req.headers.get("upgrade") === "websocket") {
+        const url = new URL(req.url);
+        const routeMatch = findRouteMatch(
+          serverContext.appRoutes,
+          url.pathname,
+        );
+
+        if (routeMatch && routeMatch.routeDefinition.websocket) {
+          console.log(
+            `[WS] Attempting to upgrade connection for: ${url.pathname}`,
+          );
+          const sessionId = req.headers
+            .get("cookie")
+            ?.match(/session_id=([^;]+)/)?.[1];
+          const user = getUserFromSession(serverContext.db, sessionId);
+
+          const success = server.upgrade(req, {
+            data: {
+              routePath: routeMatch.path,
+              user,
+            },
+          });
+
+          if (success) {
+            console.log("[WS] Upgrade successful!");
+            return;
+          } else {
+            console.error("[WS] Upgrade failed!");
+            return new Response("WebSocket upgrade failed", { status: 400 });
+          }
+        }
+      }
+
       return requestHandler(req);
+    },
+    websocket: {
+      open(ws) {
+        const { routePath, user } = ws.data;
+        console.log(`[WS] Connection opened for route: ${routePath}`);
+        const routeDef = serverContext.appRoutes[routePath];
+        if (routeDef?.websocket?.open) {
+          const context = { db: serverContext.db, user };
+          routeDef.websocket.open(ws, context);
+        }
+      },
+      message(ws, message) {
+        const { routePath } = ws.data;
+        console.log(`[WS] Message received on route ${routePath}:`, message);
+        const routeDef = serverContext.appRoutes[routePath];
+        if (routeDef?.websocket?.message) {
+          const context = { db: serverContext.db, user: ws.data.user };
+          routeDef.websocket.message(ws, message, context);
+        }
+      },
+      close(ws, code, reason) {
+        const { routePath } = ws.data;
+        console.log(
+          `[WS] Connection closed for route ${routePath}. Code: ${code}, Reason: ${reason}`,
+        );
+        const routeDef = serverContext.appRoutes[routePath];
+        if (routeDef?.websocket?.close) {
+          const context = { db: serverContext.db, user: ws.data.user };
+          routeDef.websocket.close(ws, code, reason, context);
+        }
+      },
     },
     error: (error) => {
       console.error(error);

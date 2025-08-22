@@ -338,7 +338,7 @@ export function createRenderer(options) {
     instance.update = effect(
       () => {
         if (!instance.isMounted) {
-          instance.hooks.onBeforeMount?.forEach((h) => h());
+          instance.hooks.onBeforeMount?.forEach((h) => h.call(instance.ctx));
           const subTree = (instance.subTree = instance.render.call(
             instance.ctx,
             instance.ctx,
@@ -359,9 +359,9 @@ export function createRenderer(options) {
           vnode.el = subTree.el;
 
           instance.isMounted = true;
-          instance.hooks.onMounted?.forEach((h) => h());
+          instance.hooks.onMounted?.forEach((h) => h.call(instance.ctx));
         } else {
-          instance.hooks.onBeforeUpdate?.forEach((h) => h());
+          instance.hooks.onBeforeUpdate?.forEach((h) => h.call(instance.ctx));
           const prevTree = instance.subTree;
           const nextTree = (instance.subTree = instance.render.call(
             instance.ctx,
@@ -380,7 +380,7 @@ export function createRenderer(options) {
           patch(prevTree, nextTree, parentContainer, anchor, instance);
           vnode.el = nextTree.el;
 
-          instance.hooks.onUpdated?.forEach((h) => h());
+          instance.hooks.onUpdated?.forEach((h) => h.call(instance.ctx));
         }
       },
       {
@@ -456,7 +456,9 @@ export function createRenderer(options) {
       if (vnode.component.update && vnode.component.update.effect) {
         vnode.component.update.effect.stop();
       }
-      vnode.component.hooks.onUnmounted?.forEach((h) => h());
+      vnode.component.hooks.onUnmounted?.forEach((h) =>
+        h.call(vnode.component.ctx),
+      );
       unmount(vnode.component.subTree);
       return;
     }
@@ -628,6 +630,7 @@ export function createComponent(
     methods,
     computed: computedOptions,
     actions,
+    setup,
   } = instance.type;
   const vnodeProps = vnode.props || {};
   const resolvedProps = {};
@@ -657,11 +660,10 @@ export function createComponent(
     const stateContext = {
       props: resolvedProps,
       attrs: instance.attrs,
-      params: instance.appContext.params || {},
       provide,
       inject,
-      computed,
       reactive,
+      computed,
       onBeforeMount,
       onMounted,
       onBeforeUpdate,
@@ -753,6 +755,23 @@ export function createComponent(
     for (const key in methods) {
       instance.methods[key] = methods[key].bind(instance.ctx);
     }
+  }
+
+  if (setup) {
+    setCurrentInstance(instance);
+    const setupContext = {
+      props: resolvedProps,
+      attrs: instance.attrs,
+      provide,
+      inject,
+      onBeforeMount,
+      onMounted,
+      onBeforeUpdate,
+      onUpdated,
+      onUnmounted,
+    };
+    setup.call(instance.ctx, setupContext);
+    setCurrentInstance(null);
   }
 
   if (!isSsr && actions) {

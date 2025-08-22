@@ -1,6 +1,6 @@
 # webs.js
 
-A JavaScript framework.
+A JavaScript framework for the modern web.
 
 ---
 
@@ -61,7 +61,8 @@ Components are the heart of a Webs application. They are plain JavaScript object
 A component is defined by a few key properties:
 
 - `name`: A unique string identifier for the component.
-- `state(context)`: A function that receives a context object (containing `props`, lifecycle hooks like `onMounted`, etc.) and returns an object of reactive data.
+- `state()`: A function that returns a plain object of initial, reactive data.
+- `setup(context)`: A function that runs after the state is initialized. It receives a context object (containing `props`, lifecycle hooks like `onMounted`, etc.) and is the ideal place for logic that needs to run once.
 - `methods`: An object containing functions that can be called from the template.
 - `template`: An HTML string that defines the component's structure.
 
@@ -69,14 +70,15 @@ A component is defined by a few key properties:
 // src/app/counter.js
 export default {
   name: "Counter",
-  state({ onMounted }) {
-    onMounted(() => {
-      console.log("Counter component has been mounted!");
-    });
-
+  state() {
     return {
       count: 0,
     };
+  },
+  setup({ onMounted }) {
+    onMounted(() => {
+      console.log("Counter component has been mounted!");
+    });
   },
   methods: {
     increment() {
@@ -84,11 +86,11 @@ export default {
     },
   },
   template: `
-  <div>
-    <p>Count: {{ count }}</p>
-    <button type="button" @click="increment">Increment</button>
-  </div>
-`,
+    <div>
+      <p>Count: {{ count }}</p>
+      <button type="button" @click="increment">Increment</button>
+    </div>
+  `,
 };
 ```
 
@@ -124,11 +126,11 @@ export default {
     Greeting,
   },
   template: `
-  <div>
-    <Greeting name="Alice" />
-    <Greeting />
-  </div>
-`,
+    <div>
+      <Greeting name="Alice" />
+      <Greeting />
+    </div>
+  `,
 };
 ```
 
@@ -141,9 +143,10 @@ To pass content _into_ a component, use the `<slot>` tag. Any child elements you
 export default {
   name: "Wrapper",
   template: `
-  <div class="wrapper">
-    <slot></slot>
-  </div>`;
+    <div class="wrapper">
+      <slot></slot>
+    </div>
+  `
 }
 
 // src/app/index.js
@@ -153,9 +156,10 @@ export default {
   name: "HomePage",
   components: { Wrapper },
   template: `
-  <Wrapper>
-    <p>This content will be placed inside the wrapper.</p>
-  </Wrapper>`;
+    <Wrapper>
+      <p>This content will be placed inside the wrapper.</p>
+    </Wrapper>
+  `
 }
 ```
 
@@ -240,10 +244,10 @@ Any attribute you pass to a component that is _not_ a declared prop will automat
 <CustomInput class="mt-4" data-testid="name-input" />
 
 <!-- And CustomInput's template is: -->
-<!-- <input class="input" :value="value" /> -->
+<!-- <input type="text" class="input" /> -->
 
 <!-- The final rendered output will be: -->
-<input class="input mt-4" data-testid="name-input" value="..." />
+<input type="text" class="input mt-4" data-testid="name-input" />
 ```
 
 **Declarative Class Binding**
@@ -272,8 +276,10 @@ export default {
   @theme {
     --color-brand: oklch(0.84 0.18 117.33);
   }
-  .btn-brand {
-    @apply bg-brand text-white font-bold py-2 px-4 rounded;
+  @layer components {
+    .btn-brand {
+      @apply bg-brand text-white font-bold py-2 px-4 rounded;
+    }
   }
 `,
   template: `<button type="button" class="btn-brand">Click Me</button>`,
