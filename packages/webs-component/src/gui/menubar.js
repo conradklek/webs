@@ -164,10 +164,10 @@ const MenubarSub = {
   state() {
     return {
       isOpen: false,
+      closeTimer: null,
     };
   },
   setup({ provide }) {
-    this.closeTimer = null;
     provide("submenu", {
       open: this.open,
       close: this.close,
