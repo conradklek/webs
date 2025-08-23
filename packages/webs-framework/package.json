@@ -1,7 +1,7 @@
 {
   "name": "@conradklek/webs",
   "author": "Conrad Klek",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "A JavaScript Framework",
   "bin": {
     "webs": "bin/cli.js"
@@ -12,9 +12,7 @@
   "files": [
     "bin",
     "dist",
-    "src",
-    "*.js",
-    ".prettierrc.json"
+    "src"
   ],
   "exports": {
     ".": {
@@ -31,7 +29,7 @@
   "scripts": {
     "dev": "NODE_ENV=development bun run ./bin/cli.js",
     "start": "NODE_ENV=production bun run ./bin/cli.js",
-    "build:js": "bun build ./src/client.js ./src/server.js ./scripts/build.js ./src/config.js ./src/document.js ./src/handlers.js --outdir=./dist --format=esm --target=bun --minify --sourcemap=inline",
+    "build:js": "bun build ./src/client.js ./src/server.js --outdir=./dist --format=esm --target=bun --minify --sourcemap=inline",
     "build:types": "tsc",
     "build": "rm -rf dist && bun run build:js && bun run build:types",
     "format": "prettier --write ."
@@ -43,7 +41,6 @@
     "tailwindcss": "^4.0.0"
   },
   "devDependencies": {
-    "prettier": "^3.3.2",
     "typescript": "^5.4.5"
   }
 }

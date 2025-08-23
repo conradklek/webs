@@ -4,7 +4,7 @@ import {
   handleServerActions,
   handleDataRequest,
   handlePageRequest,
-} from "./handlers.js";
+} from './handlers.js';
 
 export function createRequestHandler(context, findRouteMatch) {
   return async function handleRequest(req) {
@@ -12,8 +12,8 @@ export function createRequestHandler(context, findRouteMatch) {
     const url = new URL(req.url);
     const { pathname } = url;
 
-    if (pathname.startsWith("/api/auth/")) return handleAuthApi(req, db);
-    if (pathname.startsWith("/__actions__/"))
+    if (pathname.startsWith('/api/auth/')) return handleAuthApi(req, db);
+    if (pathname.startsWith('/__actions__/'))
       return handleServerActions(req, context);
 
     const assetResponse = await handleStaticAssets(
@@ -30,12 +30,12 @@ export function createRequestHandler(context, findRouteMatch) {
       const queryParams = Object.fromEntries(url.searchParams.entries());
       const allParams = { ...routeParams, ...queryParams };
 
-      if (req.headers.get("X-Webs-Navigate")) {
+      if (req.headers.get('X-Webs-Navigate')) {
         return handleDataRequest(req, routeDefinition, allParams, context);
       }
       return handlePageRequest(req, routeDefinition, allParams, context);
     }
 
-    return new Response("Not Found", { status: 404 });
+    return new Response('Not Found', { status: 404 });
   };
 }

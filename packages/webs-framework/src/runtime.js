@@ -1,22 +1,22 @@
-import { createRenderer, createVnode } from "./renderer";
-import { compile } from "./compiler";
-import { useAction } from "./client";
+import { createRenderer, createVnode } from './renderer';
+import { compile } from './compiler';
+import { syncEngine } from './sync';
 
 function normalizeClass(value) {
-  let res = "";
-  if (typeof value === "string") {
+  let res = '';
+  if (typeof value === 'string') {
     res = value;
   } else if (Array.isArray(value)) {
     for (let i = 0; i < value.length; i++) {
       const normalized = normalizeClass(value[i]);
       if (normalized) {
-        res += normalized + " ";
+        res += normalized + ' ';
       }
     }
-  } else if (typeof value === "object" && value !== null) {
+  } else if (typeof value === 'object' && value !== null) {
     for (const key in value) {
       if (value[key]) {
-        res += key + " ";
+        res += key + ' ';
       }
     }
   }
@@ -40,7 +40,7 @@ export function createAppApi(rendererOptions) {
         params: rootProps.params || {},
       },
       mount(rootContainer, components) {
-        console.log("[App] Mounting app to container.");
+        console.log('[App] Mounting app to container.');
         const vnode = createVnode(rootComponent, rootProps);
         vnode.appContext = app._context;
 
@@ -53,7 +53,7 @@ export function createAppApi(rendererOptions) {
           installNavigationHandler(app, components);
         } else {
           console.error(
-            "Hydration did not return a root instance. Navigation handler not installed.",
+            'Hydration did not return a root instance. Navigation handler not installed.',
           );
         }
         return rootInstance;
@@ -82,9 +82,9 @@ export const createApp = createAppApi({
       const eventName = key.slice(2).toLowerCase();
       if (prevVal) el.removeEventListener(eventName, prevVal);
       if (nextVal) el.addEventListener(eventName, nextVal);
-    } else if (key === "class") {
-      el.className = normalizeClass(nextVal) || "";
-    } else if (key === "transition-name") {
+    } else if (key === 'class') {
+      el.className = normalizeClass(nextVal) || '';
+    } else if (key === 'transition-name') {
       el.style.viewTransitionName = nextVal;
     } else {
       if (nextVal == null) {
@@ -98,9 +98,29 @@ export const createApp = createAppApi({
 });
 
 export async function hydrate(components) {
-  if (typeof window === "undefined") return;
+  if (typeof window === 'undefined') return;
 
-  if (process.env.NODE_ENV !== "production") {
+  syncEngine.start();
+
+  const websState = deserializeState(window.__WEBS_STATE__ || {});
+
+  if ('serviceWorker' in navigator && websState.swPath) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register(websState.swPath)
+        .then((registration) => {
+          console.log(
+            'Service Worker registered with scope:',
+            registration.scope,
+          );
+        })
+        .catch((error) => {
+          console.error('Service Worker registration failed:', error);
+        });
+    });
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
     if (!window.__WEBS_DEVELOPER__) {
       const listeners = [];
       window.__WEBS_DEVELOPER__ = {
@@ -116,22 +136,21 @@ export async function hydrate(components) {
           listeners.forEach((fn) => fn());
         },
       };
-      console.log("[Dev] Tools available within the browser extension");
+      console.log('[Dev] Tools available within the browser extension');
     }
   }
 
-  const root = document.getElementById("root");
+  const root = document.getElementById('root');
   if (!root) {
-    return console.error("Hydration failed: #root element not found.");
+    return console.error('Hydration failed: #root element not found.');
   }
 
-  const websState = deserializeState(window.__WEBS_STATE__ || {});
   window.__WEBS_STATE__ = { componentName: websState.componentName };
 
   const { componentName, user, params, componentState } = websState;
 
   if (!componentName) {
-    console.error("Hydration failed: No component name provided in state.");
+    console.error('Hydration failed: No component name provided in state.');
     return;
   }
 
@@ -149,7 +168,7 @@ export async function hydrate(components) {
 
     if (
       !rootComponent ||
-      typeof rootComponent !== "object" ||
+      typeof rootComponent !== 'object' ||
       !rootComponent.name ||
       !rootComponent.template
     ) {
@@ -174,28 +193,33 @@ export async function hydrate(components) {
 
 function installNavigationHandler(app, components) {
   const prefetchCache = new Map();
-
   const prefetch = async (url) => {
     if (prefetchCache.has(url.href)) {
       return;
     }
     try {
       const response = await fetch(url.pathname + url.search, {
-        headers: { "X-Webs-Navigate": "true" },
+        headers: { 'X-Webs-Navigate': 'true' },
       });
+      if (response.status === 503) {
+        console.log('Prefetch failed: offline.');
+        return;
+      }
       if (response.ok) {
         const data = deserializeState(await response.json());
         prefetchCache.set(url.href, data);
       }
-    } catch { }
+    } catch (e) {
+      console.error('Prefetch error:', e);
+    }
   };
 
-  window.addEventListener("mouseover", (e) => {
-    const link = e.target.closest("a");
+  window.addEventListener('mouseover', (e) => {
+    const link = e.target.closest('a');
     if (
       !link ||
       link.target ||
-      link.hasAttribute("download") ||
+      link.hasAttribute('download') ||
       e.metaKey ||
       e.ctrlKey ||
       e.shiftKey ||
@@ -204,8 +228,8 @@ function installNavigationHandler(app, components) {
       return;
     }
 
-    const href = link.getAttribute("href");
-    if (!href || href.startsWith("#")) return;
+    const href = link.getAttribute('href');
+    if (!href || href.startsWith('#')) return;
 
     const url = new URL(href, window.location.origin);
     if (url.origin !== window.location.origin) {
@@ -215,12 +239,12 @@ function installNavigationHandler(app, components) {
     prefetch(url);
   });
 
-  window.addEventListener("click", async (e) => {
-    const link = e.target.closest("a");
+  window.addEventListener('click', async (e) => {
+    const link = e.target.closest('a');
     if (
       !link ||
       link.target ||
-      link.hasAttribute("download") ||
+      link.hasAttribute('download') ||
       e.metaKey ||
       e.ctrlKey ||
       e.shiftKey ||
@@ -229,8 +253,8 @@ function installNavigationHandler(app, components) {
       return;
     }
 
-    const href = link.getAttribute("href");
-    if (!href || href.startsWith("#")) return;
+    const href = link.getAttribute('href');
+    if (!href || href.startsWith('#')) return;
 
     const url = new URL(href, window.location.origin);
     if (url.origin !== window.location.origin) {
@@ -253,8 +277,14 @@ function installNavigationHandler(app, components) {
         prefetchCache.delete(url.href);
       } else {
         const response = await fetch(url.pathname + url.search, {
-          headers: { "X-Webs-Navigate": "true" },
+          headers: { 'X-Webs-Navigate': 'true' },
         });
+
+        if (response.status === 503) {
+          console.log('Cannot navigate while offline.');
+          return;
+        }
+
         if (!response.ok) {
           window.location.assign(url.href);
           return;
@@ -275,7 +305,7 @@ function installNavigationHandler(app, components) {
 
       compileTemplates(newComponentDef);
 
-      window.history.pushState({}, "", url.href);
+      window.history.pushState({}, '', url.href);
       document.title = data.title;
 
       const oldVnode = app._vnode;
@@ -292,7 +322,58 @@ function installNavigationHandler(app, components) {
 
       app._vnode = newVnode;
     } catch (err) {
-      console.error("Client-side navigation failed:", err);
+      console.error('Client-side navigation failed:', err);
+      window.location.assign(url.href);
+    }
+  });
+
+  window.addEventListener('popstate', async () => {
+    const url = new URL(window.location.href);
+    try {
+      const response = await fetch(url.pathname + url.search, {
+        headers: { 'X-Webs-Navigate': 'true' },
+      });
+
+      if (response.status === 503) {
+        console.log('Cannot navigate back/forward while offline.');
+        return;
+      }
+
+      if (!response.ok) {
+        window.location.assign(url.href);
+        return;
+      }
+
+      const data = deserializeState(await response.json());
+
+      window.__WEBS_STATE__ = { componentName: data.componentName };
+
+      const componentLoader = components.get(data.componentName);
+      if (!componentLoader) {
+        throw new Error(
+          `Component loader not found for: ${data.componentName}`,
+        );
+      }
+      const componentModule = await componentLoader();
+      const newComponentDef = componentModule.default;
+
+      compileTemplates(newComponentDef);
+      document.title = data.title;
+
+      const oldVnode = app._vnode;
+      const newProps = {
+        user: data.user,
+        params: data.params,
+        initialState: data.componentState,
+      };
+      const newVnode = createVnode(newComponentDef, newProps);
+      newVnode.appContext = app._context;
+
+      app._context.patch(oldVnode, newVnode, app._container);
+
+      app._vnode = newVnode;
+    } catch (err) {
+      console.error('Popstate navigation failed:', err);
       window.location.assign(url.href);
     }
   });
@@ -316,11 +397,11 @@ function compileTemplates(componentDef) {
 
 function deserializeState(input) {
   const reviveSpecial = (node) => {
-    if (node && typeof node === "object" && "__type" in node) {
-      if (node.__type === "Set" && Array.isArray(node.values)) {
+    if (node && typeof node === 'object' && '__type' in node) {
+      if (node.__type === 'Set' && Array.isArray(node.values)) {
         return new Set(node.values.map(reviveSpecial));
       }
-      if (node.__type === "Map" && Array.isArray(node.entries)) {
+      if (node.__type === 'Map' && Array.isArray(node.entries)) {
         return new Map(
           node.entries.map(([k, v]) => [reviveSpecial(k), reviveSpecial(v)]),
         );
@@ -332,7 +413,7 @@ function deserializeState(input) {
     const revived = reviveSpecial(val);
     if (revived !== val) return revived;
     if (Array.isArray(val)) return val.map(walk);
-    if (val && typeof val === "object") {
+    if (val && typeof val === 'object') {
       const out = {};
       for (const k in val) out[k] = walk(val[k]);
       return out;
@@ -340,12 +421,10 @@ function deserializeState(input) {
     return val;
   };
   try {
-    if (input && typeof input === "object") return walk(input);
-    if (typeof input === "string") return walk(JSON.parse(input));
+    if (input && typeof input === 'object') return walk(input);
+    if (typeof input === 'string') return walk(JSON.parse(input));
   } catch (e) {
-    console.error("Failed to deserialize state:", e);
+    console.error('Failed to deserialize state:', e);
   }
   return input;
 }
-
-export { useAction };

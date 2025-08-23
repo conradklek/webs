@@ -1,28 +1,28 @@
-import { createComponent, Fragment, Text, Comment, Teleport } from "./renderer";
-import { compile } from "./compiler.js";
+import { createComponent, Fragment, Text, Comment, Teleport } from './renderer';
+import { compile } from './compiler.js';
 
 const isObject = (val) =>
-  val !== null && typeof val === "object" && !Array.isArray(val);
+  val !== null && typeof val === 'object' && !Array.isArray(val);
 
-const isString = (val) => typeof val === "string";
+const isString = (val) => typeof val === 'string';
 
-const isFunction = (val) => typeof val === "function";
+const isFunction = (val) => typeof val === 'function';
 
 const voidElements = new Set([
-  "area",
-  "base",
-  "br",
-  "col",
-  "embed",
-  "hr",
-  "img",
-  "input",
-  "link",
-  "meta",
-  "param",
-  "source",
-  "track",
-  "wbr",
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
 ]);
 
 export async function renderToString(vnode) {
@@ -41,8 +41,8 @@ export async function renderToString(vnode) {
 }
 
 async function renderVnode(vnode, parentComponent, context) {
-  if (vnode == null) return "";
-  if (isString(vnode) || typeof vnode === "number")
+  if (vnode == null) return '';
+  if (isString(vnode) || typeof vnode === 'number')
     return escapeHtml(String(vnode));
   if (!isObject(vnode) || !vnode.type) return `<!-- invalid vnode detected -->`;
 
@@ -51,7 +51,7 @@ async function renderVnode(vnode, parentComponent, context) {
   switch (type) {
     case Text:
       const content = escapeHtml(children);
-      return props && props["w-dynamic"]
+      return props && props['w-dynamic']
         ? `<!--[-->${content}<!--]-->`
         : content;
     case Comment:
@@ -66,7 +66,7 @@ async function renderVnode(vnode, parentComponent, context) {
         if (!voidElements.has(tag)) {
           html +=
             (await renderChildren(children, parentComponent, context)) ||
-            "<!--w-->";
+            '<!--w-->';
           html += `</${tag}>`;
         }
         return html;
@@ -89,9 +89,9 @@ async function renderVnode(vnode, parentComponent, context) {
 }
 
 async function renderChildren(children, parentComponent, context) {
-  if (!children) return "";
+  if (!children) return '';
   const childArray = Array.isArray(children) ? children : [children];
-  let result = "";
+  let result = '';
   for (const child of childArray) {
     result += await renderVnode(child, parentComponent, context);
   }
@@ -99,11 +99,11 @@ async function renderChildren(children, parentComponent, context) {
 }
 
 function renderProps(props) {
-  let result = "";
+  let result = '';
   for (const key in props) {
-    if (key === "key" || key.startsWith("on") || key === "w-dynamic") continue;
+    if (key === 'key' || key.startsWith('on') || key === 'w-dynamic') continue;
     const value = props[key];
-    if (value === true || value === "") {
+    if (value === true || value === '') {
       result += ` ${key}`;
     } else if (value != null && value !== false) {
       result += ` ${key}="${escapeHtml(String(value))}"`;
@@ -113,19 +113,19 @@ function renderProps(props) {
 }
 
 function escapeHtml(str) {
-  if (str == null) return "";
+  if (str == null) return '';
   return String(str).replace(/[&<>"']/g, (match) => {
     switch (match) {
-      case "&":
-        return "&amp;";
-      case "<":
-        return "&lt;";
-      case ">":
-        return "&gt;";
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
       case '"':
-        return "&quot;";
+        return '&quot;';
       case "'":
-        return "&#39;";
+        return '&#39;';
       default:
         return match;
     }

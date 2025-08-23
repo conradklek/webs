@@ -1,18 +1,22 @@
-import { effect, reactive, computed } from "./reactivity";
+import { effect, reactive, computed } from './reactivity';
 
 const isObject = (val) =>
-  val !== null && typeof val === "object" && !Array.isArray(val);
+  val !== null && typeof val === 'object' && !Array.isArray(val);
 
-const isString = (val) => typeof val === "string";
+const isString = (val) => typeof val === 'string';
 
-const isFunction = (val) => typeof val === "function";
+const isFunction = (val) => typeof val === 'function';
 
-export const Text = Symbol("Text");
-export const Comment = Symbol("Comment");
-export const Fragment = Symbol("Fragment");
-export const Teleport = Symbol("Teleport");
+export const Text = Symbol('Text');
+
+export const Comment = Symbol('Comment');
+
+export const Fragment = Symbol('Fragment');
+
+export const Teleport = Symbol('Teleport');
 
 let currentInstance = null;
+
 let instanceCounter = 0;
 
 export function provide(key, value) {
@@ -51,21 +55,21 @@ function createLifecycleMethod(name) {
   };
 }
 
-export const onBeforeMount = createLifecycleMethod("onBeforeMount");
-export const onMounted = createLifecycleMethod("onMounted");
-export const onBeforeUpdate = createLifecycleMethod("onBeforeUpdate");
-export const onUpdated = createLifecycleMethod("onUpdated");
-export const onUnmounted = createLifecycleMethod("onUnmounted");
-export const onReady = createLifecycleMethod("onReady");
+export const onBeforeMount = createLifecycleMethod('onBeforeMount');
+export const onMounted = createLifecycleMethod('onMounted');
+export const onBeforeUpdate = createLifecycleMethod('onBeforeUpdate');
+export const onUpdated = createLifecycleMethod('onUpdated');
+export const onUnmounted = createLifecycleMethod('onUnmounted');
+export const onReady = createLifecycleMethod('onReady');
 
 function mergeProps(vnodeProps, fallthroughAttrs) {
   const merged = { ...vnodeProps };
   for (const key in fallthroughAttrs) {
-    if (key === "class") {
+    if (key === 'class') {
       merged.class =
-        (vnodeProps.class || "") + " " + (fallthroughAttrs.class || "");
+        (vnodeProps.class || '') + ' ' + (fallthroughAttrs.class || '');
       merged.class = merged.class.trim();
-    } else if (key === "style") {
+    } else if (key === 'style') {
       merged.style = { ...vnodeProps.style, ...fallthroughAttrs.style };
     } else {
       merged[key] = fallthroughAttrs[key];
@@ -88,12 +92,10 @@ export function createRenderer(options) {
 
   const patch = (n1, n2, container, anchor = null, parentComponent = null) => {
     if (n1 === n2) return;
-
     if (n1 && (n1.type !== n2.type || n1.key !== n2.key)) {
       unmount(n1);
       n1 = null;
     }
-
     const { type } = n2;
     switch (type) {
       case Text:
@@ -114,7 +116,11 @@ export function createRenderer(options) {
         break;
       case Fragment:
         if (!n1) {
-          n2.children.forEach((c) =>
+          // If the new children is a single item, wrap it in an array to prevent TypeError
+          const childrenToPatch = Array.isArray(n2.children)
+            ? n2.children
+            : [n2.children];
+          childrenToPatch.forEach((c) =>
             patch(null, c, container, anchor, parentComponent),
           );
         } else {
@@ -146,7 +152,6 @@ export function createRenderer(options) {
     const el = (n2.el = n1 ? n1.el : hostCreateElement(n2.type));
     const oldProps = n1?.props || {};
     const newProps = n2.props || {};
-
     for (const key in newProps) {
       if (newProps[key] !== oldProps[key]) {
         hostPatchProp(el, key, oldProps[key], newProps[key]);
@@ -157,9 +162,7 @@ export function createRenderer(options) {
         hostPatchProp(el, key, oldProps[key], null);
       }
     }
-
     patchChildren(n1, n2, el, parentComponent);
-
     if (!n1) {
       hostInsert(el, container, anchor);
     }
@@ -168,7 +171,6 @@ export function createRenderer(options) {
   const patchChildren = (n1, n2, container, parentComponent) => {
     const c1 = n1?.children;
     const c2 = n2?.children;
-
     if (isString(c2)) {
       if (Array.isArray(c1)) {
         unmountChildren(c1);
@@ -176,17 +178,15 @@ export function createRenderer(options) {
       hostSetElementText(container, c2);
       return;
     }
-
     const oldChildren =
       c1 && !isString(c1) ? (Array.isArray(c1) ? c1 : [c1]) : [];
     const newChildren = c2 ? (Array.isArray(c2) ? c2 : [c2]) : [];
-
     if (newChildren.length === 0) {
       if (oldChildren.length > 0) {
         unmountChildren(oldChildren);
       }
       if (isString(c1)) {
-        hostSetElementText(container, "");
+        hostSetElementText(container, '');
       }
       return;
     }
@@ -262,12 +262,10 @@ export function createRenderer(options) {
       for (i = s2; i <= e2; i++) {
         keyToNewIndexMap.set(c2[i].key, i);
       }
-
       const toBePatched = e2 - s2 + 1;
       const newIndexToOldIndexMap = new Array(toBePatched).fill(0);
       let moved = false;
       let maxNewIndexSoFar = 0;
-
       for (i = s1; i <= e1; i++) {
         const prevChild = c1[i];
         const newIndex = keyToNewIndexMap.get(prevChild.key);
@@ -283,7 +281,6 @@ export function createRenderer(options) {
           patch(prevChild, c2[newIndex], container, null, parentComponent);
         }
       }
-
       const increasingNewIndexSequence = moved
         ? getLongestIncreasingSubsequence(newIndexToOldIndexMap)
         : [];
@@ -319,29 +316,25 @@ export function createRenderer(options) {
       isHydrating,
     ));
     const component = instance.type;
-
     if (
-      process.env.NODE_ENV !== "production" &&
-      typeof window !== "undefined" &&
+      process.env.NODE_ENV !== 'production' &&
+      typeof window !== 'undefined' &&
       window.__WEBS_DEVELOPER__
     ) {
       instance.uid = instanceCounter++;
       window.__WEBS_DEVELOPER__.componentInstances.set(instance.uid, instance);
       window.__WEBS_DEVELOPER__.notify();
     }
-
     if (!component.render) {
       console.warn(`Component is missing a render function.`, component);
-      component.render = () => createVnode(Comment, null, "missing render");
+      component.render = () => createVnode(Comment, null, 'missing render');
     }
     instance.render = component.render;
-
     const scheduler = () => {
       if (instance.update) {
         instance.update();
       }
     };
-
     const runner = effect(
       () => {
         if (!instance.isMounted) {
@@ -350,21 +343,18 @@ export function createRenderer(options) {
             instance.ctx,
             instance.ctx,
           ));
-
           if (
             Object.keys(instance.attrs).length > 0 &&
             subTree.type !== Fragment
           ) {
             subTree.props = mergeProps(subTree.props, instance.attrs);
           }
-
           if (isHydrating) {
             hydrateNode(subTree, vnode.el, instance);
           } else {
             patch(null, subTree, container, anchor, instance);
           }
           vnode.el = subTree.el;
-
           instance.isMounted = true;
           instance.hooks.onMounted?.forEach((h) => h.call(instance.ctx));
         } else {
@@ -374,27 +364,20 @@ export function createRenderer(options) {
             instance.ctx,
             instance.ctx,
           ));
-
           const newAttrs = instance.attrs;
-
           if (Object.keys(newAttrs).length > 0 && nextTree.type !== Fragment) {
             nextTree.props = mergeProps(nextTree.props, newAttrs);
           }
-
           const parentContainer = prevTree.el.parentElement;
           const anchor = prevTree.el.nextSibling;
-
           patch(prevTree, nextTree, parentContainer, anchor, instance);
           vnode.el = nextTree.el;
-
           instance.hooks.onUpdated?.forEach((h) => h.call(instance.ctx));
         }
       },
       { scheduler },
     );
-
     instance.update = runner;
-
     instance.hooks.onReady?.forEach((h) => h.call(instance.ctx));
   };
 
@@ -402,14 +385,11 @@ export function createRenderer(options) {
     const instance = (n2.component = n1.component);
     instance.vnode = n2;
     n2.el = n1.el;
-
     instance.prevAttrs = instance.attrs;
-
     const { props: propsOptions } = instance.type;
     const vnodeProps = n2.props || {};
     const nextProps = {};
     const nextAttrs = {};
-
     for (const key in vnodeProps) {
       if (propsOptions && propsOptions.hasOwnProperty(key)) {
         nextProps[key] = vnodeProps[key];
@@ -426,7 +406,7 @@ export function createRenderer(options) {
         let newValue;
         if (nextProps.hasOwnProperty(key)) {
           newValue = nextProps[key];
-        } else if (options?.hasOwnProperty("default")) {
+        } else if (options?.hasOwnProperty('default')) {
           const def = options.default;
           newValue = isFunction(def) ? def() : def;
         } else {
@@ -437,8 +417,8 @@ export function createRenderer(options) {
     }
 
     if (
-      process.env.NODE_ENV !== "production" &&
-      typeof window !== "undefined" &&
+      process.env.NODE_ENV !== 'production' &&
+      typeof window !== 'undefined' &&
       window.__WEBS_DEVELOPER__
     ) {
       window.__WEBS_DEVELOPER__.notify();
@@ -447,8 +427,8 @@ export function createRenderer(options) {
 
   const unmount = (vnode) => {
     if (
-      process.env.NODE_ENV !== "production" &&
-      typeof window !== "undefined" &&
+      process.env.NODE_ENV !== 'production' &&
+      typeof window !== 'undefined' &&
       window.__WEBS_DEVELOPER__
     ) {
       if (vnode.component && vnode.component.uid !== undefined) {
@@ -469,6 +449,7 @@ export function createRenderer(options) {
       unmount(vnode.component.subTree);
       return;
     }
+
     if (vnode.type === Fragment || vnode.type === Teleport) {
       unmountChildren(vnode.children);
       return;
@@ -491,14 +472,14 @@ export function createRenderer(options) {
     while (
       domNode &&
       ((domNode.nodeType === 3 && !domNode.textContent.trim()) ||
-        (domNode.nodeType === 8 && domNode.data === "w"))
+        (domNode.nodeType === 8 && domNode.data === 'w'))
     ) {
       domNode = domNode.nextSibling;
     }
 
     if (!domNode && vnode.type !== Comment) {
       console.error(
-        "[Hydration Error] DOM Mismatch: Server-rendered DOM node not found for VNode.",
+        '[Hydration Error] DOM Mismatch: Server-rendered DOM node not found for VNode.',
         vnode,
       );
       return null;
@@ -509,10 +490,10 @@ export function createRenderer(options) {
 
     switch (type) {
       case Text:
-        if (props && props["w-dynamic"]) {
-          if (domNode.nodeType !== 8 || domNode.data !== "[") {
+        if (props && props['w-dynamic']) {
+          if (domNode.nodeType !== 8 || domNode.data !== '[') {
             console.error(
-              "[Hydration Error] Mismatch for dynamic text. Expected opening comment ``.",
+              '[Hydration Error] Mismatch for dynamic text. Expected opening comment ``.',
               { domNode },
             );
             return domNode.nextSibling;
@@ -522,10 +503,10 @@ export function createRenderer(options) {
           if (
             !closingComment ||
             closingComment.nodeType !== 8 ||
-            closingComment.data !== "]"
+            closingComment.data !== ']'
           ) {
             console.error(
-              "[Hydration Error] Mismatch for dynamic text. Expected closing comment ``.",
+              '[Hydration Error] Mismatch for dynamic text. Expected closing comment ``.',
               { closingComment },
             );
             return domNode.nextSibling;
@@ -535,7 +516,7 @@ export function createRenderer(options) {
         }
         if (domNode.nodeType !== 3) {
           console.error(
-            "[Hydration Error] Mismatch: VNode is a Text node but DOM node is not.",
+            '[Hydration Error] Mismatch: VNode is a Text node but DOM node is not.',
             { domNode },
           );
           return domNode.nextSibling;
@@ -547,6 +528,9 @@ export function createRenderer(options) {
         }
         return domNode;
       case Fragment:
+        // A fragment doesn't have a single root element, so we hydrate its children
+        // starting from the current domNode. The hydrateChildren function will
+        // advance the domNode pointer correctly.
         return hydrateChildren(
           children,
           domNode.parentElement,
@@ -582,7 +566,12 @@ export function createRenderer(options) {
     parentComponent = null,
   ) => {
     let nextDomNode = startNode;
-    const childVnodes = Array.isArray(children) ? children : [children];
+    // Fix: Ensure children is always an array before iterating
+    const childVnodes = Array.isArray(children)
+      ? children
+      : children
+        ? [children]
+        : [];
     for (const childVnode of childVnodes) {
       if (!childVnode) continue;
       nextDomNode = hydrateNode(childVnode, nextDomNode, parentComponent);
@@ -653,7 +642,7 @@ export function createComponent(
     for (const key in propsOptions) {
       if (!resolvedProps.hasOwnProperty(key)) {
         const options = propsOptions[key];
-        const def = options?.hasOwnProperty("default")
+        const def = options?.hasOwnProperty('default')
           ? options.default
           : undefined;
         resolvedProps[key] = isFunction(def) ? def() : def;
@@ -694,19 +683,19 @@ export function createComponent(
     {},
     {
       has: (_, key) =>
-        key === "$params" ||
-        key === "$slots" ||
-        key === "$attrs" ||
+        key === '$params' ||
+        key === '$slots' ||
+        key === '$attrs' ||
         key in instance.internalCtx ||
         key in instance.methods ||
-        key === "actions" ||
+        key === 'actions' ||
         key in instance.actions ||
         key in instance.type.components ||
         (instance.appContext.globals && key in instance.appContext.globals),
       get: (_, key) => {
-        if (key === "$params") return instance.appContext.params;
-        if (key === "$slots") return instance.slots;
-        if (key === "$attrs") return instance.attrs;
+        if (key === '$params') return instance.appContext.params;
+        if (key === '$slots') return instance.slots;
+        if (key === '$attrs') return instance.attrs;
         if (key in instance.internalCtx) {
           const val = instance.internalCtx[key];
           return val && val.__is_ref ? val.value : val;
@@ -790,8 +779,8 @@ export function createComponent(
           const response = await fetch(
             `/__actions__/${instance.type.name}/${key}`,
             {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(args),
             },
           );
@@ -799,8 +788,8 @@ export function createComponent(
             throw new Error(
               `Server action failed with status: ${response.status}`,
             );
-          const contentType = response.headers.get("content-type");
-          return contentType?.includes("application/json")
+          const contentType = response.headers.get('content-type');
+          return contentType?.includes('application/json')
             ? response.json()
             : response.text();
         } catch (error) {
@@ -823,7 +812,7 @@ export class VNode {
     if (
       props &&
       (Array.isArray(props) ||
-        (typeof props !== "object" && !isFunction(props)))
+        (typeof props !== 'object' && !isFunction(props)))
     ) {
       children = props;
       props = null;

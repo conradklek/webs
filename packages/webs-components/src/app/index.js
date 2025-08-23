@@ -95,6 +95,13 @@ export default {
               >Chatbot</a
             >
           </li>
+          <li>
+            <a
+              href="/todos"
+              class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
+              >Todos</a
+            >
+          </li>
         </ul>
       </div>
     </div>`;

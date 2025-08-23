@@ -1,10 +1,14 @@
-const isObject = (val) => val !== null && typeof val === "object";
+const isObject = (val) => val !== null && typeof val === 'object';
 
 let activeEffect = null;
+
 const effectStack = [];
+
 const targetMap = new WeakMap();
+
 const proxyMap = new WeakMap();
-export const RAW_SYMBOL = Symbol("raw");
+
+export const RAW_SYMBOL = Symbol('raw');
 
 export function track(target, key) {
   if (activeEffect) {
@@ -92,7 +96,7 @@ export function computed(getter) {
   const scheduler = () => {
     if (!isDirty) {
       isDirty = true;
-      trigger(computedRef, "value");
+      trigger(computedRef, 'value');
     }
   };
 
@@ -104,7 +108,7 @@ export function computed(getter) {
         computedValue = getterEffect.run();
         isDirty = false;
       }
-      track(computedRef, "value");
+      track(computedRef, 'value');
       return computedValue;
     },
     __is_ref: true,
@@ -155,11 +159,11 @@ const baseHandlers = {
 
 const arrayHandlers = {
   get(target, key, receiver) {
-    const mutationMethods = ["push", "pop", "shift", "unshift", "splice"];
+    const mutationMethods = ['push', 'pop', 'shift', 'unshift', 'splice'];
     if (mutationMethods.includes(key)) {
-      return function(...args) {
+      return function (...args) {
         const result = Array.prototype[key].apply(target, args);
-        trigger(target, "length");
+        trigger(target, 'length');
         return result;
       };
     }
@@ -176,108 +180,108 @@ const collectionHandlers = {
       if (key === RAW_SYMBOL) return target;
       const value = Reflect.get(target, key, receiver);
 
-      if (key === "get") {
+      if (key === 'get') {
         return (k) => {
           track(target, k);
           return target.get(k);
         };
       }
-      if (key === "has") {
+      if (key === 'has') {
         return (k) => {
           track(target, k);
           return target.has(k);
         };
       }
-      if (key === "size") {
-        track(target, "size");
+      if (key === 'size') {
+        track(target, 'size');
         return target.size;
       }
       if (
-        ["forEach", "keys", "values", "entries", Symbol.iterator].includes(key)
+        ['forEach', 'keys', 'values', 'entries', Symbol.iterator].includes(key)
       ) {
-        track(target, "iterate");
+        track(target, 'iterate');
       }
 
-      if (key === "set") {
+      if (key === 'set') {
         return (k, v) => {
           const had = target.has(k);
           const oldVal = target.get(k);
           const result = target.set(k, v);
           if (!had) {
-            trigger(target, "size");
+            trigger(target, 'size');
           } else if (oldVal !== v) {
             trigger(target, k);
           }
           return result;
         };
       }
-      if (key === "delete") {
+      if (key === 'delete') {
         return (k) => {
           const had = target.has(k);
           const result = target.delete(k);
-          if (had) trigger(target, "size");
+          if (had) trigger(target, 'size');
           return result;
         };
       }
 
-      return typeof value === "function" ? value.bind(target) : value;
+      return typeof value === 'function' ? value.bind(target) : value;
     },
   },
   set: {
     get(target, key, receiver) {
       if (key === RAW_SYMBOL) return target;
 
-      if (key === "size") {
-        track(target, "iterate");
+      if (key === 'size') {
+        track(target, 'iterate');
         return Reflect.get(target, key, receiver);
       }
 
       const value = Reflect.get(target, key, receiver);
-      if (typeof value !== "function") {
+      if (typeof value !== 'function') {
         return value;
       }
 
       const boundFn = value.bind(target);
 
       switch (key) {
-        case "has":
+        case 'has':
           return (v) => {
             track(target, v);
             return boundFn(v);
           };
-        case "add":
+        case 'add':
           return (v) => {
             const had = target.has(v);
             const result = boundFn(v);
             if (!had) {
               trigger(target, v);
-              trigger(target, "iterate");
+              trigger(target, 'iterate');
             }
             return result;
           };
-        case "delete":
+        case 'delete':
           return (v) => {
             const had = target.has(v);
             const result = boundFn(v);
             if (had) {
               trigger(target, v);
-              trigger(target, "iterate");
+              trigger(target, 'iterate');
             }
             return result;
           };
-        case "clear":
+        case 'clear':
           return () => {
             const hadItems = target.size > 0;
             const items = hadItems ? [...target] : [];
             const result = boundFn();
             if (hadItems) {
               items.forEach((v) => trigger(target, v));
-              trigger(target, "iterate");
+              trigger(target, 'iterate');
             }
             return result;
           };
         default:
-          track(target, "iterate");
+          track(target, 'iterate');
           return boundFn;
       }
     },

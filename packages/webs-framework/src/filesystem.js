@@ -5,25 +5,25 @@ import {
   rename,
   rm as fsRm,
   stat as fsStat,
-} from "node:fs/promises";
+} from 'node:fs/promises';
 
 async function exists(path) {
   try {
     await fsStat(path);
     return true;
   } catch (error) {
-    if (error.code === "ENOENT") return false;
+    if (error.code === 'ENOENT') return false;
     throw error;
   }
 }
 
 async function cat(path) {
-  if (!(await exists(path))) throw new Error("File not found");
+  if (!(await exists(path))) throw new Error('File not found');
   return Bun.file(path);
 }
 
 export const fs = {
-  touch: async (path, data = "") => await Bun.write(path, data),
+  touch: async (path, data = '') => await Bun.write(path, data),
   stat: async (path) => {
     if (!path) throw new Error("Missing 'path'");
     const stats = await fsStat(path);
@@ -40,7 +40,7 @@ export const fs = {
   mkdir: async (path, recursive = false) => await fsMkdir(path, { recursive }),
   mv: async (from, to) => await rename(from, to),
   ls: async (path) => await readdir(path),
-  glob: async (pattern, cwd = ".") => {
+  glob: async (pattern, cwd = '.') => {
     const globber = new Bun.Glob(pattern);
     return await Array.fromAsync(globber.scan(cwd));
   },

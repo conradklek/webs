@@ -1,4 +1,4 @@
-import { basename } from "path";
+import { basename } from 'path';
 
 export function renderHtmlShell({ appHtml, websState, manifest, title }) {
   return `<!DOCTYPE html>
@@ -7,9 +7,10 @@ export function renderHtmlShell({ appHtml, websState, manifest, title }) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${title}</title>
-    ${manifest.css
-      ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
-      : ""
+    ${
+      manifest.css
+        ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
+        : ''
     }
 </head>
 <body>
@@ -22,9 +23,9 @@ export function renderHtmlShell({ appHtml, websState, manifest, title }) {
 
 export function serializeState(state) {
   return JSON.stringify(state, (_, value) => {
-    if (value instanceof Set) return { __type: "Set", values: [...value] };
+    if (value instanceof Set) return { __type: 'Set', values: [...value] };
     if (value instanceof Map)
-      return { __type: "Map", entries: [...value.entries()] };
+      return { __type: 'Map', entries: [...value.entries()] };
     return value;
   });
 }
