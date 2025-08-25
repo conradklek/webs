@@ -1,13 +1,15 @@
+import { ComponentWrapper } from '../../gui/utils';
 import * as Modal from '../../gui/modal';
 
-const DemoModal = {
+export default {
   name: 'DemoModal',
   components: {
     ...Modal,
+    ComponentWrapper,
   },
   template(html) {
     return html`
-      <div class="w-full">
+      <ComponentWrapper class="w-full">
         <Modal>
           <ModalTrigger> Open Modal </ModalTrigger>
           <ModalContent>
@@ -30,26 +32,7 @@ const DemoModal = {
             </ModalFooter>
           </ModalContent>
         </Modal>
-      </div>
+      </ComponentWrapper>
     `;
-  },
-};
-
-export default {
-  name: 'ModalPage',
-  components: {
-    DemoModal,
-  },
-  template(html) {
-    return html`<div
-      class="w-full p-8 flex flex-col items-start justify-start gap-6"
-    >
-      <div class="w-full flex flex-row items-center justify-between gap-4">
-        <a href="/components" class="font-medium">webs.site/components</a>
-      </div>
-      <div class="flex-1 flex flex-col items-start justify-start gap-4">
-        <DemoModal />
-      </div>
-    </div>`;
   },
 };

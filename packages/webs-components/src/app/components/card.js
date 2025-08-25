@@ -1,11 +1,12 @@
 import { useState } from '@conradklek/webs';
-
+import { ComponentWrapper } from '../../gui/utils';
 import * as Card from '../../gui/card';
 
-const DemoCard = {
+export default {
   name: 'DemoCard',
   components: {
     ...Card,
+    ComponentWrapper,
   },
   setup() {
     const count = useState(0);
@@ -13,7 +14,7 @@ const DemoCard = {
   },
   template(html) {
     return html`
-      <div class="w-full">
+      <ComponentWrapper class="w-full">
         <Card class="w-full max-w-sm">
           <CardHeader>
             <CardTitle>Create project</CardTitle>
@@ -34,26 +35,7 @@ const DemoCard = {
             </button>
           </CardFooter>
         </Card>
-      </div>
+      </ComponentWrapper>
     `;
-  },
-};
-
-export default {
-  name: 'CardPage',
-  components: {
-    DemoCard,
-  },
-  template(html) {
-    return html`<div
-      class="w-full p-8 flex flex-col items-start justify-start gap-6"
-    >
-      <div class="w-full flex flex-row items-center justify-between gap-4">
-        <a href="/components" class="font-medium">webs.site/components</a>
-      </div>
-      <div class="flex-1 flex flex-col items-start justify-start gap-4">
-        <DemoCard />
-      </div>
-    </div>`;
   },
 };

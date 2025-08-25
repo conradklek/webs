@@ -1,13 +1,15 @@
 import * as Menubar from '../../gui/menubar';
+import { ComponentWrapper } from '../../gui/utils';
 
-const DemoMenubar = {
+export default {
   name: 'DemoMenubar',
   components: {
     ...Menubar,
+    ComponentWrapper,
   },
   template(html) {
     return html`
-      <div class="w-full">
+      <ComponentWrapper class="w-full">
         <Menubar>
           <MenubarMenu value="file">
             <MenubarTrigger>File</MenubarTrigger>
@@ -90,26 +92,7 @@ const DemoMenubar = {
             </MenubarContent>
           </MenubarMenu>
         </Menubar>
-      </div>
+      </ComponentWrapper>
     `;
-  },
-};
-
-export default {
-  name: 'MenubarPage',
-  components: {
-    DemoMenubar,
-  },
-  template(html) {
-    return html`<div
-      class="w-full p-8 flex flex-col items-start justify-start gap-6"
-    >
-      <div class="w-full flex flex-row items-center justify-between gap-4">
-        <a href="/components" class="font-medium">webs.site/components</a>
-      </div>
-      <div class="flex-1 flex flex-col items-start justify-start gap-4">
-        <DemoMenubar />
-      </div>
-    </div>`;
   },
 };

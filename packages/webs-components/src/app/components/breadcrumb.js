@@ -1,17 +1,19 @@
 import * as Breadcrumb from '../../gui/breadcrumb';
+import { ComponentWrapper } from '../../gui/utils';
 
-const DemoBreadcrumb = {
+export default {
   name: 'DemoBreadcrumb',
   components: {
     ...Breadcrumb,
+    ComponentWrapper,
   },
   template(html) {
     return html`
-      <div class="w-full">
+      <ComponentWrapper class="w-full">
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink href="/components"> Components </BreadcrumbLink>
+              <BreadcrumbLink href="/components">Components</BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
@@ -19,26 +21,7 @@ const DemoBreadcrumb = {
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-      </div>
+      </ComponentWrapper>
     `;
-  },
-};
-
-export default {
-  name: 'BreadcrumbPage',
-  components: {
-    DemoBreadcrumb,
-  },
-  template(html) {
-    return html`<div
-      class="w-full p-8 flex flex-col items-start justify-start gap-6"
-    >
-      <div class="w-full flex flex-row items-center justify-between gap-4">
-        <a href="/components" class="font-medium">webs.site/components</a>
-      </div>
-      <div class="flex-1 flex flex-col items-start justify-start gap-4">
-        <DemoBreadcrumb />
-      </div>
-    </div>`;
   },
 };

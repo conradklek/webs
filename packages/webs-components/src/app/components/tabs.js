@@ -1,13 +1,15 @@
+import { ComponentWrapper } from '../../gui/utils';
 import * as Tabs from '../../gui/tabs';
 
-const DemoTabs = {
+export default {
   name: 'DemoTabs',
   components: {
     ...Tabs,
+    ComponentWrapper,
   },
   template(html) {
     return html`
-      <div class="w-full">
+      <ComponentWrapper class="w-full">
         <Tabs defaultValue="account">
           <TabsList>
             <TabsTrigger value="account">Account</TabsTrigger>
@@ -20,26 +22,7 @@ const DemoTabs = {
             Change your password here.
           </TabsContent>
         </Tabs>
-      </div>
+      </ComponentWrapper>
     `;
-  },
-};
-
-export default {
-  name: 'TabsPage',
-  components: {
-    DemoTabs,
-  },
-  template(html) {
-    return html`<div
-      class="w-full p-8 flex flex-col items-start justify-start gap-6"
-    >
-      <div class="w-full flex flex-row items-center justify-between gap-4">
-        <a href="/components" class="font-medium">webs.site/components</a>
-      </div>
-      <div class="w-full flex flex-col items-start justify-start gap-4">
-        <DemoTabs />
-      </div>
-    </div>`;
   },
 };

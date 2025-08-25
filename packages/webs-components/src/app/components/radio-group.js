@@ -1,13 +1,15 @@
 import * as RadioGroup from '../../gui/radio-group';
+import { ComponentWrapper } from '../../gui/utils';
 
-const DemoRadioGroup = {
+export default {
   name: 'DemoRadioGroup',
   components: {
     ...RadioGroup,
+    ComponentWrapper,
   },
   template(html) {
     return html`
-      <div class="w-full flex flex-col space-y-2">
+      <ComponentWrapper class="w-full flex flex-col space-y-2">
         <RadioGroup defaultValue="comfortable">
           <div class="flex items-center space-x-2">
             <RadioGroupItem value="default" id="r1" />
@@ -22,26 +24,7 @@ const DemoRadioGroup = {
             <label for="r3">Compact</label>
           </div>
         </RadioGroup>
-      </div>
+      </ComponentWrapper>
     `;
-  },
-};
-
-export default {
-  name: 'RadioGroupPage',
-  components: {
-    DemoRadioGroup,
-  },
-  template(html) {
-    return html`<div
-      class="w-full p-8 flex flex-col items-start justify-start gap-6"
-    >
-      <div class="w-full flex flex-row items-center justify-between gap-4">
-        <a href="/components" class="font-medium">webs.site/components</a>
-      </div>
-      <div class="flex-1 flex flex-col items-start justify-start gap-4">
-        <DemoRadioGroup />
-      </div>
-    </div>`;
   },
 };
