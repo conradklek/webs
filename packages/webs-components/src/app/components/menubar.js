@@ -9,7 +9,7 @@ export default {
   },
   template(html) {
     return html`
-      <ComponentWrapper class="w-full">
+      <ComponentWrapper componentName="Menubar" class="w-full">
         <Menubar>
           <MenubarMenu value="file">
             <MenubarTrigger>File</MenubarTrigger>

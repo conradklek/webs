@@ -9,7 +9,7 @@ export default {
   },
   template(html) {
     return html`
-      <ComponentWrapper class="w-full">
+      <ComponentWrapper componentName="Breadcrumb" class="w-full">
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>

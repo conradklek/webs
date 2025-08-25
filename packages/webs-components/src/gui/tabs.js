@@ -9,7 +9,7 @@ export const TabsContent = {
   },
   template(html) {
     return html`<div
-      w-if="tabs.is_active(value)"
+      w-if="tabs && tabs.is_active(value)"
       class="w-full mt-2 p-4 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
       <slot></slot>
@@ -30,7 +30,7 @@ export const TabsTrigger = {
         type="button"
         @click="tabs.activateTab(value)"
         class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
-        :data-state="tabs.is_active(value) ? 'active' : 'inactive'"
+        :data-state="tabs && tabs.is_active(value) ? 'active' : 'inactive'"
       >
         <slot></slot>
       </button>

@@ -9,7 +9,7 @@ export default {
   },
   template(html) {
     return html`
-      <ComponentWrapper class="w-full">
+      <ComponentWrapper componentName="Tabs" class="w-full">
         <Tabs defaultValue="account">
           <TabsList>
             <TabsTrigger value="account">Account</TabsTrigger>

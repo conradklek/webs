@@ -1,6 +1,6 @@
-import { effect, computed, isRef, useState } from './reactivity.js';
-import { voidElements } from './parser.js';
-import { compile } from './compiler.js';
+import { effect, computed, isRef, useState } from './reactivity';
+import { voidElements } from './parser';
+import { compile } from './compiler';
 
 const isObjectAndNotArray = (val) =>
   val !== null && typeof val === 'object' && !Array.isArray(val);
@@ -19,14 +19,37 @@ let instanceCounter = 0;
 
 export function provide(key, value) {
   if (!currentInstance) return;
+  if (!currentInstance.provides) {
+    currentInstance.provides = {};
+  }
   currentInstance.provides[key] = value;
 }
 
 export function inject(key, defaultValue) {
-  if (!currentInstance) return defaultValue;
-  if (key in currentInstance.provides) {
-    return currentInstance.provides[key];
+  if (!currentInstance) {
+    return defaultValue;
   }
+
+  let instance = currentInstance;
+
+  while (instance) {
+    if (
+      instance.provides &&
+      Object.prototype.hasOwnProperty.call(instance.provides, key)
+    ) {
+      return instance.provides[key];
+    }
+    instance = instance.parent;
+  }
+
+  if (
+    currentInstance.appContext &&
+    currentInstance.appContext.provides &&
+    key in currentInstance.appContext.provides
+  ) {
+    return currentInstance.appContext.provides[key];
+  }
+
   return defaultValue;
 }
 
@@ -382,11 +405,11 @@ export function createRenderer(options) {
 
     instance.appContext.params = n2.props.params || instance.appContext.params;
 
-    instance.prevAttrs = instance.attrs;
     const { props: propsOptions } = instance.type;
     const vnodeProps = n2.props || {};
     const nextProps = {};
     const nextAttrs = {};
+
     for (const key in vnodeProps) {
       if (propsOptions && propsOptions.hasOwnProperty(key)) {
         nextProps[key] = vnodeProps[key];
@@ -394,6 +417,23 @@ export function createRenderer(options) {
         nextAttrs[key] = vnodeProps[key];
       }
     }
+
+    const shouldUpdate = (prev, next) => {
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (prevKeys.length !== nextKeys.length) return true;
+      for (const key of nextKeys) {
+        if (!prev.hasOwnProperty(key) || prev[key] !== next[key]) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const needsUpdate =
+      shouldUpdate(instance.props, nextProps) ||
+      shouldUpdate(instance.attrs, nextAttrs);
+
     instance.attrs = nextAttrs;
     instance.slots = n2.children || {};
 
@@ -413,6 +453,8 @@ export function createRenderer(options) {
       }
     }
 
+    instance.props = nextProps;
+
     if (
       process.env.NODE_ENV !== 'production' &&
       typeof window !== 'undefined' &&
@@ -421,7 +463,7 @@ export function createRenderer(options) {
       window.__WEBS_DEVELOPER__.notify();
     }
 
-    if (instance.update) {
+    if (needsUpdate && instance.update) {
       instance.update();
     }
   };
@@ -616,6 +658,7 @@ export function createComponent(
     type: vnode.type,
     slots: vnode.children || {},
     attrs: {},
+    props: {},
     prevAttrs: null,
     ctx: {},
     internalCtx: {},
@@ -627,7 +670,7 @@ export function createComponent(
     parent,
     provides: parent
       ? Object.create(parent.provides)
-      : Object.create(appContext.provides),
+      : appContext.provides || {},
     hooks: {},
   };
 
@@ -654,6 +697,8 @@ export function createComponent(
       }
     }
   }
+
+  instance.props = resolvedProps;
 
   if (!isSsr) {
     for (const key in resolvedProps) {

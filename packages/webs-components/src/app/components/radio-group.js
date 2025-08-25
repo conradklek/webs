@@ -9,7 +9,10 @@ export default {
   },
   template(html) {
     return html`
-      <ComponentWrapper class="w-full flex flex-col space-y-2">
+      <ComponentWrapper
+        componentName="Radio Group"
+        class="w-full flex flex-col space-y-2"
+      >
         <RadioGroup defaultValue="comfortable">
           <div class="flex items-center space-x-2">
             <RadioGroupItem value="default" id="r1" />

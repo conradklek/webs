@@ -9,7 +9,7 @@ export default {
   },
   template(html) {
     return html`
-      <ComponentWrapper class="w-full">
+      <ComponentWrapper componentName="Modal" class="w-full">
         <Modal>
           <ModalTrigger> Open Modal </ModalTrigger>
           <ModalContent>

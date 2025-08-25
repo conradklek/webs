@@ -1,11 +1,12 @@
 import { useState, computed } from '../lib/reactivity';
-import { localDB } from './db';
+import { onUnmounted } from '../lib/renderer';
+import { localDB } from './db-sync';
 
 export * from '../lib/reactivity';
 export * from '../lib/renderer';
 export * from '../lib/runtime';
 export * from './session';
-export * from './db';
+export * from './db-sync';
 
 export function useAction(actionName) {
   if (typeof window === 'undefined') {
@@ -17,8 +18,10 @@ export function useAction(actionName) {
     error: null,
     isLoading: false,
     isStreaming: false,
-    currentResponse: computed(() => state.data || ''),
   });
+
+  state.value.currentResponse = computed(() => state.value.data || '');
+
   const getActionPath = () => {
     const componentName = window.__WEBS_STATE__?.componentName;
     if (!componentName) {
@@ -35,10 +38,13 @@ export function useAction(actionName) {
       typeof lastArg === 'object' && lastArg !== null && 'onFinish' in lastArg;
     const options = hasOptions ? args.pop() : {};
     const bodyArgs = args;
-    state.isLoading = true;
-    state.error = null;
-    state.data = null;
-    state.chunk = null;
+    state.value = {
+      ...state.value,
+      isLoading: true,
+      error: null,
+      data: null,
+      chunk: null,
+    };
     try {
       const response = await fetch(getActionPath(), {
         method: 'POST',
@@ -49,31 +55,32 @@ export function useAction(actionName) {
         throw new Error(await response.text());
       }
       if (response.headers.get('Content-Type')?.includes('text/event-stream')) {
-        state.isStreaming = true;
-        state.data = '';
+        state.value = { ...state.value, isStreaming: true, data: '' };
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           const chunkText = decoder.decode(value);
-          state.chunk = chunkText;
-          state.data += chunkText;
+          state.value = {
+            ...state.value,
+            chunk: chunkText,
+            data: state.value.data + chunkText,
+          };
         }
-        state.isStreaming = false;
         if (options.onFinish && typeof options.onFinish === 'function') {
-          options.onFinish(state.data.trim());
+          options.onFinish(state.value.data.trim());
         }
       } else {
-        state.data = await response.json();
+        const data = await response.json();
+        state.value = { ...state.value, data };
       }
     } catch (e) {
-      state.error = e.message;
+      state.value = { ...state.value, error: e.message };
     } finally {
-      state.isLoading = false;
-      state.isStreaming = false;
+      state.value = { ...state.value, isLoading: false, isStreaming: false };
     }
-    return state.data;
+    return state.value.data;
   };
   return {
     call,
@@ -91,13 +98,12 @@ export function useQuery(tableName, initialData = null) {
 
   if (typeof window !== 'undefined') {
     const fetchData = async () => {
+      state.value = { ...state.value, isLoading: true };
       try {
-        state.isLoading = true;
-        state.data = await localDB.getAll(tableName);
+        const data = await localDB.getAll(tableName);
+        state.value = { ...state.value, data, isLoading: false, error: null };
       } catch (e) {
-        state.error = e;
-      } finally {
-        state.isLoading = false;
+        state.value = { ...state.value, error: e, isLoading: false };
       }
     };
 
@@ -125,9 +131,9 @@ export function useMutate(tableName) {
     isLoading: false,
     error: null,
   });
+
   const mutate = async (item) => {
-    state.isLoading = true;
-    state.error = null;
+    state.value = { isLoading: true, error: null };
     try {
       await localDB.put(tableName, item);
       await localDB.put('outbox', {
@@ -136,15 +142,14 @@ export function useMutate(tableName) {
         data: item,
         timestamp: Date.now(),
       });
+      state.value = { isLoading: false, error: null };
     } catch (e) {
-      state.error = e;
-    } finally {
-      state.isLoading = false;
+      state.value = { isLoading: false, error: e };
     }
   };
+
   const destroy = async (id) => {
-    state.isLoading = true;
-    state.error = null;
+    state.value = { isLoading: true, error: null };
     try {
       await localDB.delete(tableName, id);
       await localDB.put('outbox', {
@@ -153,12 +158,12 @@ export function useMutate(tableName) {
         id: id,
         timestamp: Date.now(),
       });
+      state.value = { isLoading: false, error: null };
     } catch (e) {
-      state.error = e;
-    } finally {
-      state.isLoading = false;
+      state.value = { isLoading: false, error: e };
     }
   };
+
   return { mutate, destroy, state };
 }
 

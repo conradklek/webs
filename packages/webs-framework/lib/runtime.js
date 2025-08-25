@@ -1,5 +1,5 @@
 import { createRenderer, createVnode } from './renderer';
-import { syncEngine } from '../client/db';
+import { syncEngine } from '../client/db-sync';
 import { compile } from './compiler';
 
 function normalizeClass(value) {

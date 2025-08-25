@@ -1,12 +1,5 @@
-import { components } from '../../gui/utils';
-
 export default {
-  name: 'ComponentsIndex',
-  setup() {
-    return {
-      components,
-    };
-  },
+  name: 'ExamplesIndex',
   template(html) {
     return html`
       <div class="w-full p-8 flex flex-col items-start justify-start gap-6">
@@ -19,13 +12,13 @@ export default {
           </div>
         </div>
         <div class="flex-1 flex flex-col items-start justify-start gap-4">
-          <h1>Components</h1>
+          <h1>Examples</h1>
           <ul class="list-disc pl-8 space-y-0.5">
-            <li w-for="component in components">
+            <li>
               <a
-                :href="component.url"
+                href="/examples/todos"
                 class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
-                >{{ component.name }}</a
+                >Todos</a
               >
             </li>
           </ul>

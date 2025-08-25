@@ -14,7 +14,7 @@ export default {
   },
   template(html) {
     return html`
-      <ComponentWrapper class="w-full">
+      <ComponentWrapper componentName="Card" class="w-full">
         <Card class="w-full max-w-sm">
           <CardHeader>
             <CardTitle>Create project</CardTitle>

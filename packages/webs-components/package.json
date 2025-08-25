@@ -8,7 +8,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "@conradklek/webs": "file:../webs-framework"
+    "@conradklek/webs": "workspace:*"
   },
   "devDependencies": {
     "tailwindcss": "^4.1.11"

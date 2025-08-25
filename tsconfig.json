@@ -5,9 +5,11 @@
     "moduleResolution": "bundler",
     "allowJs": true,
     "strict": true,
+    "baseUrl": ".",
     "paths": {
-      "@conradklek/webs": ["./packages/webs-framework/src/index.js"],
-      "@conradklek/webs/*": ["./packages/webs-framework/src/*"]
+      "@conradklek/webs": ["./packages/webs-framework"]
     }
-  }
+  },
+  "include": ["packages/**/*"]
 }
+

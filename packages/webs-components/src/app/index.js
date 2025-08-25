@@ -98,6 +98,13 @@ export default {
               >Components</a
             >
           </li>
+          <li>
+            <a
+              href="/examples"
+              class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
+              >Examples</a
+            >
+          </li>
         </ul>
       </div>
     </div>`;

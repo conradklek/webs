@@ -55,7 +55,7 @@ export const AccordionContent = {
   },
   template(html) {
     return html`
-      <div w-if="accordion.is_open(value)" class="contents">
+      <div w-if="accordion && accordion.is_open(value)" class="contents">
         <div class="pb-3 pt-1">
           <slot></slot>
         </div>

@@ -8,7 +8,7 @@ export default {
     ComponentWrapper,
   },
   template(html) {
-    return html`<ComponentWrapper class="w-full">
+    return html`<ComponentWrapper componentName="Accordion" class="w-full">
       <Accordion type="single" collapsible>
         <AccordionItem value="item-1">
           <AccordionTrigger>Is it accessible?</AccordionTrigger>

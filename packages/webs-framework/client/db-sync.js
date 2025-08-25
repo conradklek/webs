@@ -51,49 +51,91 @@ export const localDB = {
     }
     return this.db;
   },
-
-  async getAll(storeName) {
+  async put(tableName, item) {
     const db = await this._getDB();
-    if (!db) return [];
+    if (!db) return;
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(storeName, 'readonly');
-      const store = transaction.objectStore(storeName);
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  },
-
-  async put(storeName, item) {
-    const db = await this._getDB();
-    if (!db) return null;
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(storeName, 'readwrite');
-      const store = transaction.objectStore(storeName);
+      const transaction = db.transaction(tableName, 'readwrite');
+      const store = transaction.objectStore(tableName);
       const request = store.put(item);
       request.onsuccess = () => {
-        notify(storeName);
+        notify(tableName);
         resolve(request.result);
       };
       request.onerror = () => reject(request.error);
     });
   },
+  // New method for bulk insertion
+  async putAll(tableName, items) {
+    const db = await this._getDB();
+    if (!db || !items || items.length === 0) return;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(tableName, 'readwrite');
+      const store = transaction.objectStore(tableName);
 
-  async delete(storeName, key) {
+      items.forEach((item) => {
+        store.put(item);
+      });
+
+      transaction.oncomplete = () => {
+        notify(tableName); // Notify only once after the transaction is complete
+        resolve();
+      };
+      transaction.onerror = () => {
+        reject(transaction.error);
+      };
+    });
+  },
+  async get(tableName, key) {
     const db = await this._getDB();
     if (!db) return;
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(storeName, 'readwrite');
-      const store = transaction.objectStore(storeName);
+      const transaction = db.transaction(tableName, 'readonly');
+      const store = transaction.objectStore(tableName);
+      const request = store.get(key);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+  async getAll(tableName) {
+    const db = await this._getDB();
+    if (!db) return [];
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(tableName, 'readonly');
+      const store = transaction.objectStore(tableName);
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+  async delete(tableName, key) {
+    const db = await this._getDB();
+    if (!db) return;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(tableName, 'readwrite');
+      const store = transaction.objectStore(tableName);
       const request = store.delete(key);
       request.onsuccess = () => {
-        notify(storeName);
+        notify(tableName);
         resolve();
       };
       request.onerror = () => reject(request.error);
     });
   },
-
+  async deleteAll(tableName) {
+    const db = await this._getDB();
+    if (!db) return;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(tableName, 'readwrite');
+      const store = transaction.objectStore(tableName);
+      const request = store.clear();
+      request.onsuccess = () => {
+        notify(tableName);
+        resolve();
+      };
+      request.onerror = () => reject(request.error);
+    });
+  },
   subscribe(tableName, callback) {
     if (!tableSubscribers.has(tableName)) {
       tableSubscribers.set(tableName, new Set());
@@ -109,40 +151,52 @@ let socket = null;
 let reconnectInterval = 1000;
 let isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
-function connectToSyncServer() {
+async function connectToSyncServer() {
   if (
     typeof window === 'undefined' ||
-    (socket && socket.readyState < 2) ||
-    !isOnline
+    !isOnline ||
+    (socket && socket.readyState < 2)
   ) {
     return;
   }
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const socketURL = `${protocol}//${window.location.host}/api/sync`;
-
   socket = new WebSocket(socketURL);
 
   socket.onopen = () => {
-    console.log('[Sync Engine] Connection established.');
+    console.log('[Sync Engine] WebSocket connected.');
     reconnectInterval = 1000;
     processOutbox();
   };
 
   socket.onmessage = async (event) => {
-    const { type, tableName, data, id } = JSON.parse(event.data);
-    if (type === 'put') {
-      await localDB.put(tableName, data);
-    } else if (type === 'delete') {
-      await localDB.delete(tableName, id);
+    try {
+      const payload = JSON.parse(event.data);
+      const { type, tableName, data, id } = payload;
+
+      console.log('[Sync Engine] Received message:', payload);
+
+      if (type === 'put') {
+        await localDB.put(tableName, data);
+      } else if (type === 'delete') {
+        await localDB.delete(tableName, id);
+      }
+    } catch (e) {
+      console.error('[Sync Engine] Error processing incoming message:', e);
     }
   };
 
   socket.onclose = () => {
     socket = null;
     if (isOnline) {
+      console.log(
+        `[Sync Engine] WebSocket closed. Reconnecting in ${reconnectInterval}ms...`,
+      );
       setTimeout(connectToSyncServer, reconnectInterval);
       reconnectInterval = Math.min(reconnectInterval * 2, 30000);
+    } else {
+      console.log('[Sync Engine] WebSocket closed due to being offline.');
     }
   };
 
@@ -154,7 +208,13 @@ function connectToSyncServer() {
 
 async function processOutbox() {
   if (socket && socket.readyState === WebSocket.OPEN) {
-    const outboxStore = await localDB.getAll('outbox');
+    const outboxItems = await localDB.getAll('outbox');
+    if (outboxItems.length === 0) return;
+
+    console.log(
+      `[Sync Engine] Processing ${outboxItems.length} items from outbox...`,
+    );
+
     const db = await localDB._getDB();
     if (!db) return;
     const transaction = db.transaction('outbox', 'readonly');
@@ -163,13 +223,16 @@ async function processOutbox() {
 
     keysRequest.onsuccess = async () => {
       const keys = keysRequest.result;
-      for (let i = 0; i < outboxStore.length; i++) {
-        const payload = outboxStore[i];
+      for (let i = 0; i < outboxItems.length; i++) {
+        const payload = outboxItems[i];
         const key = keys[i];
         socket.send(JSON.stringify(payload));
         await localDB.delete('outbox', key);
       }
+      console.log('[Sync Engine] Outbox processed.');
     };
+    keysRequest.onerror = (e) =>
+      console.error('[Sync Engine] Could not get outbox keys:', e);
   }
 }
 
@@ -178,15 +241,15 @@ export const syncEngine = {
     if (typeof window !== 'undefined') {
       window.addEventListener('online', () => {
         isOnline = true;
+        console.log('[Sync Engine] Application is online.');
         connectToSyncServer();
       });
       window.addEventListener('offline', () => {
         isOnline = false;
+        console.log('[Sync Engine] Application is offline.');
         if (socket) socket.close();
       });
+      connectToSyncServer();
     }
-
-    connectToSyncServer();
-    localDB.subscribe('outbox', processOutbox);
   },
 };

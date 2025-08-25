@@ -32,7 +32,7 @@ export const ModalContent = {
   },
   template(html) {
     return html`
-      <div w-if="modal.is_open()">
+      <div w-if="modal && modal.is_open()">
         <div
           class="fixed left-[50%] top-[50%] z-50 grid w-full max-w-sm translate-x-[-50%] translate-y-[-50%] gap-4 border border-border bg-background p-6 shadow-md rounded-lg"
         >

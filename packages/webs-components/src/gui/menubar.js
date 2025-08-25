@@ -29,7 +29,7 @@ export const MenubarTrigger = {
       <button
         type="button"
         @click="menubar.toggleMenu(menuValue)"
-        :data-state="menubar.is_open(menuValue) ? 'open' : 'closed'"
+        :data-state="menubar && menubar.is_open(menuValue) ? 'open' : 'closed'"
         class="flex cursor-default select-none items-center rounded-sm px-3 py-1.5 text-sm font-medium outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
       >
         <slot></slot>
@@ -48,8 +48,8 @@ export const MenubarContent = {
   template(html) {
     return html`
       <div
-        w-if="menubar.is_open(menuValue)"
-        class="absolute z-50 min-w-[12rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md top-full translate-y-2 origin-top"
+        w-if="menubar && menubar.is_open(menuValue)"
+        class="absolute z-50 min-w-[12rem] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md top-full translate-y-2 origin-top"
       >
         <slot></slot>
       </div>
@@ -114,7 +114,7 @@ export const MenubarSubTrigger = {
   template(html) {
     return html`
       <div
-        :data-state="submenu.is_open() ? 'open' : 'closed'"
+        :data-state="submenu && submenu.is_open() ? 'open' : 'closed'"
         class="flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
       >
         <span class="flex-1"><slot></slot></span>
@@ -132,8 +132,8 @@ export const MenubarSubContent = {
   template(html) {
     return html`
       <div
-        w-if="submenu.is_open()"
-        class="absolute z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md left-full -top-2"
+        w-if="submenu && submenu.is_open()"
+        class="absolute z-50 min-w-[8rem] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md left-full -top-2"
       >
         <slot></slot>
       </div>

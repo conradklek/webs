@@ -100,7 +100,12 @@ export function startServer(serverContext) {
                 serverContext.db.query(sql).run(id, user.id);
               }
             }
-            serverContext.sync.broadcast(message);
+            // Broadcast the message to all clients *except* the sender
+            for (const client of serverContext.sync.clients) {
+              if (client !== ws && client.readyState === WebSocket.OPEN) {
+                client.send(message);
+              }
+            }
           } catch (e) {
             console.error('[Sync WS] Error processing message:', e);
           }
