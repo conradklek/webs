@@ -1,6 +1,40 @@
 # webs.js
 
-A JavaScript framework for the modern web.
+A javascript framework
+
+```
+webs/
+├── packages/
+│   ├── webs-framework/
+│   │   ├── bin/
+│   │   │   ├── cli.js
+│   │   │   └── utils/
+│   │   │       ├── build.js
+│   │   │       ├── config.js
+│   │   │       ├── routes.js
+│   │   │       └── server.js
+│   │   ├── client/
+│   │   │   ├── db.js
+│   │   │   ├── index.js
+│   │   │   ├── session.js
+│   │   │   └── sw.js
+│   │   ├── lib/
+│   │   │   ├── compiler.js
+│   │   │   ├── parser.js
+│   │   │   ├── reactivity.js
+│   │   │   ├── renderer.js
+│   │   │   └── runtime.js
+│   │   ├── server/
+│   │   │   ├── auth.js
+│   │   │   ├── db.js
+│   │   │   ├── fs.js
+│   │   │   └── request-handler.js
+│   │   ├── index.js
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   └── webs-components/
+│       ├── ... (demo app files)
+```
 
 ---
 
@@ -61,42 +95,46 @@ Components are the heart of a Webs application. They are plain JavaScript object
 A component is defined by a few key properties:
 
 - `name`: A unique string identifier for the component.
-- `state()`: A function that returns a plain object of initial, reactive data.
-- `setup(context)`: A function that runs after the state is initialized. It receives a context object (containing `props`, lifecycle hooks like `onMounted`, etc.) and is the ideal place for logic that needs to run once.
-- `methods`: An object containing functions that can be called from the template.
-- `template`: An HTML string that defines the component's structure.
+- `props`: An object defining the properties the component accepts from a parent.
+- `setup(props, context)`: A function where all reactive state and logic for the component is defined. It runs once when the component is created.
+- `template`: An HTML string (or a tagged template literal function) that defines the component's structure.
 
 ```javascript
 // src/app/counter.js
+import { useState, onMounted } from '@conradklek/webs';
+
 export default {
   name: "Counter",
-  state() {
-    return {
-      count: 0,
-    };
-  },
-  setup({ onMounted }) {
+  setup(props, context) {
+    const count = useState(0);
+
+    function increment() {
+      count++;
+    }
+
     onMounted(() => {
       console.log("Counter component has been mounted!");
     });
+
+    return {
+      count,
+      increment,
+    };
   },
-  methods: {
-    increment() {
-      this.count++;
-    },
+  template(html) {
+    return html`
+      <div>
+        <p>Count: {{ count }}</p>
+        <button type="button" @click="increment">Increment</button>
+      </div>
+    `;
   },
-  template: `
-    <div>
-      <p>Count: {{ count }}</p>
-      <button type="button" @click="increment">Increment</button>
-    </div>
-  `,
 };
 ```
 
 #### Props
 
-Props allow you to pass data from a parent component to a child. You can define them with types and default values.
+Props allow you to pass data from a parent component to a child. You can define them with types and default values. They are passed as the first argument to the `setup` function.
 
 ```javascript
 // src/components/Greeting.js
@@ -108,7 +146,12 @@ export default {
       default: "World",
     },
   },
-  template: `<p>Hello, {{ name }}!</p>`,
+  setup(props) {
+    console.log(props.name);
+  },
+  template(html) {
+    return html`<p>Hello, {{ name }}!</p>`;
+  },
 };
 ```
 
@@ -125,12 +168,14 @@ export default {
   components: {
     Greeting,
   },
-  template: `
-    <div>
-      <Greeting name="Alice" />
-      <Greeting />
-    </div>
-  `,
+  template(html) {
+    return html`
+      <div>
+        <Greeting name="Alice" />
+        <Greeting />
+      </div>
+    `;
+  },
 };
 ```
 
@@ -142,11 +187,13 @@ To pass content _into_ a component, use the `<slot>` tag. Any child elements you
 // src/components/Wrapper.js
 export default {
   name: "Wrapper",
-  template: `
-    <div class="wrapper">
-      <slot></slot>
-    </div>
-  `
+  template(html) {
+    return html`
+      <div class="wrapper">
+        <slot></slot>
+      </div>
+    `;
+  },
 }
 
 // src/app/index.js
@@ -155,11 +202,13 @@ import Wrapper from '../components/Wrapper.js';
 export default {
   name: "HomePage",
   components: { Wrapper },
-  template: `
-    <Wrapper>
-      <p>This content will be placed inside the wrapper.</p>
-    </Wrapper>
-  `
+  template(html) {
+    return html`
+      <Wrapper>
+        <p>This content will be placed inside the wrapper.</p>
+      </Wrapper>
+    `;
+  },
 }
 ```
 
@@ -167,7 +216,7 @@ export default {
 
 ### 3. Database
 
-Webs includes out-of-the-box support for an SQLite database, managed via Bun's native `bun:sqlite` driver. The framework does not enforce a specific migration strategy, allowing you to manage your database schema as you see fit.
+Webs includes out-of-the-box support for an SQLite database, managed via Bun's native `bun:sqlite` driver. The framework provides a simple migration system to manage your database schema over time.
 
 ### 4. Server Actions
 
@@ -181,10 +230,8 @@ export default {
   name: "Dashboard",
   actions: {
     async fetch_user_posts(context) {
-      const { db, user } = context; // Safely access server resources
+      const { db, user } = context;
       if (!user) throw new Error("Unauthorized");
-
-      // Perform a database query on the server
       return db.query("SELECT * FROM posts WHERE user_id = ?").all(user.id);
     },
   },
@@ -202,11 +249,19 @@ To apply middleware, you export a named `middleware` array from a page component
 
 ```javascript
 // src/app/profile/[username].js
-import { use_logger } from "../use/logger.js";
-import { use_auth } from "../use/auth.js";
 
-// Middleware runs in order: first the logger, then the auth check.
-export const middleware = [use_logger, use_auth];
+export const middleware = [
+  (to, from, next) => {
+    console.log(`Navigating from ${from.path} to ${to.path}`);
+    next();
+  },
+  (to, from, next) => {
+    if (!to.user) {
+      return next('/login');
+    }
+    next();
+  }
+];
 
 export default {
   name: "Profile",
@@ -250,19 +305,7 @@ Any attribute you pass to a component that is _not_ a declared prop will automat
 <input type="text" class="input mt-4" data-testid="name-input" />
 ```
 
-**Declarative Class Binding**
-
-The `:class` binding is supercharged. You can pass it an object to conditionally toggle classes, or an array to mix and match dynamic and static classes.
-
-```html
-<!-- Object Syntax -->
-<div :class="{ 'active': isActive, 'text-danger': hasError }"></div>
-
-<!-- Array Syntax -->
-<div :class="[baseClass, { 'active': isActive }]"></div>
-```
-
-### 7. Styling with Tailwind CSS
+### 6. Styling with Tailwind CSS
 
 Webs has a deep, native integration with the **Tailwind CSS v4 engine**. You can write component-scoped styles directly in a `styles` property. This block gives you access to the full power of Tailwind, including `@theme` for defining design tokens and `@apply` for creating reusable component classes.
 
@@ -282,7 +325,9 @@ export default {
     }
   }
 `,
-  template: `<button type="button" class="btn-brand">Click Me</button>`,
+  template(html) {
+    return html`<button type="button" class="btn-brand">Click Me</button>`;
+  },
 };
 ```
 

@@ -1,37 +1,10 @@
-const Modal = {
-  name: "Modal",
-  state() {
-    return {
-      isOpen: false,
-    };
-  },
-  setup({ provide }) {
-    provide("modal", {
-      open: this.open,
-      close: this.close,
-      is_open: this.is_open,
-    });
-  },
-  methods: {
-    open() {
-      this.isOpen = true;
-    },
-    close() {
-      this.isOpen = false;
-    },
-    is_open() {
-      return this.isOpen;
-    },
-  },
-  template(html) {
-    return html`<slot></slot>`;
-  },
-};
+import { provide, inject, useState } from '@conradklek/webs';
 
-const ModalTrigger = {
-  name: "ModalTrigger",
-  state({ inject }) {
-    return { modal: inject("modal") };
+export const ModalTrigger = {
+  name: 'ModalTrigger',
+  setup() {
+    const modal = inject('modal');
+    return { modal };
   },
   template(html) {
     return html`<button type="button" @click="modal.open()">
@@ -40,22 +13,22 @@ const ModalTrigger = {
   },
 };
 
-const ModalClose = {
-  name: "ModalClose",
-  state({ inject }) {
-    return { modal: inject("modal") };
+export const ModalClose = {
+  name: 'ModalClose',
+  setup() {
+    const modal = inject('modal');
+    return { modal };
   },
   template(html) {
-    return html`<button @click="modal.close()">
-      <slot></slot>
-    </button>`;
+    return html`<button @click="modal.close()"><slot></slot></button>`;
   },
 };
 
-const ModalContent = {
-  name: "ModalContent",
-  state({ inject }) {
-    return { modal: inject("modal") };
+export const ModalContent = {
+  name: 'ModalContent',
+  setup() {
+    const modal = inject('modal');
+    return { modal };
   },
   template(html) {
     return html`
@@ -70,8 +43,8 @@ const ModalContent = {
   },
 };
 
-const ModalHeader = {
-  name: "ModalHeader",
+export const ModalHeader = {
+  name: 'ModalHeader',
   template(html) {
     return html`<div class="flex flex-col space-y-1.5 text-left">
       <slot></slot>
@@ -79,8 +52,8 @@ const ModalHeader = {
   },
 };
 
-const ModalFooter = {
-  name: "ModalFooter",
+export const ModalFooter = {
+  name: 'ModalFooter',
   template(html) {
     return html`<div
       class="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2"
@@ -90,8 +63,8 @@ const ModalFooter = {
   },
 };
 
-const ModalTitle = {
-  name: "ModalTitle",
+export const ModalTitle = {
+  name: 'ModalTitle',
   template(html) {
     return html`<h2 class="text-lg font-medium leading-none">
       <slot></slot>
@@ -99,21 +72,40 @@ const ModalTitle = {
   },
 };
 
-const ModalDescription = {
-  name: "ModalDescription",
+export const ModalDescription = {
+  name: 'ModalDescription',
   template(html) {
     return html`<p class="text-muted-foreground text-pretty"><slot></slot></p>`;
   },
 };
 
-Modal.components = {
-  ModalTrigger,
-  ModalContent,
-  ModalHeader,
-  ModalFooter,
-  ModalTitle,
-  ModalDescription,
-  ModalClose,
-};
+export const Modal = {
+  name: 'Modal',
+  components: {
+    ModalTrigger,
+    ModalContent,
+    ModalHeader,
+    ModalFooter,
+    ModalTitle,
+    ModalDescription,
+    ModalClose,
+  },
+  setup() {
+    const isOpen = useState(false);
 
-export default Modal;
+    function open() {
+      isOpen.value = true;
+    }
+    function close() {
+      isOpen.value = false;
+    }
+    function is_open() {
+      return isOpen.value;
+    }
+
+    provide('modal', { open, close, is_open });
+  },
+  template(html) {
+    return html`<slot></slot>`;
+  },
+};

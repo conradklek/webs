@@ -1,70 +1,15 @@
-const Accordion = {
-  name: "Accordion",
-  props: {
-    type: {
-      type: String,
-      default: "single",
-    },
-    collapsible: {
-      type: Boolean,
-      default: true,
-    },
-  },
-  state() {
-    return {
-      openItems: new Set(),
-    };
-  },
-  setup({ provide }) {
-    provide("accordion", {
-      toggle: this.toggle,
-      is_open: this.is_open,
-    });
-  },
-  methods: {
-    toggle(value) {
-      const newOpenItems = new Set(this.openItems);
-      if (this.type === "single") {
-        if (newOpenItems.has(value)) {
-          if (this.collapsible) {
-            newOpenItems.delete(value);
-          }
-        } else {
-          newOpenItems.clear();
-          newOpenItems.add(value);
-        }
-      } else if (this.type === "multiple") {
-        if (newOpenItems.has(value)) {
-          newOpenItems.delete(value);
-        } else {
-          newOpenItems.add(value);
-        }
-      }
-      this.openItems = newOpenItems;
-    },
-    is_open(value) {
-      return this.openItems.has(value);
-    },
-  },
-  template(html) {
-    return html`
-      <div class="w-full flex flex-col items-start justify-start gap-3">
-        <slot></slot>
-      </div>
-    `;
-  },
-};
+import { provide, inject, useState } from '@conradklek/webs';
 
-const AccordionItem = {
-  name: "AccordionItem",
+export const AccordionItem = {
+  name: 'AccordionItem',
   props: {
     value: {
       type: String,
       required: true,
     },
   },
-  setup({ props, provide }) {
-    provide("itemValue", props.value);
+  setup(props) {
+    provide('itemValue', props.value);
   },
   template(html) {
     return html`
@@ -75,13 +20,12 @@ const AccordionItem = {
   },
 };
 
-const AccordionTrigger = {
-  name: "AccordionTrigger",
-  state({ inject }) {
-    return {
-      accordion: inject("accordion"),
-      value: inject("itemValue"),
-    };
+export const AccordionTrigger = {
+  name: 'AccordionTrigger',
+  setup() {
+    const accordion = inject('accordion');
+    const value = inject('itemValue');
+    return { accordion, value };
   },
   template(html) {
     return html`
@@ -102,13 +46,12 @@ const AccordionTrigger = {
   },
 };
 
-const AccordionContent = {
-  name: "AccordionContent",
-  state({ inject }) {
-    return {
-      accordion: inject("accordion"),
-      value: inject("itemValue"),
-    };
+export const AccordionContent = {
+  name: 'AccordionContent',
+  setup() {
+    const accordion = inject('accordion');
+    const value = inject('itemValue');
+    return { accordion, value };
   },
   template(html) {
     return html`
@@ -121,10 +64,61 @@ const AccordionContent = {
   },
 };
 
-Accordion.components = {
-  AccordionItem,
-  AccordionTrigger,
-  AccordionContent,
-};
+export const Accordion = {
+  name: 'Accordion',
+  components: {
+    AccordionItem,
+    AccordionTrigger,
+    AccordionContent,
+  },
+  props: {
+    type: {
+      type: String,
+      default: 'single',
+    },
+    collapsible: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  setup(props) {
+    const openItems = useState(new Set());
 
-export default Accordion;
+    function toggle(value) {
+      const newOpenItems = new Set(openItems.value);
+      if (props.type === 'single') {
+        if (newOpenItems.has(value)) {
+          if (props.collapsible) {
+            newOpenItems.delete(value);
+          }
+        } else {
+          newOpenItems.clear();
+          newOpenItems.add(value);
+        }
+      } else if (props.type === 'multiple') {
+        if (newOpenItems.has(value)) {
+          newOpenItems.delete(value);
+        } else {
+          newOpenItems.add(value);
+        }
+      }
+      openItems.value = newOpenItems;
+    }
+
+    function is_open(value) {
+      return openItems.value.has(value);
+    }
+
+    provide('accordion', {
+      toggle,
+      is_open,
+    });
+  },
+  template(html) {
+    return html`
+      <div class="w-full flex flex-col items-start justify-start gap-3">
+        <slot></slot>
+      </div>
+    `;
+  },
+};

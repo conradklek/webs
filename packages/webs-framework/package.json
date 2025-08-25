@@ -1,37 +1,29 @@
 {
   "name": "@conradklek/webs",
   "author": "Conrad Klek",
-  "version": "0.1.27",
+  "version": "0.1.29",
   "description": "A JavaScript Framework",
   "bin": {
     "webs": "bin/cli.js"
   },
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
-  "types": "dist/index.d.ts",
   "files": [
     "bin",
     "dist",
-    "src"
+    "client",
+    "server",
+    "lib",
+    "index.js"
   ],
   "exports": {
-    ".": {
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    },
-    "./server": {
-      "import": "./dist/server.mjs",
-      "require": "./dist/server.js"
-    },
-    "./*": "./src/*.js"
+    ".": "./index.js",
+    "./client": "./client/index.js",
+    "./server": "./server/request-handler.js",
+    "./compiler": "./lib/compiler.js"
   },
   "scripts": {
     "dev": "NODE_ENV=development bun run ./bin/cli.js",
     "start": "NODE_ENV=production bun run ./bin/cli.js",
-    "build:js": "bun build ./src/client.js ./src/server.js --outdir=./dist --format=esm --target=bun --minify --sourcemap=inline",
-    "build:types": "tsc",
-    "build": "rm -rf dist && bun run build:js && bun run build:types",
+    "build": "echo 'Build process is now handled by the CLI and does not need a separate script.'",
     "format": "prettier --write ."
   },
   "dependencies": {

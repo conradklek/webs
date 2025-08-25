@@ -1,117 +1,72 @@
-const CardContent = {
-  name: "CardContent",
-  styles: `
-    @layer components {
-      .card-content {
-        @apply p-6 pt-0;
-      }
-    }
-  `,
+export const CardContent = {
+  name: 'CardContent',
   template(html) {
     return html`
-      <div class="card-content">
+      <div class="p-6 pt-0">
         <slot></slot>
       </div>
     `;
   },
 };
 
-const CardDescription = {
-  name: "CardDescription",
-  styles: `
-    @layer components {
-      .card-description {
-        @apply text-sm text-muted-foreground;
-      }
-    }
-  `,
+export const CardDescription = {
+  name: 'CardDescription',
   template(html) {
     return html`
-      <p class="card-description">
+      <p class="text-sm text-muted-foreground">
         <slot></slot>
       </p>
     `;
   },
 };
 
-const CardFooter = {
-  name: "CardFooter",
-  styles: `
-    @layer components {
-      .card-footer {
-        @apply flex items-center p-6 pt-0;
-      }
-    }
-  `,
+export const CardFooter = {
+  name: 'CardFooter',
   template(html) {
     return html`
-      <div class="card-footer">
+      <div class="flex items-center p-6 pt-0">
         <slot></slot>
       </div>
     `;
   },
 };
 
-const CardHeader = {
-  name: "CardHeader",
-  styles: `
-    @layer components {
-      .card-header {
-        @apply flex flex-col space-y-1.5 p-6;
-      }
-    }
-  `,
+export const CardHeader = {
+  name: 'CardHeader',
   template(html) {
     return html`
-      <div class="card-header">
+      <div class="flex flex-col space-y-1.5 p-6">
         <slot></slot>
       </div>
     `;
   },
 };
 
-const CardTitle = {
-  name: "CardTitle",
-  styles: `
-    @layer components {
-      .card-title {
-        @apply text-lg font-medium leading-none;
-      }
-    }
-  `,
+export const CardTitle = {
+  name: 'CardTitle',
   template(html) {
     return html`
-      <h3 class="card-title">
+      <h3 class="text-lg font-medium leading-none">
         <slot></slot>
       </h3>
     `;
   },
 };
 
-const Card = {
-  name: "Card",
-  styles: `
-    @layer components {
-      .card {
-        @apply rounded-lg border border-border bg-card text-card-foreground;
-      }
-    }
-  `,
+export const Card = {
+  name: 'Card',
+  components: {
+    CardHeader,
+    CardTitle,
+    CardDescription,
+    CardContent,
+    CardFooter,
+  },
   template(html) {
     return html`
-      <div class="card">
+      <div class="rounded-lg border border-border bg-card text-card-foreground">
         <slot></slot>
       </div>
     `;
   },
 };
-
-Card.components = {
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-};
-
-export default Card;

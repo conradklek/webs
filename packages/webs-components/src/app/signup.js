@@ -1,28 +1,27 @@
-import { use_session } from "../use/session.js";
+import { useSession, useState } from '@conradklek/webs';
 
 export default {
-  name: "Signup",
-  state() {
-    return {
-      email: "",
-      username: "",
-      password: "",
-      error: null,
-    };
-  },
-  methods: {
-    async handle_signup() {
-      this.error = null;
+  name: 'Signup',
+  setup() {
+    const email = useState('');
+    const username = useState('');
+    const password = useState('');
+    const error = useState(null);
+
+    async function handleSignup() {
+      error.value = null;
       try {
-        await use_session.register({
-          email: this.email,
-          username: this.username,
-          password: this.password,
+        await useSession.register({
+          email: email.value,
+          username: username.value,
+          password: password.value,
         });
       } catch (err) {
-        this.error = use_session.error || "An unknown error occurred.";
+        error.value = useSession.error || 'An unknown error occurred.';
       }
-    },
+    }
+
+    return { email, username, password, error, handleSignup };
   },
   template(html) {
     return html`
@@ -36,27 +35,37 @@ export default {
           </div>
         </div>
         <form
-          @submit.prevent="handle_signup"
+          @submit.prevent="handleSignup"
           class="flex-1 flex flex-col items-start justify-start gap-2"
         >
-          <input w-model="email" type="email" placeholder="Email" required />
+          <input
+            w-model="email"
+            type="email"
+            placeholder="Email"
+            class="input"
+            required
+          />
           <input
             w-model="username"
             type="text"
             placeholder="Username"
+            class="input"
             required
           />
           <input
             w-model="password"
             type="password"
             placeholder="Password"
+            class="input"
             required
             minlength="8"
           />
-          <button type="submit" class="mt-4">Create Account</button>
+          <button type="submit" class="btn btn-default btn-size-lg mt-4">
+            Create Account
+          </button>
         </form>
         <div w-if="error">
-          <p class="text-red-700">{{ error }}</p>
+          <p class="text-red-700">{{error}}</p>
         </div>
       </div>
     `;

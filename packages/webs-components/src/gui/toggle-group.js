@@ -1,53 +1,21 @@
+import { provide, inject, useState } from '@conradklek/webs';
+
 const ToggleGroupItem = {
-  name: "ToggleGroupItem",
+  name: 'ToggleGroupItem',
   props: {
-    value: {
-      type: String,
-      required: true,
-    },
-    variant: {
-      type: String,
-    },
-    size: {
-      type: String,
-    },
+    value: { type: String, required: true },
   },
-  state({ props, inject }) {
-    const toggleGroup = inject("toggleGroup");
-    return {
-      toggleGroup,
-      value: props.value,
-    };
-  },
-  methods: {
-    getClasses() {
-      const base =
-        "inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors hover:bg-muted hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground";
-      const variants = {
-        default: "bg-transparent",
-        outline:
-          "border border-input bg-transparent hover:bg-accent hover:text-accent-foreground",
-      };
-      const sizes = {
-        default: "h-10 px-3 min-w-10",
-        sm: "h-9 px-2.5 min-w-9",
-        lg: "h-11 px-5 min-w-11",
-      };
-      const variant = this.variant || this.toggleGroup.variant;
-      const size = this.size || this.toggleGroup.size;
-      return `${base} ${variants[variant] || variants.default} ${sizes[size] || sizes.default
-        }`;
-    },
+  setup(props) {
+    const group = inject('toggleGroup');
+    return { group, value: props.value };
   },
   template(html) {
     return html`
       <button
         type="button"
-        role="radio"
-        :aria-checked="toggleGroup.is_on(value)"
-        @click="toggleGroup.toggle(value)"
-        :data-state="toggleGroup.is_on(value) ? 'on' : 'off'"
-        :class="getClasses()"
+        @click="group.toggle(value)"
+        :data-state="group.is_on(value) ? 'on' : 'off'"
+        class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors hover:bg-muted hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground h-10 px-3"
       >
         <slot></slot>
       </button>
@@ -56,72 +24,46 @@ const ToggleGroupItem = {
 };
 
 const ToggleGroup = {
-  name: "ToggleGroup",
+  name: 'ToggleGroup',
+  components: { ToggleGroupItem },
   props: {
-    type: {
-      type: String,
-      default: "single",
-    },
-    variant: {
-      type: String,
-      default: "default",
-    },
-    size: {
-      type: String,
-      default: "default",
-    },
-    defaultValue: {
-      type: [String, Array],
-    },
+    type: { type: String, default: 'single' },
+    defaultValue: { type: [String, Array], default: null },
   },
-  state({ props }) {
-    return {
-      value:
-        props.type === "multiple"
-          ? new Set(props.defaultValue || [])
-          : props.defaultValue,
-    };
-  },
-  setup({ props, provide }) {
-    provide("toggleGroup", {
-      toggle: this.toggle,
-      is_on: this.is_on,
-      variant: props.variant,
-      size: props.size,
-    });
-  },
-  methods: {
-    toggle(itemValue) {
-      if (this.type === "multiple") {
-        const newValue = new Set(this.value);
+  setup(props) {
+    const value = useState(
+      props.type === 'multiple'
+        ? new Set(props.defaultValue || [])
+        : props.defaultValue,
+    );
+
+    function toggle(itemValue) {
+      if (props.type === 'multiple') {
+        const newValue = new Set(value.value);
         if (newValue.has(itemValue)) {
           newValue.delete(itemValue);
         } else {
           newValue.add(itemValue);
         }
-        this.value = newValue;
+        value.value = newValue;
       } else {
-        this.value = this.value === itemValue ? null : itemValue;
+        value.value = value.value === itemValue ? null : itemValue;
       }
-    },
-    is_on(itemValue) {
-      if (this.type === "multiple") {
-        return this.value.has(itemValue);
-      }
-      return this.value === itemValue;
-    },
+    }
+
+    function is_on(itemValue) {
+      return props.type === 'multiple'
+        ? value.value.has(itemValue)
+        : value.value === itemValue;
+    }
+
+    provide('toggleGroup', { toggle, is_on });
   },
   template(html) {
-    return html`
-      <div role="group" class="flex items-center justify-center gap-1">
-        <slot></slot>
-      </div>
-    `;
+    return html`<div class="flex items-center justify-center gap-1">
+      <slot></slot>
+    </div>`;
   },
-};
-
-ToggleGroup.components = {
-  ToggleGroupItem,
 };
 
 export default ToggleGroup;

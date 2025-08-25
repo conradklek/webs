@@ -1,23 +1,22 @@
-import { use_session } from "../use/session.js";
+import { useSession, useState } from '@conradklek/webs';
 
 export default {
-  name: "Login",
-  state() {
-    return {
-      email: "anon@webs.site",
-      password: "password",
-      error: null,
-    };
-  },
-  methods: {
-    async handle_login() {
-      this.error = null;
+  name: 'Login',
+  setup() {
+    const email = useState('anon@webs.site');
+    const password = useState('password');
+    const error = useState(null);
+
+    async function handleLogin() {
+      error.value = null;
       try {
-        await use_session.login(this.email, this.password);
+        await useSession.login(email.value, password.value);
       } catch (err) {
-        this.error = err.message;
+        error.value = err.message;
       }
-    },
+    }
+
+    return { email, password, error, handleLogin };
   },
   template(html) {
     return html`
@@ -31,25 +30,27 @@ export default {
           </div>
         </div>
         <form
-          @submit.prevent="handle_login"
+          @submit.prevent="handleLogin"
           class="flex-1 flex flex-col items-start justify-start gap-2"
         >
           <input
             w-model="email"
             type="email"
             placeholder="Email"
-            class="shrink-0"
+            class="input shrink-0"
           />
           <input
             w-model="password"
             type="password"
             placeholder="Password"
-            class="shrink-0"
+            class="input shrink-0"
           />
-          <button type="submit" class="mt-4">Submit</button>
+          <button type="submit" class="btn btn-default btn-size-lg mt-4">
+            Submit
+          </button>
         </form>
         <div w-if="error">
-          <p class="text-red-700">{{ error }}</p>
+          <p class="text-red-700">{{error}}</p>
         </div>
       </div>
     `;

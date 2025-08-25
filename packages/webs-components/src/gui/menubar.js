@@ -1,78 +1,28 @@
-const Menubar = {
-  name: "Menubar",
-  state() {
-    return {
-      activeMenu: null,
-    };
-  },
-  setup({ provide, onMounted, onUnmounted }) {
-    onMounted(() => {
-      console.log("Menubar Mounted!");
-    });
+import {
+  provide,
+  inject,
+  useState,
+  onMounted,
+  onUnmounted,
+} from '@conradklek/webs';
 
-    onUnmounted(() => {
-      console.log("Menubar Dismounted!");
-    });
-
-    provide("menubar", {
-      openMenu: this.openMenu,
-      closeMenu: this.closeMenu,
-      toggleMenu: this.toggleMenu,
-      is_open: this.is_open,
-    });
-  },
-  methods: {
-    openMenu(value) {
-      this.activeMenu = value;
-    },
-    closeMenu() {
-      this.activeMenu = null;
-    },
-    toggleMenu(value) {
-      this.activeMenu = this.activeMenu === value ? null : value;
-    },
-    is_open(value) {
-      return this.activeMenu === value;
-    },
+export const MenubarMenu = {
+  name: 'MenubarMenu',
+  props: { value: { type: String, required: true } },
+  setup(props) {
+    provide('menuValue', props.value);
   },
   template(html) {
-    return html`
-      <div
-        class="flex h-10 items-center space-x-1 border border-border rounded-md bg-background p-1"
-      >
-        <slot></slot>
-      </div>
-    `;
+    return html`<div class="relative"><slot></slot></div>`;
   },
 };
 
-const MenubarMenu = {
-  name: "MenubarMenu",
-  props: {
-    value: {
-      type: String,
-      required: true,
-    },
-  },
-  setup({ props, provide }) {
-    provide("menuValue", props.value);
-  },
-  template(html) {
-    return html`
-      <div class="relative">
-        <slot></slot>
-      </div>
-    `;
-  },
-};
-
-const MenubarTrigger = {
-  name: "MenubarTrigger",
-  state({ inject }) {
-    return {
-      menubar: inject("menubar"),
-      menuValue: inject("menuValue"),
-    };
+export const MenubarTrigger = {
+  name: 'MenubarTrigger',
+  setup() {
+    const menubar = inject('menubar');
+    const menuValue = inject('menuValue');
+    return { menubar, menuValue };
   },
   template(html) {
     return html`
@@ -88,13 +38,12 @@ const MenubarTrigger = {
   },
 };
 
-const MenubarContent = {
-  name: "MenubarContent",
-  state({ inject }) {
-    return {
-      menubar: inject("menubar"),
-      menuValue: inject("menuValue"),
-    };
+export const MenubarContent = {
+  name: 'MenubarContent',
+  setup() {
+    const menubar = inject('menubar');
+    const menuValue = inject('menuValue');
+    return { menubar, menuValue };
   },
   template(html) {
     return html`
@@ -108,10 +57,11 @@ const MenubarContent = {
   },
 };
 
-const MenubarItem = {
-  name: "MenubarItem",
-  state({ inject }) {
-    return { menubar: inject("menubar") };
+export const MenubarItem = {
+  name: 'MenubarItem',
+  setup() {
+    const menubar = inject('menubar');
+    return { menubar };
   },
   template(html) {
     return html`
@@ -125,82 +75,41 @@ const MenubarItem = {
   },
 };
 
-const MenubarSeparator = {
-  name: "MenubarSeparator",
-  template(html) {
-    return html` <div class="-mx-1 my-1 h-px bg-muted"></div> `;
-  },
-};
+export const MenubarSub = {
+  name: 'MenubarSub',
+  setup() {
+    const isOpen = useState(false);
+    let closeTimer = null;
 
-const MenubarShortcut = {
-  name: "MenubarShortcut",
-  template(html) {
-    return html`
-      <span class="ml-auto text-xs tracking-widest text-muted-foreground">
-        <slot></slot>
-      </span>
-    `;
-  },
-};
+    function open() {
+      clearTimeout(closeTimer);
+      isOpen.value = true;
+    }
+    function close() {
+      closeTimer = setTimeout(() => {
+        isOpen.value = false;
+      }, 100);
+    }
+    function is_open() {
+      return isOpen.value;
+    }
 
-const MenubarLabel = {
-  name: "MenubarLabel",
+    provide('submenu', { open, close, is_open });
+
+    return { open, close };
+  },
   template(html) {
-    return html`<div class="px-2 py-1.5 text-sm font-semibold">
+    return html`<div class="relative" @mouseenter="open" @mouseleave="close">
       <slot></slot>
     </div>`;
   },
 };
 
-const MenubarGroup = {
-  name: "MenubarGroup",
-  template(html) {
-    return html`<div><slot></slot></div>`;
-  },
-};
-
-const MenubarSub = {
-  name: "MenubarSub",
-  state() {
-    return {
-      isOpen: false,
-      closeTimer: null,
-    };
-  },
-  setup({ provide }) {
-    provide("submenu", {
-      open: this.open,
-      close: this.close,
-      is_open: this.is_open,
-    });
-  },
-  methods: {
-    open() {
-      clearTimeout(this.closeTimer);
-      this.isOpen = true;
-    },
-    close() {
-      this.closeTimer = setTimeout(() => {
-        this.isOpen = false;
-      }, 100);
-    },
-    is_open() {
-      return this.isOpen;
-    },
-  },
-  template(html) {
-    return html`
-      <div class="relative" @mouseenter="open" @mouseleave="close">
-        <slot></slot>
-      </div>
-    `;
-  },
-};
-
-const MenubarSubTrigger = {
-  name: "MenubarSubTrigger",
-  state({ inject }) {
-    return { submenu: inject("submenu") };
+export const MenubarSubTrigger = {
+  name: 'MenubarSubTrigger',
+  setup() {
+    const submenu = inject('submenu');
+    return { submenu };
   },
   template(html) {
     return html`
@@ -214,10 +123,11 @@ const MenubarSubTrigger = {
   },
 };
 
-const MenubarSubContent = {
-  name: "MenubarSubContent",
-  state({ inject }) {
-    return { submenu: inject("submenu") };
+export const MenubarSubContent = {
+  name: 'MenubarSubContent',
+  setup() {
+    const submenu = inject('submenu');
+    return { submenu };
   },
   template(html) {
     return html`
@@ -231,18 +141,82 @@ const MenubarSubContent = {
   },
 };
 
-Menubar.components = {
-  MenubarMenu,
-  MenubarTrigger,
-  MenubarContent,
-  MenubarItem,
-  MenubarSeparator,
-  MenubarShortcut,
-  MenubarLabel,
-  MenubarGroup,
-  MenubarSub,
-  MenubarSubTrigger,
-  MenubarSubContent,
+export const MenubarSeparator = {
+  name: 'MenubarSeparator',
+  template(html) {
+    return html`<div class="-mx-1 my-1 h-px bg-muted"></div>`;
+  },
 };
 
-export default Menubar;
+export const MenubarShortcut = {
+  name: 'MenubarShortcut',
+  template(html) {
+    return html`<span
+      class="ml-auto text-xs tracking-widest text-muted-foreground"
+      ><slot></slot
+    ></span>`;
+  },
+};
+
+export const MenubarLabel = {
+  name: 'MenubarLabel',
+  template(html) {
+    return html`<div class="px-2 py-1.5 text-sm font-semibold">
+      <slot></slot>
+    </div>`;
+  },
+};
+
+export const MenubarGroup = {
+  name: 'MenubarGroup',
+  template(html) {
+    return html`<div><slot></slot></div>`;
+  },
+};
+
+export const Menubar = {
+  name: 'Menubar',
+  components: {
+    MenubarMenu,
+    MenubarTrigger,
+    MenubarContent,
+    MenubarItem,
+    MenubarSeparator,
+    MenubarShortcut,
+    MenubarLabel,
+    MenubarGroup,
+    MenubarSub,
+    MenubarSubTrigger,
+    MenubarSubContent,
+  },
+  setup() {
+    const activeMenu = useState(null);
+
+    onMounted(() => console.log('Menubar Mounted!'));
+    onUnmounted(() => console.log('Menubar Dismounted!'));
+
+    function openMenu(value) {
+      activeMenu.value = value;
+    }
+    function closeMenu() {
+      activeMenu.value = null;
+    }
+    function toggleMenu(value) {
+      activeMenu.value = activeMenu.value === value ? null : value;
+    }
+    function is_open(value) {
+      return activeMenu.value === value;
+    }
+
+    provide('menubar', { openMenu, closeMenu, toggleMenu, is_open });
+  },
+  template(html) {
+    return html`
+      <div
+        class="flex h-10 items-center space-x-1 border border-border rounded-md bg-background p-1"
+      >
+        <slot></slot>
+      </div>
+    `;
+  },
+};

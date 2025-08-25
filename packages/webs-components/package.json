@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "webs",
-    "start": "NODE_ENV=production webs"
+    "start": "NODE_ENV=production webs",
+    "format": "prettier --write ."
   },
   "dependencies": {
     "@conradklek/webs": "file:../webs-framework"

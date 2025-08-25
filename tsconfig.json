@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "strict": true,
+    "paths": {
+      "@conradklek/webs": ["./packages/webs-framework/src/index.js"],
+      "@conradklek/webs/*": ["./packages/webs-framework/src/*"]
+    }
+  }
+}

@@ -1,20 +1,22 @@
-const Checkbox = {
-  name: "Checkbox",
+import { useState } from '@conradklek/webs';
+
+export const Checkbox = {
+  name: 'Checkbox',
   props: {
     defaultChecked: {
       type: Boolean,
       default: false,
     },
   },
-  state({ props }) {
+  setup(props) {
+    const isChecked = useState(props.defaultChecked);
+    function toggle() {
+      isChecked.value = !isChecked.value;
+    }
     return {
-      isChecked: props.defaultChecked,
+      isChecked,
+      toggle,
     };
-  },
-  methods: {
-    toggle() {
-      this.isChecked = !this.isChecked;
-    },
   },
   template(html) {
     return html`
@@ -29,5 +31,3 @@ const Checkbox = {
     `;
   },
 };
-
-export default Checkbox;

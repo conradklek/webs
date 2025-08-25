@@ -1,17 +1,13 @@
-const RadioGroupItem = {
-  name: "RadioGroupItem",
+import { provide, inject, useState } from '@conradklek/webs';
+
+export const RadioGroupItem = {
+  name: 'RadioGroupItem',
   props: {
-    value: {
-      type: String,
-      required: true,
-    },
+    value: { type: String, required: true },
   },
-  state({ props, inject }) {
-    const radioGroup = inject("radioGroup");
-    return {
-      radioGroup,
-      value: props.value,
-    };
+  setup(props) {
+    const radioGroup = inject('radioGroup');
+    return { radioGroup, value: props.value };
   },
   template(html) {
     return html`
@@ -34,31 +30,23 @@ const RadioGroupItem = {
   },
 };
 
-const RadioGroup = {
-  name: "RadioGroup",
+export const RadioGroup = {
+  name: 'RadioGroup',
+  components: { RadioGroupItem },
   props: {
-    defaultValue: {
-      type: String,
-    },
+    defaultValue: { type: String },
   },
-  state({ props }) {
-    return {
-      selectedValue: props.defaultValue,
-    };
-  },
-  setup({ provide }) {
-    provide("radioGroup", {
-      select: this.select,
-      is_selected: this.is_selected,
-    });
-  },
-  methods: {
-    select(value) {
-      this.selectedValue = value;
-    },
-    is_selected(value) {
-      return this.selectedValue === value;
-    },
+  setup(props) {
+    const selectedValue = useState(props.defaultValue);
+
+    function select(value) {
+      selectedValue.value = value;
+    }
+    function is_selected(value) {
+      return selectedValue.value === value;
+    }
+
+    provide('radioGroup', { select, is_selected });
   },
   template(html) {
     return html`
@@ -68,9 +56,3 @@ const RadioGroup = {
     `;
   },
 };
-
-RadioGroup.components = {
-  RadioGroupItem,
-};
-
-export default RadioGroup;

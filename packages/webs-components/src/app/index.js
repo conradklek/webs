@@ -1,5 +1,82 @@
+export const styles = `
+@theme {
+  --color-background: oklch(1 0 0);
+  --color-foreground: oklch(0.145 0 0);
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.145 0 0);
+  --color-popover: oklch(1 0 0);
+  --color-popover-foreground: oklch(0.145 0 0);
+  --color-primary: oklch(0.205 0 0);
+  --color-primary-foreground: oklch(0.985 0 0);
+  --color-secondary: oklch(0.97 0 0);
+  --color-secondary-foreground: oklch(0.205 0 0);
+  --color-muted: oklch(0.97 0 0);
+  --color-muted-foreground: oklch(0.556 0 0);
+  --color-accent: oklch(0.97 0 0);
+  --color-accent-foreground: oklch(0.205 0 0);
+  --color-destructive: oklch(0.577 0.245 27.325);
+  --color-border: oklch(0.922 0 0);
+  --color-input: oklch(0.922 0 0);
+  --color-ring: oklch(0.708 0 0);
+}
+
+@layer base {
+  html {
+    @apply min-h-full;
+  }
+  body {
+    @apply w-dvw min-h-dvh flex flex-col items-start justify-start overflow-x-hidden overflow-y-auto;
+  }
+  a {
+    @apply underline cursor-pointer active:opacity-50 whitespace-nowrap;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply shrink-0 inline-flex items-center justify-center whitespace-nowrap rounded text-sm tracking-wide focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none cursor-pointer;
+  }
+  .btn-default {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90;
+  }
+  .btn-destructive {
+    @apply bg-destructive text-white hover:bg-destructive/90;
+  }
+  .btn-outline {
+    @apply border border-input bg-background hover:bg-accent hover:text-accent-foreground;
+  }
+  .btn-secondary {
+    @apply bg-secondary text-secondary-foreground hover:bg-secondary/80;
+  }
+  .btn-ghost {
+    @apply hover:bg-accent hover:text-accent-foreground;
+  }
+  .btn-link {
+    @apply text-primary underline-offset-4 hover:underline;
+  }
+  .btn-size-default {
+    @apply h-7 px-2.5;
+  }
+  .btn-size-sm {
+    @apply h-6 rounded-md px-1.5;
+  }
+  .btn-size-lg {
+    @apply h-9 px-3 rounded-md;
+  }
+  .btn-size-icon {
+    @apply w-7 h-7;
+  }
+  .input { 
+    @apply flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm;
+  }
+  .textarea {
+    @apply flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm;
+  }
+}
+`;
+
 export default {
-  name: "Home",
+  name: 'Home',
   template(html) {
     return html`<div
       class="w-full p-8 flex flex-col items-start justify-start gap-6"
@@ -13,93 +90,12 @@ export default {
         </div>
       </div>
       <div class="flex-1 flex flex-col items-start justify-start gap-4">
-        <h2>Components</h2>
         <ul class="list-disc pl-8 space-y-0.5">
           <li>
             <a
-              href="/components/accordion"
+              href="/components"
               class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
-              >Accordion</a
-            >
-          </li>
-          <li>
-            <a
-              href="/components/breadcrumb"
-              class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
-              >Breadcrumb</a
-            >
-          </li>
-          <li>
-            <a
-              href="/components/card"
-              class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
-              >Card</a
-            >
-          </li>
-          <li>
-            <a
-              href="/components/checkbox"
-              class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
-              >Checkbox</a
-            >
-          </li>
-          <li>
-            <a
-              href="/components/menubar"
-              class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
-              >Menubar</a
-            >
-          </li>
-          <li>
-            <a
-              href="/components/modal"
-              class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
-              >Modal</a
-            >
-          </li>
-          <li>
-            <a
-              href="/components/radio-group"
-              class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
-              >Radio Group</a
-            >
-          </li>
-          <li>
-            <a
-              href="/components/switch"
-              class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
-              >Switch</a
-            >
-          </li>
-          <li>
-            <a
-              href="/components/tabs"
-              class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
-              >Tabs</a
-            >
-          </li>
-          <li>
-            <a
-              href="/components/toggle-group"
-              class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
-              >Toggle Group</a
-            >
-          </li>
-        </ul>
-        <h2>Examples</h2>
-        <ul class="list-disc pl-8 space-y-0.5">
-          <li>
-            <a
-              href="/chat"
-              class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
-              >Chatbot</a
-            >
-          </li>
-          <li>
-            <a
-              href="/todos"
-              class="ml-1 -my-1 py-1 text-blue-600 underline hover:opacity-75 active:opacity-50"
-              >Todos</a
+              >Components</a
             >
           </li>
         </ul>
