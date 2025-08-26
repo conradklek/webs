@@ -1,0 +1,34 @@
+<script>
+  import DemoComponent from './demo-component.webs';
+
+  export default {
+    name: 'ComponentDemo',
+    components: { DemoComponent },
+    setup(
+      props,
+      {
+        attrs: {
+          params: { component },
+        },
+      },
+    ) {
+      return { component };
+    },
+  };
+</script>
+
+<template>
+  <div class="w-full p-8 flex flex-col items-start justify-start gap-6">
+    <div class="w-full flex flex-row items-center justify-between gap-4">
+      <a href="/" class="link font-medium">webs.site</a>
+      <div class="w-full flex flex-row items-center justify-start gap-4">
+        <span>|</span>
+        <a href="/components" class="link">components</a>
+      </div>
+    </div>
+    <div class="flex-1 flex flex-col items-start justify-start gap-4">
+      {{ component }}
+    </div>
+    <demo-component></demo-component>
+  </div>
+</template>

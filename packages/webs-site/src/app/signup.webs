@@ -1,0 +1,74 @@
+<script>
+  import { useSession, useState } from '@conradklek/webs';
+
+  export default {
+    name: 'Signup',
+    setup() {
+      const email = useState('');
+      const username = useState('');
+      const password = useState('');
+      const error = useState(null);
+
+      async function handleSignup() {
+        error.value = null;
+        try {
+          await useSession.register({
+            email: email.value,
+            username: username.value,
+            password: password.value,
+          });
+        } catch (err) {
+          error.value = useSession.error || 'An unknown error occurred.';
+        }
+      }
+
+      return { email, username, password, error, handleSignup };
+    },
+  };
+</script>
+
+<template>
+  <div class="w-full p-8 flex flex-col items-start justify-start gap-8">
+    <div class="w-full flex flex-row items-center justify-start gap-4">
+      <a href="/" class="font-medium link">webs.site</a>
+      <div class="w-full flex flex-row items-center justify-end gap-4">
+        <a href="/login" class="link">Login</a>
+        <span>|</span>
+        <h1>Signup</h1>
+      </div>
+    </div>
+    <form
+      @submit.prevent="handleSignup"
+      class="flex-1 flex flex-col items-start justify-start gap-2"
+    >
+      <input
+        w-model="email"
+        type="email"
+        placeholder="Email"
+        required
+        class="input"
+      />
+      <input
+        w-model="username"
+        type="text"
+        placeholder="Username"
+        required
+        class="input"
+      />
+      <input
+        w-model="password"
+        type="password"
+        placeholder="Password"
+        required
+        minlength="8"
+        class="input"
+      />
+      <button type="submit" class="btn btn-default btn-size-lg mt-4">
+        Create Account
+      </button>
+    </form>
+    <div w-if="error">
+      <p class="text-red-700">{{ error }}</p>
+    </div>
+  </div>
+</template>

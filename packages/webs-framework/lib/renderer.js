@@ -4,9 +4,7 @@ import { compile } from './compiler';
 
 const isObjectAndNotArray = (val) =>
   val !== null && typeof val === 'object' && !Array.isArray(val);
-
 const isString = (val) => typeof val === 'string';
-
 const isFunction = (val) => typeof val === 'function';
 
 export const Text = Symbol('Text');
@@ -15,7 +13,6 @@ export const Fragment = Symbol('Fragment');
 export const Teleport = Symbol('Teleport');
 
 let currentInstance = null;
-let instanceCounter = 0;
 
 export function provide(key, value) {
   if (!currentInstance) return;
@@ -162,6 +159,7 @@ export function createRenderer(options) {
     const el = (n2.el = n1 ? n1.el : hostCreateElement(n2.type));
     const oldProps = n1?.props || {};
     const newProps = n2.props || {};
+
     for (const key in newProps) {
       if (newProps[key] !== oldProps[key]) {
         hostPatchProp(el, key, oldProps[key], newProps[key]);
@@ -172,6 +170,7 @@ export function createRenderer(options) {
         hostPatchProp(el, key, oldProps[key], null);
       }
     }
+
     patchChildren(n1, n2, el, parentComponent);
     if (!n1) {
       hostInsert(el, container, anchor);
@@ -181,6 +180,7 @@ export function createRenderer(options) {
   const patchChildren = (n1, n2, container, parentComponent) => {
     const c1 = n1?.children;
     const c2 = n2?.children;
+
     if (isString(c2)) {
       if (Array.isArray(c1)) {
         unmountChildren(c1);
@@ -191,6 +191,7 @@ export function createRenderer(options) {
     const oldChildren =
       c1 && !isString(c1) ? (Array.isArray(c1) ? c1 : [c1]) : [];
     const newChildren = c2 ? (Array.isArray(c2) ? c2 : [c2]) : [];
+
     if (newChildren.length === 0) {
       if (oldChildren.length > 0) {
         unmountChildren(oldChildren);
@@ -326,32 +327,14 @@ export function createRenderer(options) {
       isHydrating,
     ));
 
-    if (
-      process.env.NODE_ENV !== 'production' &&
-      typeof window !== 'undefined' &&
-      window.__WEBS_DEVELOPER__
-    ) {
-      instance.uid = instanceCounter++;
-      window.__WEBS_DEVELOPER__.componentInstances.set(instance.uid, instance);
-      window.__WEBS_DEVELOPER__.notify();
-    }
-
-    const scheduler = () => {
-      if (instance.update) {
-        instance.update();
-      }
-    };
-
     const runner = effect(
       () => {
         if (!instance.isMounted) {
           instance.hooks.onBeforeMount?.forEach((h) => h.call(instance.ctx));
-
           const subTree = (instance.subTree = instance.render.call(
             instance.ctx,
             instance.ctx,
           ));
-
           if (
             Object.keys(instance.attrs).length > 0 &&
             subTree.type !== Fragment
@@ -360,10 +343,11 @@ export function createRenderer(options) {
           }
           if (isHydrating) {
             hydrateNode(subTree, vnode.el, instance);
+            vnode.el = subTree.el;
           } else {
             patch(null, subTree, container, anchor, instance);
+            vnode.el = subTree.el;
           }
-          vnode.el = subTree.el;
           instance.isMounted = true;
           instance.hooks.onMounted?.forEach((h) => h.call(instance.ctx));
         } else {
@@ -384,10 +368,26 @@ export function createRenderer(options) {
           instance.hooks.onUpdated?.forEach((h) => h.call(instance.ctx));
         }
       },
-      { scheduler },
+      {
+        scheduler: () => {
+          if (instance.update) instance.update();
+        },
+      },
     );
     instance.update = runner;
     instance.hooks.onReady?.forEach((h) => h.call(instance.ctx));
+  };
+
+  const arePropsOrAttrsDifferent = (prev, next) => {
+    const prevKeys = Object.keys(prev);
+    const nextKeys = Object.keys(next);
+    if (prevKeys.length !== nextKeys.length) return true;
+    for (const key of nextKeys) {
+      if (!prev.hasOwnProperty(key) || prev[key] !== next[key]) {
+        return true;
+      }
+    }
+    return false;
   };
 
   const updateComponent = (n1, n2, container) => {
@@ -403,8 +403,6 @@ export function createRenderer(options) {
     instance.vnode = n2;
     n2.el = n1.el;
 
-    instance.appContext.params = n2.props.params || instance.appContext.params;
-
     const { props: propsOptions } = instance.type;
     const vnodeProps = n2.props || {};
     const nextProps = {};
@@ -418,22 +416,9 @@ export function createRenderer(options) {
       }
     }
 
-    const shouldUpdate = (prev, next) => {
-      const prevKeys = Object.keys(prev);
-      const nextKeys = Object.keys(next);
-      if (prevKeys.length !== nextKeys.length) return true;
-      for (const key of nextKeys) {
-        if (!prev.hasOwnProperty(key) || prev[key] !== next[key]) {
-          return true;
-        }
-      }
-      return false;
-    };
-
     const needsUpdate =
-      shouldUpdate(instance.props, nextProps) ||
-      shouldUpdate(instance.attrs, nextAttrs);
-
+      arePropsOrAttrsDifferent(instance.props, nextProps) ||
+      arePropsOrAttrsDifferent(instance.attrs, nextAttrs);
     instance.attrs = nextAttrs;
     instance.slots = n2.children || {};
 
@@ -455,33 +440,12 @@ export function createRenderer(options) {
 
     instance.props = nextProps;
 
-    if (
-      process.env.NODE_ENV !== 'production' &&
-      typeof window !== 'undefined' &&
-      window.__WEBS_DEVELOPER__
-    ) {
-      window.__WEBS_DEVELOPER__.notify();
-    }
-
     if (needsUpdate && instance.update) {
       instance.update();
     }
   };
 
   const unmount = (vnode) => {
-    if (
-      process.env.NODE_ENV !== 'production' &&
-      typeof window !== 'undefined' &&
-      window.__WEBS_DEVELOPER__
-    ) {
-      if (vnode.component && vnode.component.uid !== undefined) {
-        window.__WEBS_DEVELOPER__.componentInstances.delete(
-          vnode.component.uid,
-        );
-        window.__WEBS_DEVELOPER__.notify();
-      }
-    }
-
     if (vnode.component) {
       if (vnode.component.update && vnode.component.update.effect) {
         vnode.component.update.effect.stop();
@@ -492,7 +456,6 @@ export function createRenderer(options) {
       unmount(vnode.component.subTree);
       return;
     }
-
     if (vnode.type === Fragment || vnode.type === Teleport) {
       unmountChildren(vnode.children);
       return;
@@ -507,49 +470,26 @@ export function createRenderer(options) {
   };
 
   const hydrate = (vnode, container) => {
-    hydrateNode(vnode, container.firstChild, null);
+    try {
+      hydrateNode(vnode, container.firstChild, null);
+    } catch (e) {
+      console.error('[Hydration Error]', e.message);
+    }
     return vnode.component;
   };
 
   const hydrateNode = (vnode, domNode, parentComponent = null) => {
-    while (
-      domNode &&
-      ((domNode.nodeType === 3 && !domNode.textContent.trim()) ||
-        (domNode.nodeType === 8 && domNode.data === 'w'))
-    ) {
+    while (domNode && domNode.nodeType === 3 && !domNode.textContent.trim()) {
+      domNode = domNode.nextSibling;
+    }
+    while (domNode && domNode.nodeType === 8 && domNode.data === 'w') {
       domNode = domNode.nextSibling;
     }
 
     if (!domNode && vnode.type !== Comment) {
-      let vnodeDescription = 'a VNode';
-      if (typeof vnode.type === 'string') {
-        vnodeDescription = `an element <${vnode.type}>`;
-      } else if (vnode.type === Text) {
-        vnodeDescription = `a text node with content: "${vnode.children.trim()}"`;
-      } else if (typeof vnode.type === 'object' && vnode.type.name) {
-        vnodeDescription = `a component <${vnode.type.name}>`;
-      }
-
-      const parentEl =
-        parentComponent?.vnode.el || document.getElementById('root');
-
-      console.groupCollapsed(`[Hydration Error] DOM Mismatch`);
-      console.error(
-        `The client-side virtual DOM tree does not match the server-rendered HTML. ` +
-          `This can be caused by incorrect HTML nesting, conditional rendering differences between server and client, or extra whitespace.`,
+      throw new Error(
+        `[Hydration Mismatch] The DOM ran out of nodes before the VDOM did.`,
       );
-      console.log(`- Expected to find: ${vnodeDescription}`);
-      console.log(
-        `- Instead found: Nothing. The server-rendered HTML has been fully consumed.`,
-      );
-      console.log('- VNode causing the error:', vnode);
-      if (parentEl) {
-        console.log('- Last known parent element in DOM:', parentEl);
-        console.log('- Server-rendered HTML of parent:\n', parentEl.innerHTML);
-      }
-      console.groupEnd();
-
-      return null;
     }
 
     const { type, props, children } = vnode;
@@ -559,7 +499,9 @@ export function createRenderer(options) {
       case Text:
         if (props && props['w-dynamic']) {
           if (domNode.nodeType !== 8 || domNode.data !== '[') {
-            return domNode.nextSibling;
+            throw new Error(
+              `[Hydration Mismatch] Expected a comment node '<!--[-->' but found: ${domNode.nodeType === 3 ? '[object Text]' : domNode}`,
+            );
           }
           const textNode = domNode.nextSibling;
           const closingComment = textNode ? textNode.nextSibling : null;
@@ -568,20 +510,22 @@ export function createRenderer(options) {
             closingComment.nodeType !== 8 ||
             closingComment.data !== ']'
           ) {
-            return domNode.nextSibling;
+            throw new Error(
+              `[Hydration Mismatch] Expected a closing comment '<!--]-->' but found: ${closingComment}`,
+            );
           }
           vnode.el = textNode;
           return closingComment.nextSibling;
-        }
-        if (domNode.nodeType !== 3) {
+        } else {
           return domNode.nextSibling;
+        }
+      case Comment:
+        if (domNode.nodeType !== 8) {
+          throw new Error(
+            `[Hydration Mismatch] Expected a comment node, but found: ${domNode}`,
+          );
         }
         return domNode.nextSibling;
-      case Comment:
-        if (domNode && domNode.nodeType === 8) {
-          return domNode.nextSibling;
-        }
-        return domNode;
       case Fragment:
         return hydrateChildren(
           children,
@@ -592,8 +536,16 @@ export function createRenderer(options) {
       default:
         if (isObjectAndNotArray(type)) {
           mountComponent(vnode, null, null, parentComponent, true);
-          return domNode.nextSibling;
+          return vnode.el ? vnode.el.nextSibling : null;
         } else if (isString(type)) {
+          if (
+            domNode.nodeType !== 1 ||
+            domNode.tagName.toLowerCase() !== type.toLowerCase()
+          ) {
+            throw new Error(
+              `[Hydration Mismatch] Expected element <${type}>, but found: ${domNode}`,
+            );
+          }
           if (props) {
             for (const key in props) {
               hostPatchProp(domNode, key, null, props[key]);
@@ -624,7 +576,7 @@ export function createRenderer(options) {
         ? [children]
         : [];
     for (const childVnode of childVnodes) {
-      if (!childVnode) continue;
+      if (!childVnode || !nextDomNode) break;
       nextDomNode = hydrateNode(childVnode, nextDomNode, parentComponent);
     }
     return nextDomNode;
@@ -648,10 +600,6 @@ export function createComponent(
   appContext.globals = appContext.globals || {};
   appContext.provides = appContext.provides || {};
 
-  if (isSsr && !parent) {
-    appContext.params = vnode.props.params || {};
-  }
-
   const instance = {
     uid: -1,
     vnode,
@@ -674,8 +622,7 @@ export function createComponent(
     hooks: {},
   };
 
-  const { props: propsOptions, setup, template } = instance.type;
-
+  const { props: propsOptions, setup } = instance.type;
   const vnodeProps = vnode.props || {};
   const resolvedProps = {};
 
@@ -686,6 +633,7 @@ export function createComponent(
       instance.attrs[key] = vnodeProps[key];
     }
   }
+
   if (propsOptions) {
     for (const key in propsOptions) {
       if (!resolvedProps.hasOwnProperty(key)) {
@@ -700,64 +648,41 @@ export function createComponent(
 
   instance.props = resolvedProps;
 
-  if (!isSsr) {
-    for (const key in resolvedProps) {
-      let value = resolvedProps[key];
-      if (isString(value)) {
-        const trimmed = value.trim();
-        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-          try {
-            resolvedProps[key] = JSON.parse(trimmed);
-          } catch (e) {}
-        }
-      }
-    }
-  }
-
   let setupResult = {};
   if (setup) {
-    const setupContext = {
-      attrs: instance.attrs,
-      $params: instance.appContext.params,
-    };
-
+    const setupContext = { attrs: instance.attrs, slots: instance.slots };
     setCurrentInstance(instance);
     setupResult = setup(resolvedProps, setupContext) || {};
     setCurrentInstance(null);
   }
 
   const serverState = vnode.props.initialState || {};
-
-  const finalState = {
-    ...resolvedProps,
-    ...serverState,
-    ...setupResult,
-  };
-
+  const finalState = { ...resolvedProps, ...serverState, ...setupResult };
   instance.internalCtx = finalState;
 
   instance.ctx = new Proxy(
     {},
     {
       has: (_, key) =>
-        key === '$params' ||
-        key === '$slots' ||
-        key === '$attrs' ||
         key in instance.internalCtx ||
-        key in instance.type.components ||
+        key === 'attrs' ||
+        key === 'slots' ||
+        (instance.type.components && key in instance.type.components) ||
         (instance.appContext.globals && key in instance.appContext.globals),
       get: (_, key) => {
-        if (key === '$params') return instance.appContext.params;
-        if (key === '$slots') return instance.slots;
-        if (key === '$attrs') return instance.attrs;
         if (key in instance.internalCtx) {
           const val = instance.internalCtx[key];
           return isRef(val) ? val.value : val;
         }
-        const component = instance.type.components?.[key];
-        if (component) return component;
+        if (key === 'attrs') {
+          return instance.attrs;
+        }
+        if (key === 'slots') return instance.slots;
+        if (instance.type.components && key in instance.type.components)
+          return instance.type.components[key];
         if (instance.appContext.globals && key in instance.appContext.globals)
           return instance.appContext.globals[key];
+        return undefined;
       },
       set: (_, key, value) => {
         if (isSsr) return false;
@@ -775,33 +700,15 @@ export function createComponent(
     },
   );
 
-  if (!instance.type.render) {
-    if (isFunction(template)) {
-      const htmlTagFn = (strings, ...values) => {
-        let result = '';
-        strings.forEach((string, i) => {
-          result += string;
-          if (i < values.length) {
-            let value = values[i];
-            if (isRef(value)) {
-              value = value.value;
-            }
-            if (typeof value === 'object' && value !== null) {
-              result += JSON.stringify(value);
-            } else {
-              result += value;
-            }
-          }
-        });
-        return result;
-      };
-      const templateString = template(htmlTagFn, instance.ctx);
-      instance.render = compile({ ...instance.type, template: templateString });
-    } else {
-      instance.render = compile(instance.type);
-    }
-  } else {
+  if (instance.type.render) {
     instance.render = instance.type.render;
+  } else if (instance.type.template) {
+    instance.render = compile(instance.type);
+  } else {
+    console.warn(
+      `Component "${instance.type.name}" is missing a template or render function.`,
+    );
+    instance.render = () => createVnode(Comment, null, 'no template');
   }
 
   return instance;
@@ -809,16 +716,8 @@ export function createComponent(
 
 export class VNode {
   constructor(type, props, children) {
-    if (
-      props &&
-      (Array.isArray(props) ||
-        (typeof props !== 'object' && !isFunction(props)))
-    ) {
-      children = props;
-      props = null;
-    }
     this.type = type;
-    this.props = props || {};
+    this.props = props;
     this.children = children;
     this.el = null;
     this.key = props && props.key;
@@ -826,8 +725,37 @@ export class VNode {
   }
 }
 
-export function createVnode(type, props, children) {
-  return new VNode(type, props, children);
+export function createVnode(type, propsOrChildren, children) {
+  let props = {};
+  let finalChildren;
+
+  if (arguments.length === 2) {
+    if (
+      isObjectAndNotArray(propsOrChildren) &&
+      !Array.isArray(propsOrChildren)
+    ) {
+      props = propsOrChildren;
+      finalChildren = null;
+    } else {
+      props = {};
+      finalChildren = propsOrChildren;
+    }
+  } else if (arguments.length > 2) {
+    props = propsOrChildren || {};
+    finalChildren = Array.prototype.slice.call(arguments, 2);
+    if (finalChildren.length === 1) {
+      finalChildren = finalChildren[0];
+    }
+  } else {
+    props = propsOrChildren || {};
+    finalChildren = children;
+  }
+
+  if (Array.isArray(finalChildren)) {
+    finalChildren = finalChildren.flat().filter(Boolean);
+  }
+
+  return new VNode(type, props, finalChildren);
 }
 
 export const h = createVnode;
@@ -888,10 +816,12 @@ export async function renderToString(vnode) {
 
 async function renderVnode(vnode, parentComponent, context) {
   if (vnode == null) return '';
-  if (isString(vnode) || typeof vnode === 'number')
+  if (isString(vnode) || typeof vnode === 'number') {
     return escapeHtml(String(vnode));
-  if (!isObjectAndNotArray(vnode) || !vnode.type)
+  }
+  if (!isObjectAndNotArray(vnode) || !vnode.type) {
     return `<!-- invalid vnode detected -->`;
+  }
 
   const { type, props, children } = vnode;
 
@@ -911,15 +841,12 @@ async function renderVnode(vnode, parentComponent, context) {
         const tag = type.toLowerCase();
         let html = `<${tag}${renderProps(props)}>`;
         if (!voidElements.has(tag)) {
-          html +=
-            (await renderChildren(children, parentComponent, context)) ||
-            '<!--w-->';
+          html += await renderChildren(children, parentComponent, context);
           html += `</${tag}>`;
         }
         return html;
       } else if (isObjectAndNotArray(type)) {
         const instance = createComponent(vnode, parentComponent, true);
-
         const subTree = instance.render.call(instance.ctx, instance.ctx);
         if (
           Object.keys(instance.attrs).length > 0 &&
@@ -927,11 +854,9 @@ async function renderVnode(vnode, parentComponent, context) {
         ) {
           subTree.props = mergeProps(subTree.props, instance.attrs);
         }
-
         if (!parentComponent && context) {
           context.componentState = instance.internalCtx;
         }
-
         if (isFunction(instance.render)) {
           return await renderVnode(subTree, instance, context);
         }

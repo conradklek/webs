@@ -1,7 +1,8 @@
 {
   "name": "@conradklek/webs",
   "author": "Conrad Klek",
-  "version": "0.1.29",
+  "version": "0.1.30",
+  "type": "module",
   "description": "A JavaScript Framework",
   "bin": {
     "webs": "bin/cli.js"
@@ -12,27 +13,29 @@
     "client",
     "server",
     "lib",
-    "index.js"
+    "index.js",
+    "bun-plugin-webs.js"
   ],
   "exports": {
     ".": "./index.js",
     "./client": "./client/index.js",
     "./server": "./server/request-handler.js",
-    "./compiler": "./lib/compiler.js"
+    "./compiler": "./lib/compiler.js",
+    "./bun-plugin-webs": "./bun-plugin-webs.js"
   },
   "scripts": {
     "dev": "NODE_ENV=development bun run ./bin/cli.js",
+    "dev:demo": "cd ../webs-site && NODE_ENV=development bun run ../webs-framework/bin/cli.js",
     "start": "NODE_ENV=production bun run ./bin/cli.js",
-    "build": "echo 'Build process is now handled by the CLI and does not need a separate script.'",
+    "start:demo": "cd ../webs-site && NODE_ENV=production bun run ../webs-framework/bin/cli.js",
     "format": "prettier --write ."
   },
-  "dependencies": {
+  "dependencies": {},
+  "peerDependencies": {
+    "tailwindcss": "^4.1.12",
     "bun-plugin-tailwind": "^0.0.15"
   },
-  "peerDependencies": {
-    "tailwindcss": "^4.0.0"
-  },
   "devDependencies": {
-    "typescript": "^5.4.5"
+    "typescript": "^5.9.2"
   }
 }

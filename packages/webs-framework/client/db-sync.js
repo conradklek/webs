@@ -65,7 +65,6 @@ export const localDB = {
       request.onerror = () => reject(request.error);
     });
   },
-  // New method for bulk insertion
   async putAll(tableName, items) {
     const db = await this._getDB();
     if (!db || !items || items.length === 0) return;
@@ -78,7 +77,7 @@ export const localDB = {
       });
 
       transaction.oncomplete = () => {
-        notify(tableName); // Notify only once after the transaction is complete
+        notify(tableName);
         resolve();
       };
       transaction.onerror = () => {
@@ -148,7 +147,6 @@ export const localDB = {
 };
 
 let socket = null;
-let reconnectInterval = 1000;
 let isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
 async function connectToSyncServer() {
@@ -166,7 +164,6 @@ async function connectToSyncServer() {
 
   socket.onopen = () => {
     console.log('[Sync Engine] WebSocket connected.');
-    reconnectInterval = 1000;
     processOutbox();
   };
 
@@ -191,10 +188,8 @@ async function connectToSyncServer() {
     socket = null;
     if (isOnline) {
       console.log(
-        `[Sync Engine] WebSocket closed. Reconnecting in ${reconnectInterval}ms...`,
+        '[Sync Engine] WebSocket closed. Will attempt to reconnect on next online event.',
       );
-      setTimeout(connectToSyncServer, reconnectInterval);
-      reconnectInterval = Math.min(reconnectInterval * 2, 30000);
     } else {
       console.log('[Sync Engine] WebSocket closed due to being offline.');
     }

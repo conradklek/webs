@@ -2,6 +2,7 @@ import { createRequestHandler } from '../../server/request-handler';
 import { getUserFromSession } from '../../server/auth';
 import { findRouteMatch } from './routes';
 import { config } from './config';
+import { getHmrClients } from './build';
 
 export function startServer(serverContext) {
   const requestHandler = createRequestHandler(serverContext, findRouteMatch);
@@ -17,6 +18,15 @@ export function startServer(serverContext) {
       const user = getUserFromSession(serverContext.db, sessionId);
 
       if (req.headers.get('upgrade') === 'websocket') {
+        if (!config.IS_PROD && url.pathname === '/hmr-ws') {
+          const success = server.upgrade(req, {
+            data: { isHmrChannel: true },
+          });
+          return success
+            ? undefined
+            : new Response('HMR upgrade failed', { status: 400 });
+        }
+
         if (url.pathname === '/api/sync') {
           const success = server.upgrade(req, {
             data: { user, isSyncChannel: true },
@@ -44,20 +54,23 @@ export function startServer(serverContext) {
     },
     websocket: {
       open(ws) {
-        const { user, isSyncChannel, routePath } = ws.data;
-        if (isSyncChannel) {
-          serverContext.sync.clients.add(ws);
-          ws.data.user = user;
-        } else {
-          const routeDef = serverContext.appRoutes[routePath];
-          if (routeDef?.websocket?.open) {
-            routeDef.websocket.open(ws, { db: serverContext.db, user });
+        if (ws.data) {
+          const { user, isSyncChannel, routePath, isHmrChannel } = ws.data;
+          if (isHmrChannel) {
+            getHmrClients().add(ws);
+          } else if (isSyncChannel) {
+            serverContext.sync.clients.add(ws);
+            ws.data.user = user;
+          } else {
+            const routeDef = serverContext.appRoutes[routePath];
+            if (routeDef?.websocket?.open) {
+              routeDef.websocket.open(ws, { db: serverContext.db, user });
+            }
           }
         }
       },
       async message(ws, message) {
         const { user, isSyncChannel, routePath } = ws.data;
-
         if (isSyncChannel) {
           if (!user) {
             ws.close(1008, 'Unauthorized');
@@ -100,7 +113,6 @@ export function startServer(serverContext) {
                 serverContext.db.query(sql).run(id, user.id);
               }
             }
-            // Broadcast the message to all clients *except* the sender
             for (const client of serverContext.sync.clients) {
               if (client !== ws && client.readyState === WebSocket.OPEN) {
                 client.send(message);
@@ -120,16 +132,20 @@ export function startServer(serverContext) {
         }
       },
       close(ws, code, reason) {
-        const { isSyncChannel, routePath } = ws.data;
-        if (isSyncChannel) {
-          serverContext.sync.clients.delete(ws);
-        } else {
-          const routeDef = serverContext.appRoutes[routePath];
-          if (routeDef?.websocket?.close) {
-            routeDef.websocket.close(ws, code, reason, {
-              db: serverContext.db,
-              user: ws.data.user,
-            });
+        if (ws.data) {
+          const { isSyncChannel, routePath, isHmrChannel } = ws.data;
+          if (isHmrChannel) {
+            getHmrClients().delete(ws);
+          } else if (isSyncChannel) {
+            serverContext.sync.clients.delete(ws);
+          } else {
+            const routeDef = serverContext.appRoutes[routePath];
+            if (routeDef?.websocket?.close) {
+              routeDef.websocket.close(ws, code, reason, {
+                db: serverContext.db,
+                user: ws.data.user,
+              });
+            }
           }
         }
       },

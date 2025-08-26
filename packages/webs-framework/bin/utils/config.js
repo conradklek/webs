@@ -8,6 +8,7 @@ export const config = {
   IS_PROD: process.env.NODE_ENV === 'production',
   OUTDIR: resolve(CWD, 'dist'),
   TMPDIR: resolve(CWD, '.tmp'),
+  TMP_SERVER_DIR: resolve(CWD, '.tmp/server'),
   TMP_CSS: resolve(CWD, '.tmp/tmp.css'),
   TMP_APP_JS: resolve(CWD, '.tmp/app.js'),
   SRC_DIR: resolve(CWD, 'src'),

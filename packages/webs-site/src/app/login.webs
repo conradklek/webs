@@ -1,0 +1,54 @@
+<script>
+  import { useSession, useState } from '@conradklek/webs';
+
+  export default {
+    name: 'Login',
+    setup() {
+      const email = useState('anon@webs.site');
+      const password = useState('password');
+      const error = useState(null);
+
+      async function handleLogin() {
+        error.value = null;
+        try {
+          await useSession.login(email.value, password.value);
+        } catch (err) {
+          error.value = err.message;
+        }
+      }
+
+      return { email, password, error, handleLogin };
+    },
+  };
+</script>
+
+<template>
+  <div class="w-full p-8 flex flex-col items-start justify-start gap-8">
+    <div class="w-full flex flex-row items-center justify-start gap-4">
+      <a href="/" class="link font-medium">webs.site</a>
+      <div class="w-full flex flex-row items-center justify-end gap-4">
+        <h1>Login</h1>
+        <span>|</span>
+        <a href="/signup" class="link">Signup</a>
+      </div>
+    </div>
+    <form
+      @submit.prevent="handleLogin"
+      class="flex-1 flex flex-col items-start justify-start gap-2"
+    >
+      <input w-model="email" type="email" placeholder="Email" class="input" />
+      <input
+        w-model="password"
+        type="password"
+        placeholder="Password"
+        class="input"
+      />
+      <button type="submit" class="btn btn-default btn-size-lg mt-4">
+        Submit
+      </button>
+    </form>
+    <div w-if="error">
+      <p class="text-red-700">{{ error }}</p>
+    </div>
+  </div>
+</template>

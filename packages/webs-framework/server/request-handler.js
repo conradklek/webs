@@ -1,12 +1,20 @@
-import { h, renderToString } from '../lib/renderer.js';
+import { h, renderToString } from '../lib/renderer';
 import { basename, join } from 'path';
-import { fs } from './fs.js';
+import { fs } from './fs';
 import {
   getUserFromSession,
   registerUser,
   loginUser,
   logoutUser,
 } from './auth.js';
+
+function createAppProps(routeDefinition, user, params, db) {
+  return {
+    user,
+    params,
+    db,
+  };
+}
 
 export function renderHtmlShell({ appHtml, websState, manifest, title }) {
   return `<!DOCTYPE html>
@@ -22,7 +30,7 @@ export function renderHtmlShell({ appHtml, websState, manifest, title }) {
     }
 </head>
 <body>
-    <div id="root" style="display: contents">${appHtml}</div>
+    <div id="root">${appHtml}</div>
     <script>window.__WEBS_STATE__ = ${serializeState(websState)};</script>
     <script type="module" src="/${basename(manifest.js)}"></script>
 </body>
@@ -41,20 +49,26 @@ export function serializeState(state) {
 async function handleStaticAssets(req, pathname, outdir, isProd) {
   const assetPath = join(outdir, basename(pathname));
   const file = Bun.file(assetPath);
+
+  if (isProd && req.headers.get('accept-encoding')?.includes('gzip')) {
+    const gzippedPath = `${assetPath}.gz`;
+    if (await Bun.file(gzippedPath).exists()) {
+      const headers = {
+        'Content-Type': file.type,
+        'Content-Encoding': 'gzip',
+      };
+      return new Response(Bun.file(gzippedPath), { headers });
+    }
+  }
+
   if (await file.exists()) {
     const headers = { 'Content-Type': file.type };
     if (!isProd) {
       headers['Cache-Control'] = 'no-cache';
     }
-    if (isProd && req.headers.get('accept-encoding')?.includes('gzip')) {
-      const gzippedPath = `${assetPath}.gz`;
-      if (await Bun.file(gzippedPath).exists()) {
-        headers['Content-Encoding'] = 'gzip';
-        return new Response(Bun.file(gzippedPath), { headers });
-      }
-    }
     return new Response(file, { headers });
   }
+
   return null;
 }
 
@@ -119,12 +133,13 @@ async function handleDataRequest(req, routeDefinition, params, context) {
   const sessionId = req.headers.get('cookie')?.match(/session_id=([^;]+)/)?.[1];
   const user = getUserFromSession(db, sessionId);
 
-  const componentVnode = h(routeDefinition.component, { user, params, db });
+  const props = createAppProps(routeDefinition, user, params, db);
+  const componentVnode = h(routeDefinition.component, props);
   const { componentState } = await renderToString(componentVnode);
 
   const websState = {
-    user,
-    params,
+    user: props.user,
+    params: props.params,
     componentState,
     componentName: routeDefinition.componentName,
     title: routeDefinition.component.name || 'Webs App',
@@ -164,16 +179,13 @@ function handlePageRequest(req, routeDefinition, params, context) {
       if (index < middleware.length) {
         middleware[index](toRoute, fromRoute, next);
       } else {
-        const componentVnode = h(routeDefinition.component, {
-          user,
-          params,
-          db,
-        });
+        const props = createAppProps(routeDefinition, user, params, db);
+        const componentVnode = h(routeDefinition.component, props);
         const { html: appHtml, componentState } =
           await renderToString(componentVnode);
         const websState = {
-          user,
-          params,
+          user: props.user,
+          params: props.params,
           componentState,
           componentName: routeDefinition.componentName,
           swPath: manifest.sw ? `/${basename(manifest.sw)}` : null,

@@ -1,8 +1,13 @@
 import { rm, mkdir, exists } from 'fs/promises';
-import tailwind from 'bun-plugin-tailwind';
+import { watch } from 'fs';
 import { config } from './config';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import websPlugin from '../../bun-plugin-webs';
+import tailwind from 'bun-plugin-tailwind';
+
+let hmrClients = new Set();
+let hmrWatcher = null;
 
 async function ensureDir(dirPath) {
   await mkdir(dirPath, { recursive: true });
@@ -13,60 +18,81 @@ async function cleanDirectory(dirPath) {
   await ensureDir(dirPath);
 }
 
-async function generateClientEntry() {
+async function prepareClientEntrypoint() {
   const glob = new Bun.Glob('**/*.js');
-  const componentMapEntries = [];
-  if (await exists(config.APP_DIR)) {
-    for await (const file of glob.scan(config.APP_DIR)) {
+  const componentLoaders = [];
+
+  if (await exists(config.TMP_SERVER_DIR)) {
+    for await (const file of glob.scan(config.TMP_SERVER_DIR)) {
       const componentName = file.replace('.js', '');
-      componentMapEntries.push(
-        `['${componentName}', () => import('${join(config.APP_DIR, file)}')]`,
+      componentLoaders.push(
+        `['${componentName}', () => import('./server/${file}')]`,
       );
     }
   }
 
-  const hasDbConfig = await exists(config.CLIENT_DB_CONFIG_PATH);
-  const dbConfigImport = hasDbConfig
-    ? `import dbConfig from '${config.CLIENT_DB_CONFIG_PATH}';`
-    : 'const dbConfig = null;';
+  const entrypointContent =
+    "import { hydrate } from '@conradklek/webs';\nimport './tmp.css';\n\nconst componentLoaders = new Map([\n" +
+    componentLoaders.join(',\n') +
+    '\n]);\n\nhydrate(componentLoaders);\n';
+  await Bun.write(config.TMP_APP_JS, entrypointContent);
+  console.log(`Client entrypoint created at ${config.TMP_APP_JS}`);
+}
 
-  const clientEntryCode = `
-import { hydrate } from "@conradklek/webs";
-${dbConfigImport}
+async function buildServerComponents() {
+  console.log('--- Pre-compiling server components ---');
+  const glob = new Bun.Glob('**/*.webs');
+  const entrypoints = [];
+  if (await exists(config.APP_DIR)) {
+    for await (const file of glob.scan(config.APP_DIR)) {
+      entrypoints.push(join(config.APP_DIR, file));
+    }
+  }
 
-const components = new Map([
-  ${componentMapEntries.join(',\n  ')}
-]);
+  if (entrypoints.length === 0) {
+    console.log('No server components found to compile.');
+    return true;
+  }
 
-hydrate(components, dbConfig);
-`;
-  await Bun.write(config.TMP_APP_JS, clientEntryCode);
+  const result = await Bun.build({
+    entrypoints,
+    outdir: config.TMP_SERVER_DIR,
+    target: 'bun',
+    plugins: [websPlugin(config), tailwind],
+    external: [
+      '@conradklek/webs',
+      'path',
+      'fs',
+      'url',
+      'bun-plugin-tailwind',
+      'bun-plugin-webs',
+      'sqlite3',
+    ],
+  });
+
+  if (!result.success) {
+    console.error('Server component compilation failed:', result.logs);
+  }
+  return result.success;
 }
 
 async function prepareCss() {
-  const glob = new Bun.Glob('**/*.js');
-  let themeChunks = [];
-  let styleChunks = [];
+  const glob = new Bun.Glob('**/*.webs');
+  let globalAndComponentStyles = [];
 
   if (!(await exists(config.SRC_DIR))) return '';
 
-  const themeRegex = /@theme\s*\{[\s\S]*?\}/g;
-  const allStylesRegex =
-    /(?:styles\s*:\s*|export\s+const\s+styles\s*=\s*)\`([\s\S]*?)\`/g;
+  const styleBlockRegex = /<style>([\s\S]*?)<\/style>/s;
 
   for await (const file of glob.scan(config.SRC_DIR)) {
     const filePath = join(config.SRC_DIR, file);
     const src = await Bun.file(filePath).text();
-    let match;
+    const styleMatch = src.match(styleBlockRegex);
 
-    while ((match = allStylesRegex.exec(src)) !== null) {
-      let css = match[1];
-      if (css) {
-        const themes = css.match(themeRegex);
-        if (themes) themeChunks.push(...themes);
-        const stylesOnly = css.replace(themeRegex, '').trim();
-        if (stylesOnly) styleChunks.push(stylesOnly);
-      }
+    if (styleMatch && styleMatch[1]) {
+      let css = styleMatch[1];
+      const stylesOnly = css.trim();
+      if (stylesOnly) globalAndComponentStyles.push(stylesOnly);
     }
   }
 
@@ -74,10 +100,9 @@ async function prepareCss() {
     ? await Bun.file(config.GLOBAL_CSS_PATH).text()
     : '';
 
-  const fullCss = `@import "tailwindcss";\n${globalCss}\n${themeChunks.join(
-    '\n',
-  )}\n${styleChunks.join('\n')}\n`;
+  const fullCss = `${globalCss}\n${globalAndComponentStyles.join('\n')}`;
   await Bun.write(config.TMP_CSS, fullCss);
+  return config.TMP_CSS;
 }
 
 async function compressAssets(outputs) {
@@ -97,21 +122,20 @@ async function compressAssets(outputs) {
   return sizes;
 }
 
-export async function performBuild(appRoutes) {
-  console.log('--- Performing client build ---');
-  await ensureDir(config.TMPDIR);
-  await cleanDirectory(config.OUTDIR);
-  await generateClientEntry();
-  await prepareCss();
+export async function buildAndNotify(appRoutes, changedFile) {
+  const serverBuildSuccess = await buildServerComponents();
+  if (!serverBuildSuccess) return null;
+  await prepareClientEntrypoint();
+  const tempCssPath = await prepareCss();
 
   const appBuildResult = await Bun.build({
-    entrypoints: [config.TMP_APP_JS, config.TMP_CSS],
+    entrypoints: [config.TMP_APP_JS, tempCssPath],
     outdir: config.OUTDIR,
     target: 'browser',
     splitting: true,
     minify: config.IS_PROD,
     naming: config.IS_PROD ? '[name]-[hash].[ext]' : '[name].[ext]',
-    plugins: [tailwind],
+    plugins: [websPlugin(config), tailwind],
     sourcemap: config.IS_PROD ? 'none' : 'inline',
   });
 
@@ -119,13 +143,18 @@ export async function performBuild(appRoutes) {
     console.error('Client app build failed:', appBuildResult.logs);
     return null;
   }
-  console.log('Client app assets built successfully.');
+
+  if (changedFile) {
+    hmrClients.forEach((ws) =>
+      ws.send(JSON.stringify({ type: 'update', file: changedFile })),
+    );
+  }
 
   const __dirname = dirname(fileURLToPath(import.meta.url));
   const frameworkClientDir = resolve(__dirname, '..', '..', 'client');
   const swEntryPath = join(frameworkClientDir, 'ws.js');
   let swOutput = null;
-
+  console.log({ frameworkClientDir, swEntryPath, __dirname });
   if (await exists(swEntryPath)) {
     const swBuildResult = await Bun.build({
       entrypoints: [swEntryPath],
@@ -134,6 +163,7 @@ export async function performBuild(appRoutes) {
       splitting: false,
       minify: config.IS_PROD,
       naming: config.IS_PROD ? 'sw-[hash].[ext]' : 'sw.[ext]',
+      plugins: [websPlugin(config), tailwind],
       sourcemap: 'none',
     });
 
@@ -191,4 +221,43 @@ export async function performBuild(appRoutes) {
   }
 
   return manifest;
+}
+
+export async function performBuild(appRoutes) {
+  await ensureDir(config.TMPDIR);
+  await cleanDirectory(config.OUTDIR);
+
+  const manifest = await buildAndNotify(appRoutes);
+
+  if (!config.IS_PROD) {
+    if (hmrWatcher) {
+      hmrWatcher.close();
+    }
+    console.log('--- Setting up HMR file watcher ---');
+    hmrWatcher = watch(
+      config.SRC_DIR,
+      { recursive: true },
+      (event, filename) => {
+        if (
+          filename &&
+          (filename.endsWith('.webs') || filename.endsWith('.css'))
+        ) {
+          console.log(`Detected ${event} in ${filename}`);
+          buildAndNotify(appRoutes, filename);
+        }
+      },
+    );
+    process.on('SIGINT', () => {
+      console.log('Closing HMR watcher...');
+      if (hmrWatcher) {
+        hmrWatcher.close();
+      }
+      process.exit(0);
+    });
+  }
+  return manifest;
+}
+
+export function getHmrClients() {
+  return hmrClients;
 }

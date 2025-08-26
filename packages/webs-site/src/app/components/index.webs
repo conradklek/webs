@@ -1,0 +1,40 @@
+<script>
+  export default {
+    name: 'Components',
+    setup() {
+      const components = [
+        { name: 'Accordion', url: '/components/accordion' },
+        { name: 'Breadcrumb', url: '/components/breadcrumb' },
+        { name: 'Card', url: '/components/card' },
+        { name: 'Menubar', url: '/components/menubar' },
+        { name: 'Modal', url: '/components/modal' },
+        { name: 'Checkbox', url: '/components/checkbox' },
+        { name: 'Radio', url: '/components/radio-group' },
+        { name: 'Tabs', url: '/components/tabs' },
+        { name: 'Toggle', url: '/components/toggle-group' },
+      ];
+      return { components };
+    },
+  };
+</script>
+
+<template>
+  <div class="w-full p-8 flex flex-col items-start justify-start gap-6">
+    <div class="w-full flex flex-row items-center justify-between gap-4">
+      <a href="/" class="link font-medium">webs.site</a>
+      <div class="w-full flex flex-row items-center justify-end gap-4">
+        <a href="/login" class="link">Login</a>
+        <span>|</span>
+        <a href="/signup" class="link">Signup</a>
+      </div>
+    </div>
+    <div class="flex-1 flex flex-col items-start justify-start gap-4">
+      <h1>Components</h1>
+      <ul class="list-disc pl-8 space-y-0.5">
+        <li w-for="component in components">
+          <a :href="component.url" class="link">{{ component.name }}</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</template>

@@ -1,0 +1,17 @@
+{
+  "name": "webs-site",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "webs",
+    "start": "NODE_ENV=production webs",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "@conradklek/webs": "workspace:*"
+  },
+  "devDependencies": {
+    "tailwindcss": "^4.1.11",
+    "bun-plugin-tailwind": "latest"
+  }
+}

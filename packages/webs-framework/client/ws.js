@@ -69,19 +69,27 @@ self.addEventListener('fetch', (event) => {
           return response;
         }
 
-        return fetch(request).then((networkResponse) => {
-          if (
-            networkResponse &&
-            networkResponse.status === 200 &&
-            networkResponse.type === 'basic'
-          ) {
-            const responseToCache = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, responseToCache);
+        return fetch(request)
+          .then((networkResponse) => {
+            if (
+              networkResponse &&
+              networkResponse.status === 200 &&
+              networkResponse.type === 'basic'
+            ) {
+              const responseToCache = networkResponse.clone();
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(request, responseToCache);
+              });
+            }
+            return networkResponse;
+          })
+          .catch((error) => {
+            console.error('Fetching failed:', error);
+            return new Response('Fetch failed', {
+              status: 503,
+              statusText: 'Service Unavailable',
             });
-          }
-          return networkResponse;
-        });
+          });
       }),
     );
   }

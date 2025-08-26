@@ -1,50 +1,6 @@
 # webs.js
 
-A javascript framework
-
-```
-webs/
-├── packages/
-│   ├── webs-framework/
-│   │   ├── bin/
-│   │   │   ├── cli.js
-│   │   │   └── utils/
-│   │   │       ├── build.js
-│   │   │       ├── config.js
-│   │   │       ├── routes.js
-│   │   │       └── server.js
-│   │   ├── client/
-│   │   │   ├── db.js
-│   │   │   ├── index.js
-│   │   │   ├── session.js
-│   │   │   └── sw.js
-│   │   ├── lib/
-│   │   │   ├── compiler.js
-│   │   │   ├── parser.js
-│   │   │   ├── reactivity.js
-│   │   │   ├── renderer.js
-│   │   │   └── runtime.js
-│   │   ├── server/
-│   │   │   ├── auth.js
-│   │   │   ├── db.js
-│   │   │   ├── fs.js
-│   │   │   └── request-handler.js
-│   │   ├── index.js
-│   │   ├── package.json
-│   │   └── tsconfig.json
-│   └── webs-components/
-│       ├── ... (demo app files)
-```
-
----
-
-## Philosophy
-
-The design of Webs is dictated by a single, foundational principle: the initial congestion window of a TCP connection. A payload exceeding approximately 14kB necessitates an additional network round trip, introducing significant, avoidable latency.
-
-Webs is therefore engineered from the ground up to ensure that the critical-path assets of an application remain well within this **sub-14kB threshold**. By adhering to this directive, we facilitate a near-instantaneous initial render, providing a user experience that is not merely fast, but fundamentally more efficient at the transport layer.
-
----
+A Javascript Framework
 
 ## Getting Started
 
@@ -73,143 +29,143 @@ Your new site is now running at `http://localhost:3000`!
 
 Routing in Webs is simple and intuitive. The framework automatically maps files in the `src/app` directory to URL routes. These files are your "page" components.
 
-- `src/app/index.js` → `/`
-- `src/app/about.js` → `/about`
-- `src/app/blog/index.js` → `/blog`
+- `src/app/index.webs` → `/`
+- `src/app/about.webs` → `/about`
+- `src/app/blog/index.webs` → `/blog`
 
 **Dynamic Routes**
 
 To create a dynamic route, use square brackets in the filename. The value of the dynamic segment will be available in your component's `params` prop.
 
-- `src/app/profile/[username].js` → `/profile/:username`
-- `src/app/posts/[slug].js` → `/posts/:slug`
+- `src/app/profile/[username].webs` → `/profile/:username`
+- `src/app/posts/[slug].webs` → `/posts/:slug`
 
 To navigate between pages, use standard `<a>` tags. The Webs router intercepts these clicks to provide a fast, single-page application experience without full page reloads.
 
 ### 2. Components
 
-Components are the heart of a Webs application. They are plain JavaScript objects that encapsulate their own state, logic, and markup. Every component is the default export from a `.js` file.
+Components are the heart of a Webs application. They are defined in `.webs` files using a familiar structure of three blocks: `<script>`, `<template>`, and `<style>`. This approach, inspired by frameworks like Svelte, co-locates all the logic, markup, and styling for a component in a single, easy-to-manage file.
+
+At build time, Webs uses a powerful Bun plugin to compile these `.webs` files into highly optimized, vanilla JavaScript modules.
 
 #### Basic Definition
 
-A component is defined by a few key properties:
+A component is defined by exporting a default object from the `<script>` block.
 
-- `name`: A unique string identifier for the component.
-- `props`: An object defining the properties the component accepts from a parent.
-- `setup(props, context)`: A function where all reactive state and logic for the component is defined. It runs once when the component is created.
-- `template`: An HTML string (or a tagged template literal function) that defines the component's structure.
+```html
+<script>
+  import { useState, onMounted } from '@conradklek/webs';
 
-```javascript
-// src/app/counter.js
-import { useState, onMounted } from '@conradklek/webs';
+  export default {
+    name: "Counter",
+    setup(props, context) {
+      const count = useState(0);
 
-export default {
-  name: "Counter",
-  setup(props, context) {
-    const count = useState(0);
+      function increment() {
+        count++;
+      }
 
-    function increment() {
-      count++;
-    }
+      onMounted(() => {
+        console.log("Counter component has been mounted!");
+      });
 
-    onMounted(() => {
-      console.log("Counter component has been mounted!");
-    });
+      return {
+        count,
+        increment,
+      };
+    },
+  };
+</script>
 
-    return {
-      count,
-      increment,
-    };
-  },
-  template(html) {
-    return html`
-      <div>
-        <p>Count: {{ count }}</p>
-        <button type="button" @click="increment">Increment</button>
-      </div>
-    `;
-  },
-};
+<template>
+  <div>
+    <p>Count: {{ count }}</p>
+    <button type="button" @click="increment">Increment</button>
+  </div>
+</template>
+
+<style>
+  button {
+    @apply bg-blue-500 text-white font-bold py-2 px-4 rounded;
+  }
+</style>
 ```
 
 #### Props
 
-Props allow you to pass data from a parent component to a child. You can define them with types and default values. They are passed as the first argument to the `setup` function.
+Props allow you to pass data from a parent component to a child. You define them in the `props` object within your script's default export. They are passed as the first argument to the `setup` function.
 
-```javascript
-// src/components/Greeting.js
-export default {
-  name: "Greeting",
-  props: {
-    name: {
-      type: String,
-      default: "World",
+```html
+<script>
+  export default {
+    name: "Greeting",
+    props: {
+      name: {
+        type: String,
+        default: "World",
+      },
     },
-  },
-  setup(props) {
-    console.log(props.name);
-  },
-  template(html) {
-    return html`<p>Hello, {{ name }}!</p>`;
-  },
-};
+    setup(props) {
+      console.log(`Hello, ${props.name}`);
+    },
+  };
+</script>
+
+<template>
+  <p>Hello, {{ name }}!</p>
+</template>
 ```
 
 #### Registering Child Components
 
 To use a component within another, you must import it and register it in the `components` object. This makes the child component's tag available in the parent's template.
 
-```javascript
-// src/app/index.js
-import Greeting from "../components/Greeting.js";
+```html
+<script>
+  import Greeting from "../components/Greeting.webs";
 
-export default {
-  name: "HomePage",
-  components: {
-    Greeting,
-  },
-  template(html) {
-    return html`
-      <div>
-        <Greeting name="Alice" />
-        <Greeting />
-      </div>
-    `;
-  },
-};
+  export default {
+    name: "HomePage",
+    components: {
+      Greeting,
+    },
+  };
+</script>
+
+<template>
+  <div>
+    <Greeting name="Alice" />
+    <Greeting />
+  </div>
+</template>
 ```
 
 #### Slots & Content Projection
 
 To pass content _into_ a component, use the `<slot>` tag. Any child elements you place inside your custom component tag in the parent will be rendered where the `<slot>` tag is.
 
-```javascript
-// src/components/Wrapper.js
-export default {
-  name: "Wrapper",
-  template(html) {
-    return html`
-      <div class="wrapper">
-        <slot></slot>
-      </div>
-    `;
-  },
-}
+```html
+<template>
+  <div class="wrapper">
+    <slot></slot>
+  </div>
+</template>
 
-// src/app/index.js
-import Wrapper from '../components/Wrapper.js';
+```html
+<script>
+  import Wrapper from '../components/Wrapper.webs';
 
-export default {
-  name: "HomePage",
-  components: { Wrapper },
-  template(html) {
-    return html`
-      <Wrapper>
-        <p>This content will be placed inside the wrapper.</p>
-      </Wrapper>
-    `;
-  },
-}
+  export default {
+    name: "HomePage",
+    components: { Wrapper },
+  };
+</script>
+
+<template>
+  <Wrapper>
+    <p>This content will be placed inside the wrapper.</p>
+  </Wrapper>
+</template>
 ```
 
 ## Backend & Data
@@ -225,7 +181,6 @@ Server Actions are a key feature of Webs. They allow you to define functions ins
 When you call a Server Action from the client, Webs handles the secure communication. These actions receive a `context` object with access to the `db` instance and the authenticated `user`.
 
 ```javascript
-// src/app/dashboard.js
 export default {
   name: "Dashboard",
   actions: {
@@ -270,7 +225,6 @@ export default {
 ```
 
 ---
-
 ## Frontend
 
 ### 6. Template Syntax
@@ -291,31 +245,20 @@ Webs templates are standard HTML supercharged with a simple syntax for data bind
   ```
 
 **Attribute Fallthrough**
+(This section remains the same)
 
-Any attribute you pass to a component that is _not_ a declared prop will automatically be applied to the root element of that component's template. This makes creating wrapper components incredibly clean.
+### 7. Styling with Tailwind CSS
 
-```html
-<!-- If you write this: -->
-<CustomInput class="mt-4" data-testid="name-input" />
-
-<!-- And CustomInput's template is: -->
-<!-- <input type="text" class="input" /> -->
-
-<!-- The final rendered output will be: -->
-<input type="text" class="input mt-4" data-testid="name-input" />
-```
-
-### 6. Styling with Tailwind CSS
-
-Webs has a deep, native integration with the **Tailwind CSS v4 engine**. You can write component-scoped styles directly in a `styles` property. This block gives you access to the full power of Tailwind, including `@theme` for defining design tokens and `@apply` for creating reusable component classes.
+Webs has a deep, native integration with the **Tailwind CSS v4 engine**. You can write component-scoped styles directly in the `<style>` block of your `.webs` files. This block gives you access to the full power of Tailwind, including `@theme` for defining design tokens and `@apply` for creating reusable component classes.
 
 Of course, you can also use standard Tailwind utility classes directly in your template for rapid development.
 
-```javascript
-// src/components/custom-button.js
-export default {
-  name: "CustomButton",
-  styles: `
+```html
+<template>
+  <button type="button" class="btn-brand">Click Me</button>
+</template>
+
+<style>
   @theme {
     --color-brand: oklch(0.84 0.18 117.33);
   }
@@ -324,11 +267,7 @@ export default {
       @apply bg-brand text-white font-bold py-2 px-4 rounded;
     }
   }
-`,
-  template(html) {
-    return html`<button type="button" class="btn-brand">Click Me</button>`;
-  },
-};
+</style>
 ```
 
 ---
@@ -336,3 +275,4 @@ export default {
 ## License
 
 MIT
+

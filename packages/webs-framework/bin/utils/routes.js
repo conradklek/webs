@@ -1,6 +1,6 @@
-import { join, relative } from 'path';
 import { exists } from 'fs/promises';
 import { config } from './config';
+import { join } from 'path';
 
 export function findRouteMatch(appRoutes, pathname) {
   const normalizedPathname =
@@ -33,18 +33,12 @@ export function findRouteMatch(appRoutes, pathname) {
   return null;
 }
 
-/**
- * Scans the filesystem and generates a sorted list of routes.
- * The sorting prioritizes static routes over dynamic ones to prevent matching
- * errors.
- * @returns {Promise<object>} - A promise that resolves to an object of routes.
- */
 export async function generateRoutesFromFileSystem() {
-  console.log('--- Scanning for routes in src/app ---');
-  const appDir = config.APP_DIR;
-  if (!(await exists(appDir))) {
+  console.log('--- Scanning for routes in pre-compiled server directory ---');
+  const compiledServerDir = config.TMP_SERVER_DIR;
+  if (!(await exists(compiledServerDir))) {
     console.warn(
-      `[Warning] App directory not found at ${appDir}. No routes will be generated.`,
+      `[Warning] Compiled server directory not found at ${compiledServerDir}. No routes will be generated.`,
     );
     return {};
   }
@@ -52,18 +46,16 @@ export async function generateRoutesFromFileSystem() {
   const glob = new Bun.Glob('**/*.js');
   const routeDefinitions = [];
 
-  for await (const file of glob.scan(appDir)) {
-    const fullPath = join(appDir, file);
-    const module = await import(`${fullPath}?t=${Date.now()}`);
+  for await (const file of glob.scan(compiledServerDir)) {
+    const fullPath = join(compiledServerDir, file);
+    const mod = await import(`${fullPath}?t=${Date.now()}`);
 
-    if (!module.default) {
+    if (!mod.default) {
       console.warn(`[Skipping] ${file} does not have a default export.`);
       continue;
     }
 
-    let urlPath = relative(appDir, fullPath)
-      .replace(/\.js$/, '')
-      .replace(/\[(\w+)\]/g, ':$1');
+    let urlPath = file.replace(/\.js$/, '').replace(/\[(\w+)\]/g, ':$1');
 
     if (urlPath.endsWith('index')) {
       urlPath = urlPath.slice(0, -5) || '/';
@@ -78,10 +70,10 @@ export async function generateRoutesFromFileSystem() {
     routeDefinitions.push({
       path: urlPath,
       definition: {
-        component: module.default,
-        componentName: relative(appDir, fullPath).replace(/\.js$/, ''),
-        middleware: module.middleware || [],
-        websocket: module.default.websocket || null,
+        component: mod.default,
+        componentName: file.replace(/\.js$/, ''),
+        middleware: mod.middleware || [],
+        websocket: mod.default.websocket || null,
         isNavigation: true,
       },
     });

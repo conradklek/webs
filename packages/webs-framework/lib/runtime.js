@@ -1,6 +1,5 @@
 import { createRenderer, createVnode } from './renderer';
 import { syncEngine } from '../client/db-sync';
-import { compile } from './compiler';
 
 function normalizeClass(value) {
   let res = '';
@@ -27,7 +26,6 @@ export function createAppApi(rendererOptions) {
   const renderer = createRenderer(rendererOptions);
 
   return function createApp(rootComponent, rootProps = {}) {
-    compileTemplates(rootComponent);
     const app = {
       _component: rootComponent,
       _container: null,
@@ -50,6 +48,9 @@ export function createAppApi(rendererOptions) {
 
         if (rootInstance) {
           installNavigationHandler(app, components);
+          if (process.env.NODE_ENV !== 'production') {
+            installHMRHandler(app, components);
+          }
         } else {
           console.error(
             'Hydration did not return a root instance. Navigation handler not installed.',
@@ -179,10 +180,13 @@ export async function hydrate(components, dbConfig = null) {
       !rootComponent ||
       typeof rootComponent !== 'object' ||
       !rootComponent.name ||
-      !rootComponent.template
+      (typeof rootComponent.render !== 'function' &&
+        typeof rootComponent.template !== 'string')
     ) {
       console.error(
-        `Hydration failed: Default export from component "${componentName}" is not a valid component.`,
+        `Hydration failed: Default export from component "${componentName}" is not a valid component (missing render function or template).`,
+        'Received:',
+        rootComponent,
       );
       return;
     }
@@ -326,8 +330,6 @@ function installNavigationHandler(app, components) {
       const componentModule = await componentLoader();
       const newComponentDef = componentModule.default;
 
-      compileTemplates(newComponentDef);
-
       window.history.pushState({}, '', url.href);
       document.title = data.title;
 
@@ -388,7 +390,6 @@ function installNavigationHandler(app, components) {
       const componentModule = await componentLoader();
       const newComponentDef = componentModule.default;
 
-      compileTemplates(newComponentDef);
       document.title = data.title;
 
       const oldVnode = app._vnode;
@@ -410,26 +411,27 @@ function installNavigationHandler(app, components) {
   });
 }
 
-function compileTemplates(componentDef) {
-  if (!componentDef || componentDef.isCompiled) return;
+function installHMRHandler(app, components) {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const hmrSocketUrl = `${protocol}//${window.location.host}/hmr-ws`;
+  const hmrSocket = new WebSocket(hmrSocketUrl);
 
-  if (componentDef.components) {
-    for (const key in componentDef.components) {
-      const subComponent = componentDef.components[key];
-      compileTemplates(subComponent);
-      if (subComponent.components) {
-        Object.assign(componentDef.components, subComponent.components);
+  hmrSocket.onmessage = async (event) => {
+    try {
+      const message = JSON.parse(event.data);
+      if (message.type === 'update') {
+        console.log('HMR: Update detected. Reloading page.');
+        window.location.reload();
       }
+    } catch (e) {
+      console.error('HMR message error:', e);
     }
-  }
-  if (
-    componentDef.template &&
-    !componentDef.render &&
-    typeof componentDef.template !== 'function'
-  ) {
-    componentDef.render = compile(componentDef);
-  }
-  componentDef.isCompiled = true;
+  };
+
+  hmrSocket.onclose = () => {
+    console.log('HMR WebSocket disconnected. Retrying in 1s...');
+    setTimeout(() => installHMRHandler(app, components), 1000);
+  };
 }
 
 function deserializeState(input) {

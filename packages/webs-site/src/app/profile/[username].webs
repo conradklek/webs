@@ -1,0 +1,39 @@
+<script>
+  import { useSession } from '@conradklek/webs';
+
+  export const middleware = [
+    (to, from, next) => {
+      if (!to.user) {
+        next('/login');
+      } else {
+        next();
+      }
+    },
+  ];
+
+  export default {
+    name: 'Profile',
+    setup() {
+      function handleLogout() {
+        useSession.logout();
+      }
+      return { handleLogout };
+    },
+  };
+</script>
+
+<template>
+  <div class="w-full p-8 flex flex-col items-start justify-start gap-8">
+    <div class="w-full flex flex-row items-center justify-start gap-4">
+      <a href="/" class="font-medium">webs.site</a>
+      <div class="w-full flex flex-row items-center justify-end gap-4">
+        <h1>Profile</h1>
+        <span>|</span>
+        <button type="button" @click="handleLogout">Logout</button>
+      </div>
+    </div>
+    <div class="flex-1 flex flex-col items-start justify-start gap-2">
+      <p>This is the profile page for @{{ $params.username }}.</p>
+    </div>
+  </div>
+</template>

@@ -1,0 +1,26 @@
+<script>
+  import { inject } from '@conradklek/webs';
+
+  export default {
+    name: 'AccordionTrigger',
+    setup() {
+      const accordion = inject('accordion');
+      const value = inject('itemValue');
+      return { accordion, value };
+    },
+  };
+</script>
+
+<template>
+  <h3>
+    <button
+      type="button"
+      @click="accordion.toggle(value)"
+      class="w-full flex flex-row items-start justify-start cursor-pointer"
+    >
+      <span class="flex-1 flex flex-row items-start justify-start font-medium">
+        <slot></slot>
+      </span>
+    </button>
+  </h3>
+</template>

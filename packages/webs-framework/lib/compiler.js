@@ -38,6 +38,10 @@ const camelize = cacheStringFunction((str) => {
   return str.replace(/-(\w)/g, (_, c) => (c ? c.toUpperCase() : ''));
 });
 
+const pascalToKebab = cacheStringFunction((str) =>
+  str.replace(/([a-z0-9]|(?=[A-Z]))([A-Z])/g, '$1-$2').toLowerCase(),
+);
+
 export function generateRenderFn(ast) {
   const ctx = {
     scope: new Set(),
@@ -179,7 +183,7 @@ export function generateRenderFn(ast) {
             node.branches[node.branches.length - 1].condition === null;
           let code = node.branches.map(genBranch).join('');
           if (!hasElse) {
-            code += `_h(_Comment, null, 'w-if-fallback')`;
+            code += `null`;
           }
           return `(${code})`;
         }
@@ -204,39 +208,54 @@ return ${generatedCode || 'null'};
 `;
   try {
     const fn = new Function('Webs', '_ctx', functionBody).bind(null, Webs);
-    fn.toString = () => functionBody;
-    return fn;
+    return { fn, source: functionBody };
   } catch (e) {
     console.error('Error compiling render function:', e);
-    return () => Webs.h(Webs.Comment, null, 'Render function compile error');
+    const errorFn = () =>
+      Webs.h(Webs.Comment, null, 'Render function compile error');
+    return {
+      fn: errorFn,
+      source: `return Webs.h(Webs.Comment, null, 'Render function compile error');`,
+    };
   }
 }
 
 export class Compiler {
   constructor(componentDef, options = null) {
     this.definition = componentDef;
-    const allComponents = {};
+    this.componentNameMap = new Map();
+
     const collectComponents = (comps) => {
       if (!comps) return;
       for (const key in comps) {
         const compDef = comps[key];
         if (compDef) {
-          allComponents[key] = compDef;
+          const tagNameFromKey = pascalToKebab(key);
+          this.componentNameMap.set(tagNameFromKey, key);
+
+          if (compDef.name && compDef.name !== tagNameFromKey) {
+            this.componentNameMap.set(compDef.name, key);
+          }
+
           if (compDef.components) {
             collectComponents(compDef.components);
           }
         }
       }
     };
+
     collectComponents(componentDef.components);
-    this.components = allComponents;
-    this.componentTags = new Set(Object.keys(this.components));
     this.options = options;
   }
+
+  parseHtml(html) {
+    return parseHtml(html);
+  }
+
   compile() {
-    const rawAst = parseHtml(this.definition.template);
+    const rawAst = this.parseHtml(this.definition.template);
     const transformedAst = this._transformNode(rawAst);
-    return generateRenderFn(transformedAst);
+    return generateRenderFn(transformedAst).fn;
   }
   _parseExpr(str) {
     if (!str) return null;
@@ -290,8 +309,7 @@ export class Compiler {
     };
     const text = unescape(node.content);
     if (!text.includes('{{')) {
-      const trimmedText = text.trim();
-      return trimmedText ? { type: NODE_TYPES.TEXT, value: text } : null;
+      return { type: NODE_TYPES.TEXT, value: text };
     }
     const mustacheRegex = /\{\{([^}]+)\}\}/g;
     const tokens = [];
@@ -426,10 +444,10 @@ export class Compiler {
         children: this._transformChildren(el.children),
       };
     }
-    const registeredCompKey = [...this.componentTags].find(
-      (key) => key.toLowerCase() === el.tagName.toLowerCase(),
-    );
+    const kebabTagName = el.tagName.toLowerCase();
+    const registeredCompKey = this.componentNameMap.get(kebabTagName);
     const isComponent = !!registeredCompKey;
+
     const node = {
       type: isComponent ? NODE_TYPES.COMPONENT : NODE_TYPES.ELEMENT,
       tagName: isComponent ? registeredCompKey : el.tagName,

@@ -1,0 +1,12 @@
+<script>
+  export default {
+    name: 'demo-component',
+    setup() {
+      return { message: 'Hello, world!' };
+    },
+  };
+</script>
+
+<template>
+  <h1>{{ message }}</h1>
+</template>
