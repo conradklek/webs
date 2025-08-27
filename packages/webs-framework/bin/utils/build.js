@@ -3,7 +3,7 @@ import { watch } from 'fs';
 import { config } from './config';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import websPlugin from '../../bun-plugin-webs';
+import websPlugin from '../../plugin';
 import tailwind from 'bun-plugin-tailwind';
 
 let hmrClients = new Set();
@@ -18,16 +18,24 @@ async function cleanDirectory(dirPath) {
   await ensureDir(dirPath);
 }
 
-async function prepareClientEntrypoint() {
+async function prepareClientEntrypoint(pageEntrypoints) {
   const glob = new Bun.Glob('**/*.js');
   const componentLoaders = [];
+
+  const pageComponentNames = new Set(
+    pageEntrypoints.map((p) =>
+      p.replace(config.APP_DIR + '/', '').replace('.webs', ''),
+    ),
+  );
 
   if (await exists(config.TMP_SERVER_DIR)) {
     for await (const file of glob.scan(config.TMP_SERVER_DIR)) {
       const componentName = file.replace('.js', '');
-      componentLoaders.push(
-        `['${componentName}', () => import('./server/${file}')]`,
-      );
+      if (pageComponentNames.has(componentName)) {
+        componentLoaders.push(
+          `['${componentName}', () => import('./server/${file}')]`,
+        );
+      }
     }
   }
 
@@ -39,7 +47,7 @@ async function prepareClientEntrypoint() {
   console.log(`Client entrypoint created at ${config.TMP_APP_JS}`);
 }
 
-async function buildServerComponents() {
+export async function buildServerComponents() {
   console.log('--- Pre-compiling server components ---');
   const glob = new Bun.Glob('**/*.webs');
   const entrypoints = [];
@@ -51,7 +59,7 @@ async function buildServerComponents() {
 
   if (entrypoints.length === 0) {
     console.log('No server components found to compile.');
-    return true;
+    return { success: true, entrypoints: [] };
   }
 
   const result = await Bun.build({
@@ -65,7 +73,6 @@ async function buildServerComponents() {
       'fs',
       'url',
       'bun-plugin-tailwind',
-      'bun-plugin-webs',
       'sqlite3',
     ],
   });
@@ -73,7 +80,7 @@ async function buildServerComponents() {
   if (!result.success) {
     console.error('Server component compilation failed:', result.logs);
   }
-  return result.success;
+  return { success: result.success, entrypoints };
 }
 
 async function prepareCss() {
@@ -122,10 +129,8 @@ async function compressAssets(outputs) {
   return sizes;
 }
 
-export async function buildAndNotify(appRoutes, changedFile) {
-  const serverBuildSuccess = await buildServerComponents();
-  if (!serverBuildSuccess) return null;
-  await prepareClientEntrypoint();
+export async function buildAndNotify(appRoutes, changedFile, pageEntrypoints) {
+  await prepareClientEntrypoint(pageEntrypoints);
   const tempCssPath = await prepareCss();
 
   const appBuildResult = await Bun.build({
@@ -154,7 +159,7 @@ export async function buildAndNotify(appRoutes, changedFile) {
   const frameworkClientDir = resolve(__dirname, '..', '..', 'client');
   const swEntryPath = join(frameworkClientDir, 'ws.js');
   let swOutput = null;
-  console.log({ frameworkClientDir, swEntryPath, __dirname });
+
   if (await exists(swEntryPath)) {
     const swBuildResult = await Bun.build({
       entrypoints: [swEntryPath],
@@ -227,7 +232,10 @@ export async function performBuild(appRoutes) {
   await ensureDir(config.TMPDIR);
   await cleanDirectory(config.OUTDIR);
 
-  const manifest = await buildAndNotify(appRoutes);
+  const { success, entrypoints } = await buildServerComponents();
+  if (!success) return { manifest: null, entrypoints: [] };
+
+  const manifest = await buildAndNotify(appRoutes, null, entrypoints);
 
   if (!config.IS_PROD) {
     if (hmrWatcher) {
@@ -237,13 +245,17 @@ export async function performBuild(appRoutes) {
     hmrWatcher = watch(
       config.SRC_DIR,
       { recursive: true },
-      (event, filename) => {
+      async (event, filename) => {
         if (
           filename &&
           (filename.endsWith('.webs') || filename.endsWith('.css'))
         ) {
           console.log(`Detected ${event} in ${filename}`);
-          buildAndNotify(appRoutes, filename);
+          const { success: rebuildSuccess, entrypoints: updatedEntrypoints } =
+            await buildServerComponents();
+          if (rebuildSuccess) {
+            await buildAndNotify(appRoutes, filename, updatedEntrypoints);
+          }
         }
       },
     );
@@ -255,7 +267,7 @@ export async function performBuild(appRoutes) {
       process.exit(0);
     });
   }
-  return manifest;
+  return { manifest, entrypoints };
 }
 
 export function getHmrClients() {

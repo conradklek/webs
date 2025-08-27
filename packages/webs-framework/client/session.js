@@ -1,9 +1,9 @@
-import { createStore } from '../lib/reactivity';
+import { store } from '../lib/reactivity';
 
 const initialUser =
   typeof window !== 'undefined' ? window.__WEBS_STATE__?.user : null;
 
-export const useSession = createStore({
+export const session = store({
   state: () => ({
     user: initialUser,
     error: null,

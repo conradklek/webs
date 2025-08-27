@@ -1,0 +1,21 @@
+<script>
+  import Checkbox from './checkbox.webs';
+
+  export default {
+    components: {
+      checkbox: Checkbox,
+    },
+  };
+</script>
+
+<template>
+  <div class="flex items-center space-x-2">
+    <checkbox id="terms" />
+    <label
+      for="terms"
+      class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+    >
+      Accept terms and conditions
+    </label>
+  </div>
+</template>

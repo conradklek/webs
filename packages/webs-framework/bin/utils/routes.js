@@ -33,7 +33,7 @@ export function findRouteMatch(appRoutes, pathname) {
   return null;
 }
 
-export async function generateRoutesFromFileSystem() {
+export async function generateRoutesFromFileSystem(pageEntrypoints) {
   console.log('--- Scanning for routes in pre-compiled server directory ---');
   const compiledServerDir = config.TMP_SERVER_DIR;
   if (!(await exists(compiledServerDir))) {
@@ -43,10 +43,20 @@ export async function generateRoutesFromFileSystem() {
     return {};
   }
 
+  const pageFiles = new Set(
+    (pageEntrypoints || []).map((p) =>
+      p.replace(config.APP_DIR + '/', '').replace('.webs', '.js'),
+    ),
+  );
+
   const glob = new Bun.Glob('**/*.js');
   const routeDefinitions = [];
 
   for await (const file of glob.scan(compiledServerDir)) {
+    if (!pageFiles.has(file)) {
+      continue;
+    }
+
     const fullPath = join(compiledServerDir, file);
     const mod = await import(`${fullPath}?t=${Date.now()}`);
 

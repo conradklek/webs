@@ -1,9 +1,9 @@
 {
   "name": "@conradklek/webs",
   "author": "Conrad Klek",
-  "version": "0.1.30",
+  "version": "0.1.31",
   "type": "module",
-  "description": "A JavaScript Framework",
+  "description": "A Javascript framework",
   "bin": {
     "webs": "bin/cli.js"
   },
@@ -14,14 +14,14 @@
     "server",
     "lib",
     "index.js",
-    "bun-plugin-webs.js"
+    "plugin.js"
   ],
   "exports": {
     ".": "./index.js",
     "./client": "./client/index.js",
     "./server": "./server/request-handler.js",
     "./compiler": "./lib/compiler.js",
-    "./bun-plugin-webs": "./bun-plugin-webs.js"
+    "./plugin": "./plugin.js"
   },
   "scripts": {
     "dev": "NODE_ENV=development bun run ./bin/cli.js",

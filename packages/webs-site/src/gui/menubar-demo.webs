@@ -1,0 +1,66 @@
+<script>
+  import Menubar from './menubar.webs';
+
+  export default {
+    components: {
+      menubar: Menubar,
+      ...Menubar.components,
+    },
+  };
+</script>
+
+<template>
+  <menubar>
+    <menubar-menu value="file">
+      <menubar-trigger>File</menubar-trigger>
+      <menubar-content>
+        <menubar-item>
+          New Tab <menubar-shortcut>⌘T</menubar-shortcut>
+        </menubar-item>
+        <menubar-item>
+          New Window <menubar-shortcut>⌘N</menubar-shortcut>
+        </menubar-item>
+        <menubar-item disabled>New Incognito Window</menubar-item>
+        <menubar-separator />
+        <menubar-sub>
+          <menubar-subtrigger>Share</menubar-subtrigger>
+          <menubar-subcontent>
+            <menubar-item>Email Link</menubar-item>
+            <menubar-item>Messages</menubar-item>
+            <menubar-item>Notes</menubar-item>
+          </menubar-subcontent>
+        </menubar-sub>
+        <menubar-separator />
+        <menubar-item>
+          Print... <menubar-shortcut>⌘P</menubar-shortcut>
+        </menubar-item>
+      </menubar-content>
+    </menubar-menu>
+    <menubar-menu value="edit">
+      <menubar-trigger>Edit</menubar-trigger>
+      <menubar-content>
+        <menubar-item>
+          Undo <menubar-shortcut>⌘Z</menubar-shortcut>
+        </menubar-item>
+        <menubar-item>
+          Redo <menubar-shortcut>⇧⌘Z</menubar-shortcut>
+        </menubar-item>
+        <menubar-separator />
+        <menubar-sub>
+          <menubar-subtrigger>Find</menubar-subtrigger>
+          <menubar-subcontent>
+            <menubar-item>Search...</menubar-item>
+            <menubar-separator />
+            <menubar-item>Find...</menubar-item>
+            <menubar-item>Find Next</menubar-item>
+            <menubar-item>Find Previous</menubar-item>
+          </menubar-subcontent>
+        </menubar-sub>
+        <menubar-separator />
+        <menubar-item>Cut</menubar-item>
+        <menubar-item>Copy</menubar-item>
+        <menubar-item>Paste</menubar-item>
+      </menubar-content>
+    </menubar-menu>
+  </menubar>
+</template>

@@ -1,4 +1,4 @@
-import { useState, computed } from '../lib/reactivity';
+import { state, computed } from '../lib/reactivity';
 import { onUnmounted } from '../lib/renderer';
 import { localDB } from './db-sync';
 
@@ -8,11 +8,11 @@ export * from '../lib/runtime';
 export * from './session';
 export * from './db-sync';
 
-export function useAction(actionName) {
+export function action(actionName) {
   if (typeof window === 'undefined') {
     return { call: () => Promise.resolve(null), state: {} };
   }
-  const state = useState({
+  const s = state({
     data: null,
     chunk: null,
     error: null,
@@ -20,13 +20,13 @@ export function useAction(actionName) {
     isStreaming: false,
   });
 
-  state.value.currentResponse = computed(() => state.value.data || '');
+  s.value.currentResponse = computed(() => s.value.data || '');
 
   const getActionPath = () => {
     const componentName = window.__WEBS_STATE__?.componentName;
     if (!componentName) {
       console.error(
-        'useAction: Could not determine the component name for the action.',
+        'Action: Could not determine the component name for the action.',
       );
       return null;
     }
@@ -38,8 +38,8 @@ export function useAction(actionName) {
       typeof lastArg === 'object' && lastArg !== null && 'onFinish' in lastArg;
     const options = hasOptions ? args.pop() : {};
     const bodyArgs = args;
-    state.value = {
-      ...state.value,
+    s.value = {
+      ...s.value,
       isLoading: true,
       error: null,
       data: null,
@@ -55,42 +55,42 @@ export function useAction(actionName) {
         throw new Error(await response.text());
       }
       if (response.headers.get('Content-Type')?.includes('text/event-stream')) {
-        state.value = { ...state.value, isStreaming: true, data: '' };
+        s.value = { ...s.value, isStreaming: true, data: '' };
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           const chunkText = decoder.decode(value);
-          state.value = {
-            ...state.value,
+          s.value = {
+            ...s.value,
             chunk: chunkText,
-            data: state.value.data + chunkText,
+            data: s.value.data + chunkText,
           };
         }
         if (options.onFinish && typeof options.onFinish === 'function') {
-          options.onFinish(state.value.data.trim());
+          options.onFinish(s.value.data.trim());
         }
       } else {
         const data = await response.json();
-        state.value = { ...state.value, data };
+        s.value = { ...s.value, data };
       }
     } catch (e) {
-      state.value = { ...state.value, error: e.message };
+      s.value = { ...s.value, error: e.message };
     } finally {
-      state.value = { ...state.value, isLoading: false, isStreaming: false };
+      s.value = { ...s.value, isLoading: false, isStreaming: false };
     }
-    return state.value.data;
+    return s.value.data;
   };
   return {
     call,
     stream: call,
-    state,
+    state: s,
   };
 }
 
-export function useQuery(tableName, initialData = null) {
-  const state = useState({
+export function query(tableName, initialData = null) {
+  const s = state({
     data: initialData || [],
     isLoading: !initialData,
     error: null,
@@ -98,12 +98,12 @@ export function useQuery(tableName, initialData = null) {
 
   if (typeof window !== 'undefined') {
     const fetchData = async () => {
-      state.value = { ...state.value, isLoading: true };
+      s.value = { ...s.value, isLoading: true };
       try {
         const data = await localDB.getAll(tableName);
-        state.value = { ...state.value, data, isLoading: false, error: null };
+        s.value = { ...s.value, data, isLoading: false, error: null };
       } catch (e) {
-        state.value = { ...state.value, error: e, isLoading: false };
+        s.value = { ...s.value, error: e, isLoading: false };
       }
     };
 
@@ -115,10 +115,10 @@ export function useQuery(tableName, initialData = null) {
     onUnmounted(unsubscribe);
   }
 
-  return state;
+  return { state: s };
 }
 
-export function useMutate(tableName) {
+export function mutate(tableName) {
   if (typeof window === 'undefined') {
     return {
       mutate: () => Promise.resolve(),
@@ -127,13 +127,13 @@ export function useMutate(tableName) {
     };
   }
 
-  const state = useState({
+  const s = state({
     isLoading: false,
     error: null,
   });
 
   const mutate = async (item) => {
-    state.value = { isLoading: true, error: null };
+    s.value = { isLoading: true, error: null };
     try {
       await localDB.put(tableName, item);
       await localDB.put('outbox', {
@@ -142,14 +142,14 @@ export function useMutate(tableName) {
         data: item,
         timestamp: Date.now(),
       });
-      state.value = { isLoading: false, error: null };
+      s.value = { isLoading: false, error: null };
     } catch (e) {
-      state.value = { isLoading: false, error: e };
+      s.value = { isLoading: false, error: e };
     }
   };
 
   const destroy = async (id) => {
-    state.value = { isLoading: true, error: null };
+    s.value = { isLoading: true, error: null };
     try {
       await localDB.delete(tableName, id);
       await localDB.put('outbox', {
@@ -158,16 +158,16 @@ export function useMutate(tableName) {
         id: id,
         timestamp: Date.now(),
       });
-      state.value = { isLoading: false, error: null };
+      s.value = { isLoading: false, error: null };
     } catch (e) {
-      state.value = { isLoading: false, error: e };
+      s.value = { isLoading: false, error: e };
     }
   };
 
-  return { mutate, destroy, state };
+  return { mutate, destroy, state: s };
 }
 
-let socket = null;
+let currentSocket = null;
 let messageListeners = new Set();
 
 function connect() {
@@ -189,15 +189,15 @@ function connect() {
   socket.onerror = (error) => console.error('[WebSocket] Error:', error);
 }
 
-export function useSocket() {
+export function socket() {
   return {
     connect,
     send(message) {
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(message);
+      if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
+        currentSocket.send(message);
       } else {
         console.warn('[WebSocket] Cannot send message, socket is not open.', {
-          readyState: socket?.readyState,
+          readyState: currentSocket?.readyState,
         });
       }
     },

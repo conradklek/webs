@@ -27,15 +27,20 @@ async function main() {
   };
 
   async function buildAndReload(changedFile) {
-    const manifest = await performBuild(serverContext.appRoutes, changedFile);
+    const { manifest, entrypoints } = await performBuild(
+      serverContext.appRoutes,
+      changedFile,
+    );
+
     if (!manifest) {
       console.error('Build failed, server will not start or reload.');
-      process.exit(1);
+      if (config.IS_PROD) process.exit(1);
+      return;
     }
     serverContext.manifest = manifest;
     console.log('Manifest updated:', JSON.stringify(manifest, null, 2));
 
-    serverContext.appRoutes = await generateRoutesFromFileSystem();
+    serverContext.appRoutes = await generateRoutesFromFileSystem(entrypoints);
   }
 
   await buildAndReload();

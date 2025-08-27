@@ -1,13 +1,14 @@
 const isObject = (val) => val !== null && typeof val === 'object';
 
 let activeEffect = null;
+
 const effectStack = [];
 const targetMap = new WeakMap();
 const proxyMap = new WeakMap();
 
 export const RAW_SYMBOL = Symbol('raw');
 
-export function track(target, key) {
+function track(target, key) {
   if (activeEffect) {
     let depsMap = targetMap.get(target);
     if (!depsMap) {
@@ -22,7 +23,7 @@ export function track(target, key) {
   }
 }
 
-export function trigger(target, key) {
+function trigger(target, key) {
   const depsMap = targetMap.get(target);
   if (!depsMap) return;
 
@@ -45,15 +46,6 @@ function cleanup(effect) {
     deps[i].delete(effect);
   }
   deps.length = 0;
-}
-
-export function effect(fn, options = {}) {
-  const _effect = createReactiveEffect(fn, options.scheduler);
-  _effect.run();
-
-  const runner = _effect.run.bind(_effect);
-  runner.effect = _effect;
-  return runner;
 }
 
 function createReactiveEffect(fn, scheduler) {
@@ -86,6 +78,63 @@ function createReactiveEffect(fn, scheduler) {
   return effect;
 }
 
+export function isRef(r) {
+  return !!(r && r.__is_ref === true);
+}
+
+function createRef(value) {
+  const wrapper = {
+    _value: value,
+    __is_ref: true,
+    get value() {
+      track(this, 'value');
+      return this._value;
+    },
+    set value(newValue) {
+      if (newValue !== this._value) {
+        this._value = newValue;
+        trigger(this, 'value');
+      }
+    },
+  };
+  return wrapper;
+}
+
+function reactive(target) {
+  if (!isObject(target)) return target;
+  if (proxyMap.has(target)) return proxyMap.get(target);
+
+  let handlers;
+  if (Array.isArray(target)) {
+    handlers = arrayHandlers;
+  } else if (target instanceof Map) {
+    handlers = collectionHandlers.map;
+  } else if (target instanceof Set) {
+    handlers = collectionHandlers.set;
+  } else {
+    handlers = baseHandlers;
+  }
+
+  const proxy = new Proxy(target, handlers);
+  proxyMap.set(target, proxy);
+  return proxy;
+}
+
+export function state(initialValue) {
+  if (isObject(initialValue)) {
+    return reactive(initialValue);
+  }
+  return createRef(initialValue);
+}
+
+export function effect(fn, options = {}) {
+  const _effect = createReactiveEffect(fn, options.scheduler);
+  _effect.run();
+  const runner = _effect.run.bind(_effect);
+  runner.effect = _effect;
+  return runner;
+}
+
 export function computed(getter) {
   let computedValue;
   let isDirty = true;
@@ -114,60 +163,45 @@ export function computed(getter) {
   return computedRef;
 }
 
-export function isRef(r) {
-  return !!(r && r.__is_ref === true);
-}
+export function store(options) {
+  const store = reactive(options.state());
+  const wrappedActions = {};
+  const wrappedGetters = {};
 
-/**
- * @description Creates a reactive reference object.
- * @param {*} value - The initial value.
- * @returns {object} A ref object with a `.value` property.
- */
-function ref(value) {
-  const wrapper = {
-    _value: value,
-    __is_ref: true,
-    get value() {
-      track(this, 'value');
-      return this._value;
-    },
-    set value(newValue) {
-      if (newValue !== this._value) {
-        this._value = newValue;
-        trigger(this, 'value');
-      }
-    },
-  };
-  return wrapper;
-}
-
-/**
- * @description Creates a reactive state variable (a writable ref).
- * @param {*} initialValue - The initial value for the state.
- * @returns {object} A writable ref object.
- */
-export function useState(initialValue) {
-  return ref(initialValue);
-}
-
-function createReactiveObject(target) {
-  if (!isObject(target)) return target;
-  if (proxyMap.has(target)) return proxyMap.get(target);
-
-  let handlers;
-  if (Array.isArray(target)) {
-    handlers = arrayHandlers;
-  } else if (target instanceof Map) {
-    handlers = collectionHandlers.map;
-  } else if (target instanceof Set) {
-    handlers = collectionHandlers.set;
-  } else {
-    handlers = baseHandlers;
+  if (options.actions) {
+    for (const key in options.actions) {
+      wrappedActions[key] = options.actions[key].bind(store);
+    }
   }
 
-  const proxy = new Proxy(target, handlers);
-  proxyMap.set(target, proxy);
-  return proxy;
+  if (options.getters) {
+    for (const key in options.getters) {
+      const computer = computed(() => options.getters[key].call(store));
+      Object.defineProperty(wrappedGetters, key, {
+        get: () => computer.value,
+      });
+    }
+  }
+
+  return new Proxy(store, {
+    get(target, key, receiver) {
+      if (key in wrappedGetters) {
+        return wrappedGetters[key];
+      }
+      if (key in wrappedActions) {
+        return wrappedActions[key];
+      }
+      return Reflect.get(target, key, receiver);
+    },
+    set(target, key, value, receiver) {
+      console.warn(
+        `Attempted to directly set store property "${String(
+          key,
+        )}". Use an action to modify state.`,
+      );
+      return Reflect.set(target, key, value, receiver);
+    },
+  });
 }
 
 const baseHandlers = {
@@ -178,7 +212,7 @@ const baseHandlers = {
 
     const unwrapped = isRef(value) ? value.value : value;
 
-    return isObject(unwrapped) ? createReactiveObject(unwrapped) : unwrapped;
+    return isObject(unwrapped) ? reactive(unwrapped) : unwrapped;
   },
   set(target, key, value, receiver) {
     const oldValue = target[key];
@@ -320,44 +354,3 @@ const collectionHandlers = {
     },
   },
 };
-
-export function createStore(options) {
-  const store = createReactiveObject(options.state());
-  const wrappedActions = {};
-  const wrappedGetters = {};
-
-  if (options.actions) {
-    for (const key in options.actions) {
-      wrappedActions[key] = options.actions[key].bind(store);
-    }
-  }
-
-  if (options.getters) {
-    for (const key in options.getters) {
-      const computer = computed(() => options.getters[key].call(store));
-      Object.defineProperty(wrappedGetters, key, {
-        get: () => computer.value,
-      });
-    }
-  }
-
-  return new Proxy(store, {
-    get(target, key, receiver) {
-      if (key in wrappedGetters) {
-        return wrappedGetters[key];
-      }
-      if (key in wrappedActions) {
-        return wrappedActions[key];
-      }
-      return Reflect.get(target, key, receiver);
-    },
-    set(target, key, value, receiver) {
-      console.warn(
-        `Attempted to directly set store property "${String(
-          key,
-        )}". Use an action to modify state.`,
-      );
-      return Reflect.set(target, key, value, receiver);
-    },
-  });
-}

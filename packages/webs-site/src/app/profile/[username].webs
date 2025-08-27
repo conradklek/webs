@@ -1,21 +1,10 @@
 <script>
-  import { useSession } from '@conradklek/webs';
-
-  export const middleware = [
-    (to, from, next) => {
-      if (!to.user) {
-        next('/login');
-      } else {
-        next();
-      }
-    },
-  ];
+  import { session } from '@conradklek/webs';
 
   export default {
-    name: 'Profile',
-    setup() {
+    setup(props, ctx) {
       function handleLogout() {
-        useSession.logout();
+        session.logout();
       }
       return { handleLogout };
     },
@@ -31,9 +20,6 @@
         <span>|</span>
         <button type="button" @click="handleLogout">Logout</button>
       </div>
-    </div>
-    <div class="flex-1 flex flex-col items-start justify-start gap-2">
-      <p>This is the profile page for @{{ $params.username }}.</p>
     </div>
   </div>
 </template>

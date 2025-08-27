@@ -1,6 +1,14 @@
 <script>
+  import { state } from '@conradklek/webs';
+
   export default {
-    name: 'index',
+    setup() {
+      const count = state(0);
+
+      const increment = () => count.value++;
+
+      return { count, increment };
+    },
   };
 </script>
 

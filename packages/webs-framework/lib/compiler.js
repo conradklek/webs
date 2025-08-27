@@ -24,7 +24,6 @@ const DIR_IF = 'w-if';
 const DIR_ELSE_IF = 'w-else-if';
 const DIR_ELSE = 'w-else';
 const DIR_FOR = 'w-for';
-const DIR_MODEL = 'w-model';
 
 const cacheStringFunction = (fn) => {
   const cache = Object.create(null);
@@ -37,10 +36,6 @@ const cacheStringFunction = (fn) => {
 const camelize = cacheStringFunction((str) => {
   return str.replace(/-(\w)/g, (_, c) => (c ? c.toUpperCase() : ''));
 });
-
-const pascalToKebab = cacheStringFunction((str) =>
-  str.replace(/([a-z0-9]|(?=[A-Z]))([A-Z])/g, '$1-$2').toLowerCase(),
-);
 
 export function generateRenderFn(ast) {
   const ctx = {
@@ -149,7 +144,12 @@ export function generateRenderFn(ast) {
           return `_h(_Fragment, null, ${this.genChildren(node.children)})`;
         case NODE_TYPES.COMPONENT: {
           const slots = `{ default: () => ${this.genChildren(node.children)} }`;
-          return `_h(_ctx.${node.tagName}, ${this.genProps(
+          const componentAccess = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(
+            node.tagName,
+          )
+            ? `_ctx.${node.tagName}`
+            : `_ctx['${node.tagName}']`;
+          return `_h(${componentAccess}, ${this.genProps(
             node.properties,
           )}, ${slots})`;
         }
@@ -195,7 +195,7 @@ export function generateRenderFn(ast) {
           const childCode = this.genNode(node.children[0]);
           this.scope.delete(value);
           if (key) this.scope.delete(key);
-          return `_h(_Fragment, null, (${this.genExpr(source)} || []).length === 0 ? _h(_Comment, null, 'empty-for') : (${this.genExpr(source)} || []).map(${params} => (${childCode})))`;
+          return `_h(_Fragment, null, (${this.genExpr(source)} || []).length === 0 ? null : (${this.genExpr(source)} || []).map(${params} => (${childCode})))`;
         }
       }
       return 'null';
@@ -229,14 +229,8 @@ export class Compiler {
       if (!comps) return;
       for (const key in comps) {
         const compDef = comps[key];
-        if (compDef) {
-          const tagNameFromKey = pascalToKebab(key);
-          this.componentNameMap.set(tagNameFromKey, key);
-
-          if (compDef.name && compDef.name !== tagNameFromKey) {
-            this.componentNameMap.set(compDef.name, key);
-          }
-
+        if (compDef && typeof compDef === 'object') {
+          this.componentNameMap.set(key, key);
           if (compDef.components) {
             collectComponents(compDef.components);
           }
@@ -285,6 +279,10 @@ export class Compiler {
     }
   }
   _transformText(node) {
+    if (node.content.trim() === '') {
+      return null;
+    }
+
     const unescape = (str) => {
       return str.replace(
         /&amp;|&lt;|&gt;|&quot;|&#039;|&larr;|&rarr;|&uarr;|&darr;|&harr;|&crarr;|&nbsp;/g,
@@ -340,11 +338,18 @@ export class Compiler {
       ? tokens[0]
       : { type: NODE_TYPES.FRAGMENT, children: tokens };
   }
+
   _transformChildren(children) {
     const transformed = [];
     for (let i = 0; i < children.length; i++) {
       const child = children[i];
       if (child.type === 'element') {
+        const forAttr = child.attributes.find((a) => a.name === DIR_FOR);
+        if (forAttr) {
+          transformed.push(this._transformElement(child));
+          continue;
+        }
+
         const ifAttr = child.attributes.find((a) => a.name === DIR_IF);
         if (ifAttr) {
           const branches = [];
@@ -359,7 +364,8 @@ export class Compiler {
           let j = i + 1;
           while (j < children.length) {
             const next = children[j];
-            const isTextNode = next.type === 'text' && !next.content.trim();
+            const isWhitespaceText =
+              next.type === 'text' && !next.content.trim();
             if (next.type === 'element') {
               const elseIfAttr = next.attributes.find(
                 (a) => a.name === DIR_ELSE_IF,
@@ -376,7 +382,7 @@ export class Compiler {
                   condition: this._parseExpr(elseIfAttr.value),
                   node: this._transformNode(elseIfNodeClone),
                 });
-                i++;
+                i = j;
               } else if (elseAttr) {
                 const elseNodeClone = {
                   ...next,
@@ -388,12 +394,12 @@ export class Compiler {
                   condition: null,
                   node: this._transformNode(elseNodeClone),
                 });
-                i++;
+                i = j;
                 break;
               } else {
                 break;
               }
-            } else if (!isTextNode) {
+            } else if (!isWhitespaceText) {
               break;
             }
             j++;
@@ -444,54 +450,49 @@ export class Compiler {
         children: this._transformChildren(el.children),
       };
     }
-    const kebabTagName = el.tagName.toLowerCase();
-    const registeredCompKey = this.componentNameMap.get(kebabTagName);
+
+    const tagName = el.tagName;
+    const registeredCompKey = this.componentNameMap.get(tagName);
     const isComponent = !!registeredCompKey;
 
     const node = {
       type: isComponent ? NODE_TYPES.COMPONENT : NODE_TYPES.ELEMENT,
-      tagName: isComponent ? registeredCompKey : el.tagName,
+      tagName: isComponent ? registeredCompKey : tagName,
       properties: this._processAttributes(el.attributes),
       children: this._transformChildren(el.children),
     };
     return node;
   }
+
   _processAttributes(attrs) {
     const properties = [];
-    const modelAttr = attrs.find((a) => a.name === DIR_MODEL);
-
-    if (modelAttr) {
-      if (attrs.some((a) => a.name === ':value')) {
-        console.warn(
-          `[Compiler] :value attribute is ignored when used with w-model on the same element.`,
-        );
-      }
-      if (attrs.some((a) => a.name === '@input')) {
-        console.warn(
-          `[Compiler] @input listener is ignored when used with w-model on the same element.`,
-        );
-      }
-
-      const modelExpr = this._parseExpr(modelAttr.value);
-      properties.push({
-        type: ATTR_TYPES.DIRECTIVE,
-        name: 'value',
-        expression: modelExpr,
-      });
-      properties.push({
-        type: ATTR_TYPES.EVENT_HANDLER,
-        name: 'onInput',
-        expression: this._parseExpr(`${modelAttr.value} = $event.target.value`),
-      });
-    }
 
     for (const attr of attrs) {
       const name = attr.name;
 
-      if (
-        name === DIR_MODEL ||
-        (modelAttr && (name === ':value' || name === '@input'))
-      ) {
+      if (name.startsWith('bind:')) {
+        const propToBind = name.split(':')[1];
+        if (!propToBind) {
+          console.warn(`[Compiler] Invalid bind directive: ${name}`);
+          continue;
+        }
+
+        const eventName = propToBind === 'checked' ? 'onChange' : 'onInput';
+        const valueAccessor = propToBind === 'checked' ? 'checked' : 'value';
+
+        properties.push({
+          type: ATTR_TYPES.DIRECTIVE,
+          name: propToBind,
+          expression: this._parseExpr(attr.value),
+        });
+
+        properties.push({
+          type: ATTR_TYPES.EVENT_HANDLER,
+          name: eventName,
+          expression: this._parseExpr(
+            `${attr.value} = $event.target.${valueAccessor}`,
+          ),
+        });
         continue;
       }
 
@@ -540,10 +541,12 @@ export function compile(componentDef) {
     };
     templateContent = templateContent(htmlTagFn, {});
   }
+
   if (typeof templateContent !== 'string') {
     console.warn('Component is missing a valid template option.');
     return () => Webs.h(Webs.Comment, null, 'Component missing template');
   }
+
   const finalComponentDef = { ...componentDef, template: templateContent };
   const compiler = new Compiler(finalComponentDef);
   return compiler.compile();

@@ -1,0 +1,45 @@
+<script>
+  import Modal from './modal.webs';
+
+  export default {
+    components: {
+      modal: Modal,
+      ...Modal.components,
+    },
+  };
+</script>
+
+<template>
+  <modal>
+    <modal-trigger>
+      <button type="button" class="btn btn-default btn-size-lg">
+        Open Modal
+      </button>
+    </modal-trigger>
+    <modal-content>
+      <modal-header>
+        <modal-title>Edit Profile</modal-title>
+        <modal-description>
+          Make changes to your profile here. Click save when you're done.
+        </modal-description>
+      </modal-header>
+      <div class="grid gap-4 py-4">
+        <div class="grid grid-cols-4 items-center gap-4">
+          <label for="name" class="text-right"> Name </label>
+          <input id="name" value="Conrad Klek" class="input col-span-3" />
+        </div>
+        <div class="grid grid-cols-4 items-center gap-4">
+          <label for="username" class="text-right"> Username </label>
+          <input id="username" value="@conradklek" class="input col-span-3" />
+        </div>
+      </div>
+      <modal-footer>
+        <modal-close>
+          <button type="button" class="btn btn-default btn-size-lg w-full">
+            Save changes
+          </button>
+        </modal-close>
+      </modal-footer>
+    </modal-content>
+  </modal>
+</template>

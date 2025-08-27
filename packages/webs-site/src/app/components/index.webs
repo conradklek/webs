@@ -1,6 +1,5 @@
 <script>
   export default {
-    name: 'Components',
     setup() {
       const components = [
         { name: 'Accordion', url: '/components/accordion' },
@@ -11,7 +10,6 @@
         { name: 'Checkbox', url: '/components/checkbox' },
         { name: 'Radio', url: '/components/radio-group' },
         { name: 'Tabs', url: '/components/tabs' },
-        { name: 'Toggle', url: '/components/toggle-group' },
       ];
       return { components };
     },
@@ -28,10 +26,10 @@
         <a href="/signup" class="link">Signup</a>
       </div>
     </div>
-    <div class="flex-1 flex flex-col items-start justify-start gap-4">
+    <div class="w-full flex flex-col items-start justify-start gap-4">
       <h1>Components</h1>
       <ul class="list-disc pl-8 space-y-0.5">
-        <li w-for="component in components">
+        <li w-for="component in components" :key="component.name">
           <a :href="component.url" class="link">{{ component.name }}</a>
         </li>
       </ul>
