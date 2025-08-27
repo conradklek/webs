@@ -19,35 +19,16 @@
       'radio-group-demo': RadioGroupDemo,
       'checkbox-demo': CheckboxDemo,
     },
-    setup(
-      props,
-      {
-        attrs: {
-          params: { component },
-        },
-      },
-    ) {
-      return { component };
-    },
   };
 </script>
 
 <template>
   <div class="w-full p-8 flex flex-col items-start justify-start gap-6">
-    <div class="w-full flex flex-row items-center justify-between gap-4">
-      <a href="/" class="link font-medium">webs.site</a>
-      <div class="w-full flex flex-row items-center justify-start gap-4">
-        <span>|</span>
-        <a href="/components" class="link">{{ component }}</a>
-      </div>
+    <div class="w-full flex flex-row items-center justify-start gap-4">
+      <a href="/components" class="link">components</a>
+      <span>|</span>
+      <h1>{{ params.component }}</h1>
     </div>
-    <accordion-demo w-if="component === 'accordion'"></accordion-demo>
-    <breadcrumb-demo w-if="component === 'breadcrumb'"></breadcrumb-demo>
-    <tabs-demo w-if="component === 'tabs'"></tabs-demo>
-    <card-demo w-if="component === 'card'"></card-demo>
-    <modal-demo w-if="component === 'modal'"></modal-demo>
-    <radio-group-demo w-if="component === 'radio-group'"></radio-group-demo>
-    <checkbox-demo w-if="component === 'checkbox'"></checkbox-demo>
-    <menubar-demo w-if="component === 'menubar'"></menubar-demo>
+    <component :is="params.component + '-demo'"></component>
   </div>
 </template>

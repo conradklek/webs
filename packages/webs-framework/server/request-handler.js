@@ -23,10 +23,9 @@ export function renderHtmlShell({ appHtml, websState, manifest, title }) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${title}</title>
-    ${
-      manifest.css
-        ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
-        : ''
+    ${manifest.css
+      ? `<link rel="stylesheet" href="/${basename(manifest.css)}">`
+      : ''
     }
 </head>
 <body>
@@ -134,7 +133,15 @@ async function handleDataRequest(req, routeDefinition, params, context) {
   const user = getUserFromSession(db, sessionId);
 
   const props = createAppProps(routeDefinition, user, params, db);
+
+  const appContext = {
+    params: params,
+    components: routeDefinition.component.components || {},
+  };
+
   const componentVnode = h(routeDefinition.component, props);
+  componentVnode.appContext = appContext;
+
   const { componentState } = await renderToString(componentVnode);
 
   const websState = {
@@ -180,7 +187,15 @@ function handlePageRequest(req, routeDefinition, params, context) {
         middleware[index](toRoute, fromRoute, next);
       } else {
         const props = createAppProps(routeDefinition, user, params, db);
+
+        const appContext = {
+          params: params,
+          components: routeDefinition.component.components || {},
+        };
+
         const componentVnode = h(routeDefinition.component, props);
+        componentVnode.appContext = appContext;
+
         const { html: appHtml, componentState } =
           await renderToString(componentVnode);
         const websState = {

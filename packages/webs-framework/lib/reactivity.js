@@ -2,7 +2,7 @@ const isObject = (val) => val !== null && typeof val === 'object';
 
 let activeEffect = null;
 
-const effectStack = [];
+const watchStack = [];
 const targetMap = new WeakMap();
 const proxyMap = new WeakMap();
 
@@ -29,53 +29,53 @@ function trigger(target, key) {
 
   const deps = depsMap.get(key);
   if (deps) {
-    const effectsToRun = [...deps];
-    for (const effect of effectsToRun) {
-      if (effect.scheduler) {
-        effect.scheduler();
+    const schedule = [...deps];
+    for (const watch of schedule) {
+      if (watch.scheduler) {
+        watch.scheduler();
       } else {
-        effect.run();
+        watch.run();
       }
     }
   }
 }
 
-function cleanup(effect) {
-  const { deps } = effect;
+function cleanup(watch) {
+  const { deps } = watch;
   for (let i = 0; i < deps.length; i++) {
-    deps[i].delete(effect);
+    deps[i].delete(watch);
   }
   deps.length = 0;
 }
 
 function createReactiveEffect(fn, scheduler) {
-  const effect = {
+  const watch = {
     fn,
     scheduler,
     active: true,
     deps: [],
     run() {
-      if (!effect.active) return effect.fn();
-      if (effectStack.includes(effect)) return;
+      if (!watch.active) return watch.fn();
+      if (watchStack.includes(watch)) return;
 
-      cleanup(effect);
+      cleanup(watch);
       try {
-        effectStack.push(effect);
-        activeEffect = effect;
-        return effect.fn();
+        watchStack.push(watch);
+        activeEffect = watch;
+        return watch.fn();
       } finally {
-        effectStack.pop();
-        activeEffect = effectStack[effectStack.length - 1];
+        watchStack.pop();
+        activeEffect = watchStack[watchStack.length - 1];
       }
     },
     stop() {
-      if (effect.active) {
-        cleanup(effect);
-        effect.active = false;
+      if (watch.active) {
+        cleanup(watch);
+        watch.active = false;
       }
     },
   };
-  return effect;
+  return watch;
 }
 
 export function isRef(r) {
@@ -127,11 +127,11 @@ export function state(initialValue) {
   return createRef(initialValue);
 }
 
-export function effect(fn, options = {}) {
-  const _effect = createReactiveEffect(fn, options.scheduler);
-  _effect.run();
-  const runner = _effect.run.bind(_effect);
-  runner.effect = _effect;
+export function watch(fn, options = {}) {
+  const _watch = createReactiveEffect(fn, options.scheduler);
+  _watch.run();
+  const runner = _watch.run.bind(_watch);
+  runner.watch = _watch;
   return runner;
 }
 
@@ -228,7 +228,7 @@ const arrayHandlers = {
   get(target, key, receiver) {
     const mutationMethods = ['push', 'pop', 'shift', 'unshift', 'splice'];
     if (mutationMethods.includes(key)) {
-      return function (...args) {
+      return function(...args) {
         const result = Array.prototype[key].apply(target, args);
         trigger(target, 'length');
         return result;

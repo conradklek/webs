@@ -1,4 +1,4 @@
-import { effect, isRef } from './reactivity';
+import { watch, isRef } from './reactivity';
 import { voidElements } from './parser';
 import { compile } from './compiler';
 
@@ -350,7 +350,7 @@ export function createRenderer(options) {
       isHydrating,
     ));
 
-    const runner = effect(
+    const runner = watch(
       () => {
         instanceStack.push(instance);
         currentInstance = instance;
@@ -492,8 +492,8 @@ export function createRenderer(options) {
     if (!vnode) return;
 
     if (vnode.component) {
-      if (vnode.component.update && vnode.component.update.effect) {
-        vnode.component.update.effect.stop();
+      if (vnode.component.update && vnode.component.update.watch) {
+        vnode.component.update.watch.stop();
       }
       vnode.component.hooks.onUnmounted?.forEach((h) =>
         h.call(vnode.component.ctx),
@@ -770,12 +770,16 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
         key in instance.internalCtx ||
         key === '$attrs' ||
         key === '$slots' ||
+        (instance.appContext.params && key === 'params') || 
         (instance.type.components && key in instance.type.components) ||
         (instance.appContext.globals && key in instance.appContext.globals),
       get: (_, key) => {
         if (key in instance.internalCtx) {
           const val = instance.internalCtx[key];
           return isRef(val) ? val.value : val;
+        }
+        if (instance.appContext.params && key === 'params') {
+          return instance.appContext.params;
         }
         if (key === '$attrs') {
           return instance.attrs;

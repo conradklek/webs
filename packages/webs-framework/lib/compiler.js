@@ -144,11 +144,16 @@ export function generateRenderFn(ast) {
           return `_h(_Fragment, null, ${this.genChildren(node.children)})`;
         case NODE_TYPES.COMPONENT: {
           const slots = `{ default: () => ${this.genChildren(node.children)} }`;
-          const componentAccess = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(
-            node.tagName,
-          )
-            ? `_ctx.${node.tagName}`
-            : `_ctx['${node.tagName}']`;
+          let componentAccess;
+          if (node.isDynamic) {
+            const dynamicNameExpr = this.genExpr(node.tagName);
+            componentAccess = `_ctx[${dynamicNameExpr}]`;
+          } else {
+            componentAccess = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(node.tagName)
+              ? `_ctx.${node.tagName}`
+              : `_ctx['${node.tagName}']`;
+          }
+
           return `_h(${componentAccess}, ${this.genProps(
             node.properties,
           )}, ${slots})`;
@@ -449,6 +454,23 @@ export class Compiler {
         type: NODE_TYPES.SLOT,
         children: this._transformChildren(el.children),
       };
+    }
+
+    if (el.tagName === 'component') {
+      const isAttr = el.attributes.find(
+        (a) => a.name === ':is' || a.name === 'is',
+      );
+      if (isAttr) {
+        return {
+          type: NODE_TYPES.COMPONENT,
+          tagName: this._parseExpr(isAttr.value),
+          isDynamic: true,
+          properties: this._processAttributes(
+            el.attributes.filter((a) => a.name !== ':is' && a.name !== 'is'),
+          ),
+          children: this._transformChildren(el.children),
+        };
+      }
     }
 
     const tagName = el.tagName;

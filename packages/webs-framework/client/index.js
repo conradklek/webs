@@ -207,3 +207,52 @@ export function socket() {
     },
   };
 }
+
+export function effect(fn) {
+  const ops = {
+    run: fn,
+    retry(times) {
+      const next = async (...args) => {
+        let left = times;
+        while (true) {
+          try {
+            return await this.run(...args);
+          } catch (error) {
+            left--;
+            if (left <= 0) {
+              throw error;
+            }
+            console.warn(`Effect failed. Retrying... (${left} attempts left)`);
+          }
+        }
+      };
+      return effect(next);
+    },
+    time() {
+      const next = async (...args) => {
+        const start = Date.now();
+        const res = await this.run(...args);
+        const end = Date.now();
+        return [end - start, res];
+      };
+      return effect(next);
+    },
+    then(f) {
+      const next = async (...args) => {
+        const res = await this.run(...args);
+        const nextEffect = f(res);
+        return nextEffect(...args);
+      };
+      return effect(next);
+    },
+  };
+  const p = new Proxy(() => { }, {
+    apply(target, thisArg, args) {
+      return ops.run(...args);
+    },
+    get(target, prop, receiver) {
+      return ops[prop];
+    },
+  });
+  return p;
+}

@@ -340,6 +340,8 @@ function installNavigationHandler(app, components) {
         initialState: data.componentState,
       };
 
+      app._context.params = data.params;
+
       const newVnode = createVnode(newComponentDef, newProps);
       newVnode.appContext = app._context;
 
@@ -398,6 +400,9 @@ function installNavigationHandler(app, components) {
         params: data.params,
         initialState: data.componentState,
       };
+
+      app._context.params = data.params;
+
       const newVnode = createVnode(newComponentDef, newProps);
       newVnode.appContext = app._context;
 
