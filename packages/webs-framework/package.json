@@ -1,33 +1,36 @@
 {
   "name": "@conradklek/webs",
   "author": "Conrad Klek",
-  "version": "0.1.31",
+  "version": "0.1.32",
   "type": "module",
   "description": "A Javascript framework",
   "bin": {
-    "webs": "bin/cli.js"
+    "webs": "build.js"
   },
   "files": [
-    "bin",
-    "dist",
-    "client",
-    "server",
     "lib",
+    "build.js",
+    "compiler.js",
     "index.js",
-    "plugin.js"
+    "parser.js",
+    "plugin.js",
+    "reactivity.js",
+    "renderer.js",
+    "runtime.js",
+    "server.js",
+    "cache.js"
   ],
   "exports": {
     ".": "./index.js",
-    "./client": "./client/index.js",
-    "./server": "./server/request-handler.js",
+    "./server": "./server.js",
     "./compiler": "./lib/compiler.js",
     "./plugin": "./plugin.js"
   },
   "scripts": {
-    "dev": "NODE_ENV=development bun run ./bin/cli.js",
-    "dev:demo": "cd ../webs-site && NODE_ENV=development bun run ../webs-framework/bin/cli.js",
-    "start": "NODE_ENV=production bun run ./bin/cli.js",
-    "start:demo": "cd ../webs-site && NODE_ENV=production bun run ../webs-framework/bin/cli.js",
+    "dev": "NODE_ENV=development bun run ./build.js",
+    "dev:demo": "cd ../webs-site && NODE_ENV=development bun run ../webs-framework/build.js",
+    "start": "NODE_ENV=production bun run ./build.js",
+    "start:demo": "cd ../webs-site && NODE_ENV=production bun run ../webs-framework/build.js",
     "format": "prettier --write ."
   },
   "dependencies": {},

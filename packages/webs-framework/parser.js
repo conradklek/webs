@@ -28,12 +28,9 @@ const JS_KEYWORDS = {
 
 const jsIsWhitespace = (c) =>
   c === ' ' || c === '\n' || c === '\t' || c === '\r';
-
 const isDigit = (c) => c >= '0' && c <= '9';
-
 const isIdentStart = (c) =>
   (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '$' || c === '_';
-
 const isIdentPart = (c) => isIdentStart(c) || isDigit(c);
 
 export function tokenizeJs(expression) {
@@ -138,13 +135,15 @@ export function tokenizeJs(expression) {
       continue;
     }
 
-    if ('+-*/<>&|!?='.includes(char)) {
+    if ('+-*/%<>&|!?='.includes(char)) {
       tokens.push({ type: char === '=' ? 'EQUALS' : 'OPERATOR', value: char });
       i++;
       continue;
     }
 
-    throw new Error(`Tokenizer Error: Unrecognized character '${char}'`);
+    throw new Error(
+      `Tokenizer Error: Unrecognized character '${char}' at position ${i}`,
+    );
   }
 
   jsTokenCache.set(expression, tokens);
@@ -223,9 +222,8 @@ export function parseJs(tokens) {
         elements.push(parseAssignment());
       } while (peek()?.type === 'COMMA' && consume());
     }
-    if (peek()?.type !== 'RBRACKET') {
+    if (peek()?.type !== 'RBRACKET')
       throw new Error("Expected ']' to close array literal.");
-    }
     consume();
     return { type: 'ArrayExpression', elements };
   };
@@ -275,22 +273,6 @@ export function parseJs(tokens) {
         break;
       }
     }
-    if (peek() && (peek().value === '++' || peek().value === '--')) {
-      const op = consume().value;
-      if (
-        node.type !== 'Identifier' &&
-        node.type !== 'MemberExpression' &&
-        node.type !== 'ComputedMemberExpression'
-      ) {
-        throw new Error('Invalid left-hand side in update expression.');
-      }
-      node = {
-        type: 'UpdateExpression',
-        operator: op,
-        argument: node,
-        prefix: false,
-      };
-    }
     return node;
   };
 
@@ -315,7 +297,7 @@ export function parseJs(tokens) {
     return left;
   };
 
-  const parseMultiplicative = buildBinaryParser(parseUnary, ['*', '/']);
+  const parseMultiplicative = buildBinaryParser(parseUnary, ['*', '/', '%']);
   const parseAdditive = buildBinaryParser(parseMultiplicative, ['+', '-']);
   const parseComparison = buildBinaryParser(parseAdditive, [
     '<',
@@ -330,25 +312,24 @@ export function parseJs(tokens) {
     '!==',
   ]);
   const parseLogicalAnd = buildBinaryParser(parseEquality, ['&&']);
-  const parseNullishCoalescing = buildBinaryParser(parseLogicalAnd, ['??']);
-  const parseLogicalOr = buildBinaryParser(parseNullishCoalescing, ['||']);
+  const parseLogicalOr = buildBinaryParser(parseLogicalAnd, ['||']);
 
-  const parseTernary = () => {
+  const parseConditional = () => {
     const test = parseLogicalOr();
     if (peek()?.value === '?') {
       consume();
-      const consequent = parseTernary();
+      const consequent = parseAssignment();
       if (peek()?.type !== 'COLON')
         throw new Error("Expected ':' for ternary operator.");
       consume();
-      const alternate = parseTernary();
+      const alternate = parseAssignment();
       return { type: 'ConditionalExpression', test, consequent, alternate };
     }
     return test;
   };
 
   const parseArrow = () => {
-    const left = parseTernary();
+    const left = parseConditional();
     if (peek()?.type === 'ARROW') {
       consume();
       const params =
@@ -385,9 +366,13 @@ export function parseJs(tokens) {
   };
 
   const ast = parseAssignment();
+
   if (i < tokens.length) {
-    throw new Error(`Parser Error: Unexpected tokens at end of expression.`);
+    throw new Error(
+      `Parser Error: Unexpected token '${peek().value}' at end of expression.`,
+    );
   }
+
   return ast;
 }
 

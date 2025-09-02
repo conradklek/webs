@@ -2,27 +2,6 @@
 
 A Javascript Framework
 
-## Getting Started
-
-The best way to start a new Webs project is by using the official scaffolding tool.
-
-```bash
-bunx create-webs-app my-project
-
-# Navigate into your project
-cd my-project
-
-# Install dependencies
-bun install
-
-# Start the development server
-bun run dev
-```
-
-Your new site is now running at `http://localhost:3000`!
-
----
-
 ## Core Concepts
 
 ### 1. File-Based Routing

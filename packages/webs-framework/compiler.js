@@ -71,8 +71,11 @@ export function generateRenderFn(ast) {
           return `${expr.operator}${this.genExpr(expr.argument)}`;
         case 'UpdateExpression':
           return `(${this.genExpr(expr.argument)}${expr.operator})`;
-        case 'MemberExpression':
-          return `${this.genExpr(expr.object)}.${expr.property.name}`;
+        case 'MemberExpression': {
+          const objectExpr = this.genExpr(expr.object);
+          const propertyName = expr.property.name;
+          return `(${objectExpr}?.${propertyName})`;
+        }
         case 'ComputedMemberExpression':
           return `${this.genExpr(expr.object)}[${this.genExpr(expr.property)}]`;
         case 'CallExpression':
@@ -200,7 +203,9 @@ export function generateRenderFn(ast) {
           const childCode = this.genNode(node.children[0]);
           this.scope.delete(value);
           if (key) this.scope.delete(key);
-          return `_h(_Fragment, null, (${this.genExpr(source)} || []).length === 0 ? null : (${this.genExpr(source)} || []).map(${params} => (${childCode})))`;
+          return `_h(_Fragment, null, (${this.genExpr(
+            source,
+          )} || []).map(${params} => (${childCode})))`;
         }
       }
       return 'null';

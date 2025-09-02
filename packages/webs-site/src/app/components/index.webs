@@ -1,5 +1,10 @@
 <script>
+  import UserNavbar from '../../gui/user-navbar.webs';
+
   export default {
+    components: {
+      'user-navbar': UserNavbar,
+    },
     setup() {
       const components = [
         { name: 'Accordion', url: '/components/accordion' },
@@ -20,11 +25,7 @@
   <div class="w-full p-8 flex flex-col items-start justify-start gap-6">
     <div class="w-full flex flex-row items-center justify-between gap-4">
       <a href="/" class="link font-medium">webs.site</a>
-      <div class="w-full flex flex-row items-center justify-end gap-4">
-        <a href="/login" class="link">Login</a>
-        <span>|</span>
-        <a href="/signup" class="link">Signup</a>
-      </div>
+      <user-navbar />
     </div>
     <div class="w-full flex flex-col items-start justify-start gap-4">
       <h1>Components</h1>

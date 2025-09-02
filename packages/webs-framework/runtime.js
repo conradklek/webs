@@ -1,5 +1,5 @@
 import { createRenderer, createVnode } from './renderer';
-import { syncEngine } from '../client/db-sync';
+import { syncEngine, session } from './index';
 
 function normalizeClass(value) {
   let res = '';
@@ -116,17 +116,9 @@ export async function hydrate(components, dbConfig = null) {
 
   if ('serviceWorker' in navigator && websState.swPath) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker
-        .register(websState.swPath)
-        .then((registration) => {
-          console.log(
-            'Service Worker registered with scope:',
-            registration.scope,
-          );
-        })
-        .catch((error) => {
-          console.error('Service Worker registration failed:', error);
-        });
+      navigator.serviceWorker.register(websState.swPath).catch((error) => {
+        console.error('Service Worker registration failed:', error);
+      });
     });
   }
 
@@ -146,12 +138,10 @@ export async function hydrate(components, dbConfig = null) {
           listeners.forEach((fn) => fn());
         },
       };
-      console.log('[Dev] Tools available within the browser extension');
     }
   }
 
   const root = document.getElementById('root');
-
   if (!root) {
     return console.error('Hydration failed: #root element not found.');
   }
@@ -192,13 +182,16 @@ export async function hydrate(components, dbConfig = null) {
     }
 
     const props = {
-      user,
       params,
       initialState: componentState,
     };
 
     const app = createApp(rootComponent, props);
     app.mount(root, components);
+
+    Promise.resolve().then(() => {
+      session.setUser(user);
+    });
   } catch (error) {
     console.error(`Failed to hydrate component "${componentName}":`, error);
   }
@@ -216,7 +209,6 @@ function installNavigationHandler(app, components) {
       });
 
       if (!response.ok) {
-        console.log(`Prefetch failed with status: ${response.status}`);
         return;
       }
 
@@ -224,10 +216,6 @@ function installNavigationHandler(app, components) {
       if (contentType && contentType.includes('application/json')) {
         const data = deserializeState(await response.json());
         prefetchCache.set(url.href, data);
-      } else {
-        console.log(
-          '[Prefetch] Received non-JSON response, likely offline fallback. Ignoring.',
-        );
       }
     } catch (e) {
       console.error('Prefetch error:', e);
@@ -312,14 +300,13 @@ function installNavigationHandler(app, components) {
         if (contentType && contentType.includes('application/json')) {
           data = deserializeState(await response.json());
         } else {
-          console.log(
-            'Cannot navigate while offline. Server returned HTML fallback.',
-          );
           return;
         }
       }
 
       window.__WEBS_STATE__ = { componentName: data.componentName };
+
+      session.setUser(data.user);
 
       const componentLoader = components.get(data.componentName);
       if (!componentLoader) {
@@ -335,7 +322,6 @@ function installNavigationHandler(app, components) {
 
       const oldVnode = app._vnode;
       const newProps = {
-        user: data.user,
         params: data.params,
         initialState: data.componentState,
       };
@@ -374,14 +360,13 @@ function installNavigationHandler(app, components) {
       if (contentType && contentType.includes('application/json')) {
         data = deserializeState(await response.json());
       } else {
-        console.log(
-          'Cannot navigate back/forward while offline. Server returned HTML fallback.',
-        );
         window.location.assign(url.href);
         return;
       }
 
       window.__WEBS_STATE__ = { componentName: data.componentName };
+
+      session.setUser(data.user);
 
       const componentLoader = components.get(data.componentName);
       if (!componentLoader) {
@@ -396,7 +381,6 @@ function installNavigationHandler(app, components) {
 
       const oldVnode = app._vnode;
       const newProps = {
-        user: data.user,
         params: data.params,
         initialState: data.componentState,
       };
@@ -425,7 +409,6 @@ function installHMRHandler(app, components) {
     try {
       const message = JSON.parse(event.data);
       if (message.type === 'update') {
-        console.log('HMR: Update detected. Reloading page.');
         window.location.reload();
       }
     } catch (e) {
@@ -434,7 +417,6 @@ function installHMRHandler(app, components) {
   };
 
   hmrSocket.onclose = () => {
-    console.log('HMR WebSocket disconnected. Retrying in 1s...');
     setTimeout(() => installHMRHandler(app, components), 1000);
   };
 }

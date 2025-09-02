@@ -29,53 +29,53 @@ function trigger(target, key) {
 
   const deps = depsMap.get(key);
   if (deps) {
-    const schedule = [...deps];
-    for (const watch of schedule) {
-      if (watch.scheduler) {
-        watch.scheduler();
+    const effectsToRun = new Set(deps);
+    effectsToRun.forEach((effect) => {
+      if (effect.scheduler) {
+        effect.scheduler();
       } else {
-        watch.run();
+        effect.run();
       }
-    }
+    });
   }
 }
 
-function cleanup(watch) {
-  const { deps } = watch;
+function cleanup(effect) {
+  const { deps } = effect;
   for (let i = 0; i < deps.length; i++) {
-    deps[i].delete(watch);
+    deps[i].delete(effect);
   }
   deps.length = 0;
 }
 
 function createReactiveEffect(fn, scheduler) {
-  const watch = {
+  const effect = {
     fn,
     scheduler,
     active: true,
     deps: [],
     run() {
-      if (!watch.active) return watch.fn();
-      if (watchStack.includes(watch)) return;
+      if (!effect.active) return effect.fn();
+      if (watchStack.includes(effect)) return;
 
-      cleanup(watch);
+      cleanup(effect);
       try {
-        watchStack.push(watch);
-        activeEffect = watch;
-        return watch.fn();
+        watchStack.push(effect);
+        activeEffect = effect;
+        return effect.fn();
       } finally {
         watchStack.pop();
         activeEffect = watchStack[watchStack.length - 1];
       }
     },
     stop() {
-      if (watch.active) {
-        cleanup(watch);
-        watch.active = false;
+      if (effect.active) {
+        cleanup(effect);
+        effect.active = false;
       }
     },
   };
-  return watch;
+  return effect;
 }
 
 export function isRef(r) {
@@ -127,11 +127,35 @@ export function state(initialValue) {
   return createRef(initialValue);
 }
 
-export function watch(fn, options = {}) {
-  const _watch = createReactiveEffect(fn, options.scheduler);
-  _watch.run();
-  const runner = _watch.run.bind(_watch);
-  runner.watch = _watch;
+export function watch(source, cbOrOptions, options) {
+  let getter = source;
+  let cb = null;
+  let scheduler = null;
+
+  if (typeof cbOrOptions === 'function') {
+    cb = cbOrOptions;
+    scheduler = options?.scheduler;
+  } else {
+    scheduler = cbOrOptions?.scheduler;
+  }
+
+  let oldValue;
+  const effect = createReactiveEffect(getter, () => {
+    const newValue = effect.run();
+    if (cb) {
+      if (newValue !== oldValue) {
+        cb(newValue, oldValue);
+        oldValue = newValue;
+      }
+    } else if (scheduler) {
+      scheduler();
+    }
+  });
+
+  oldValue = effect.run();
+
+  const runner = effect.run.bind(effect);
+  runner.watch = effect;
   return runner;
 }
 
@@ -228,7 +252,7 @@ const arrayHandlers = {
   get(target, key, receiver) {
     const mutationMethods = ['push', 'pop', 'shift', 'unshift', 'splice'];
     if (mutationMethods.includes(key)) {
-      return function(...args) {
+      return function (...args) {
         const result = Array.prototype[key].apply(target, args);
         trigger(target, 'length');
         return result;
@@ -237,7 +261,19 @@ const arrayHandlers = {
     return baseHandlers.get(target, key, receiver);
   },
   set(target, key, value, receiver) {
-    return baseHandlers.set(target, key, value, receiver);
+    const hadKey = Object.prototype.hasOwnProperty.call(target, key);
+    const oldValue = target[key];
+    const result = Reflect.set(target, key, value, receiver);
+
+    if (hadKey && value === oldValue) {
+      return result;
+    }
+
+    trigger(target, key);
+
+    trigger(target, 'length');
+
+    return result;
   },
 };
 

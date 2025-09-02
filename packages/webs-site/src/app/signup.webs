@@ -1,7 +1,11 @@
 <script>
   import { session, state } from '@conradklek/webs';
+  import UserNavbar from '../gui/user-navbar.webs';
 
   export default {
+    components: {
+      'user-navbar': UserNavbar,
+    },
     setup() {
       const email = state('');
       const username = state('');
@@ -30,11 +34,7 @@
   <div class="w-full p-8 flex flex-col items-start justify-start gap-8">
     <div class="w-full flex flex-row items-center justify-start gap-4">
       <a href="/" class="font-medium link">webs.site</a>
-      <div class="w-full flex flex-row items-center justify-end gap-4">
-        <a href="/login" class="link">Login</a>
-        <span>|</span>
-        <h1>Signup</h1>
-      </div>
+      <user-navbar />
     </div>
     <form
       @submit.prevent="handleSignup"

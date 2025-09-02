@@ -3,12 +3,10 @@ const CACHE_NAME = 'webs-cache-v1';
 const urlsToCache = self.__WEBS_MANIFEST || [];
 
 self.addEventListener('install', (event) => {
-  console.log('Service Worker: Installing...');
   event.waitUntil(
     caches
       .open(CACHE_NAME)
       .then((cache) => {
-        console.log('Service Worker: Caching app shell assets');
         const assetsToCache = urlsToCache.filter(
           (entry) => !entry.isNavigation,
         );
@@ -19,7 +17,6 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('Service Worker: Activating...');
   event.waitUntil(
     caches
       .keys()
@@ -27,8 +24,7 @@ self.addEventListener('activate', (event) => {
         return Promise.all(
           cacheNames.map((cache) => {
             if (cache !== CACHE_NAME) {
-              console.log('Service Worker: Clearing old cache', cache);
-              return caches.delete(cache);
+              return cache.delete(cache);
             }
           }),
         );

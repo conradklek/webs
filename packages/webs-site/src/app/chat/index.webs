@@ -1,0 +1,47 @@
+<script>
+  import UserNavbar from '../../gui/user-navbar.webs';
+  import { state } from '@conradklek/webs';
+
+  export default {
+    components: {
+      'user-navbar': UserNavbar,
+    },
+    setup() {
+      const channel = state('general');
+      return {
+        channel,
+      };
+    },
+  };
+</script>
+
+<template>
+  <div class="w-full p-8 flex flex-col items-start justify-start gap-6">
+    <div class="w-full flex flex-row items-center justify-between gap-4">
+      <a href="/" class="link font-medium">webs.site</a>
+      <user-navbar />
+    </div>
+
+    <main class="w-full flex-grow flex items-center justify-center">
+      <div class="flex flex-col sm:flex-row gap-2 max-w-sm">
+        <div
+          class="flex-grow flex items-center bg-white border border-black px-2"
+        >
+          <span class="pl-2 text-gray-500">#</span>
+          <input
+            type="text"
+            bind:value="channel"
+            placeholder="e.g., general"
+            class="w-full p-2 bg-white focus:outline-none"
+          />
+        </div>
+        <a
+          :href="'/chat/' + channel"
+          class="border border-black px-4 py-2 hover:bg-gray-100 text-center"
+        >
+          Join Chat
+        </a>
+      </div>
+    </main>
+  </div>
+</template>

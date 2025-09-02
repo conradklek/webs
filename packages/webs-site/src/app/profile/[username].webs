@@ -1,25 +1,18 @@
 <script>
-  import { session } from '@conradklek/webs';
+  import UserNavbar from '../../gui/user-navbar.webs';
 
   export default {
-    setup(props, ctx) {
-      function handleLogout() {
-        session.logout();
-      }
-      return { handleLogout };
+    components: {
+      'user-navbar': UserNavbar,
     },
   };
 </script>
 
 <template>
-  <div class="w-full p-8 flex flex-col items-start justify-start gap-8">
-    <div class="w-full flex flex-row items-center justify-start gap-4">
+  <div class="w-full p-8 flex flex-col items-start justify-start gap-6">
+    <div class="w-full flex flex-row items-center justify-between gap-4">
       <a href="/" class="font-medium">webs.site</a>
-      <div class="w-full flex flex-row items-center justify-end gap-4">
-        <h1>Profile</h1>
-        <span>|</span>
-        <button type="button" @click="handleLogout">Logout</button>
-      </div>
+      <user-navbar />
     </div>
   </div>
 </template>

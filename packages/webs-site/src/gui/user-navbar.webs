@@ -1,0 +1,32 @@
+<script>
+  import { session } from '@conradklek/webs';
+
+  export default {
+    setup(props, ctx) {
+      function handleLogout() {
+        session.logout();
+      }
+      return { session, handleLogout };
+    },
+  };
+</script>
+
+<template>
+  <div class="w-full">
+    <nav
+      w-if="!session?.user"
+      class="w-full flex flex-row items-center justify-end gap-4"
+    >
+      <a href="/login" class="link">Login</a>
+      <span>|</span>
+      <a href="/signup" class="link">Signup</a>
+    </nav>
+    <nav w-else class="w-full flex flex-row items-center justify-end gap-4">
+      <a :href="'/profile/' + session.user?.username" class="link"
+        >@{{ session.user?.username }}</a
+      >
+      <span>|</span>
+      <button type="button" @click="handleLogout">Logout</button>
+    </nav>
+  </div>
+</template>

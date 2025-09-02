@@ -372,7 +372,7 @@ export function createRenderer(options) {
           }
 
           if (isHydrating) {
-            hydrateNode(subTree, vnode.el, instance);
+            hydrateNode(subTree, vnode.el, vnode.el.parentElement, instance);
           } else {
             patch(null, subTree, container, anchor, instance);
           }
@@ -410,9 +410,15 @@ export function createRenderer(options) {
             ? anchorNodeForParent.parentElement
             : null;
 
-          patch(prevTree, nextTree, parentContainer, null, instance);
-          vnode.el = nextTree.el;
-          instance.hooks.onUpdated?.forEach((h) => h.call(instance.ctx));
+          if (parentContainer) {
+            patch(prevTree, nextTree, parentContainer, null, instance);
+            vnode.el = nextTree.el;
+            instance.hooks.onUpdated?.forEach((h) => h.call(instance.ctx));
+          } else {
+            console.warn(
+              '[Renderer] Could not find parent container to patch component update.',
+            );
+          }
         }
 
         instanceStack.pop();
@@ -518,7 +524,7 @@ export function createRenderer(options) {
 
   const hydrate = (vnode, container) => {
     try {
-      hydrateNode(vnode, container.firstChild, null);
+      hydrateNode(vnode, container.firstChild, container, null);
     } catch (e) {
       console.error('[Hydration Error]', e.message);
     }
@@ -539,7 +545,7 @@ export function createRenderer(options) {
     return currentNode;
   };
 
-  const hydrateNode = (vnode, domNode, parentComponent = null) => {
+  const hydrateNode = (vnode, domNode, parentDom, parentComponent = null) => {
     if (!vnode) {
       return domNode;
     }
@@ -594,7 +600,7 @@ export function createRenderer(options) {
       case Fragment:
         return hydrateChildren(
           children,
-          currentDomNode ? currentDomNode.parentElement : domNode.parentElement,
+          parentDom,
           currentDomNode,
           parentComponent,
         );
@@ -654,7 +660,7 @@ export function createRenderer(options) {
 
   const hydrateChildren = (
     children,
-    _parentDom,
+    parentDom,
     startNode,
     parentComponent = null,
   ) => {
@@ -667,7 +673,12 @@ export function createRenderer(options) {
 
     for (const childVnode of childVnodes) {
       if (!childVnode) continue;
-      nextDomNode = hydrateNode(childVnode, nextDomNode, parentComponent);
+      nextDomNode = hydrateNode(
+        childVnode,
+        nextDomNode,
+        parentDom,
+        parentComponent,
+      );
     }
     return nextDomNode;
   };
@@ -734,7 +745,11 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
 
   let setupResult = {};
   if (setup) {
-    const setupContext = { attrs: instance.attrs, slots: instance.slots };
+    const setupContext = {
+      attrs: instance.attrs,
+      slots: instance.slots,
+      params: instance.appContext.params || {},
+    };
 
     instanceStack.push(instance);
     currentInstance = instance;
@@ -751,10 +766,24 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
   for (const key in serverState) {
     if (finalState.hasOwnProperty(key)) {
       const existing = finalState[key];
+      const serverVal = serverState[key];
+
       if (isRef(existing)) {
-        existing.value = serverState[key];
+        existing.value = serverVal;
+      } else if (Array.isArray(existing) && Array.isArray(serverVal)) {
+        existing.length = 0;
+        existing.push(...serverVal);
+      } else if (
+        isObjectAndNotArray(existing) &&
+        isObjectAndNotArray(serverVal)
+      ) {
+        for (const subKey in serverVal) {
+          if (serverVal.hasOwnProperty(subKey)) {
+            existing[subKey] = serverVal[subKey];
+          }
+        }
       } else {
-        finalState[key] = serverState[key];
+        finalState[key] = serverVal;
       }
     } else {
       finalState[key] = serverState[key];
@@ -770,7 +799,7 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
         key in instance.internalCtx ||
         key === '$attrs' ||
         key === '$slots' ||
-        (instance.appContext.params && key === 'params') || 
+        (instance.appContext.params && key === 'params') ||
         (instance.type.components && key in instance.type.components) ||
         (instance.appContext.globals && key in instance.appContext.globals),
       get: (_, key) => {
@@ -939,8 +968,19 @@ export async function renderToString(vnode) {
     const context = { componentState: {} };
     const html = await renderVnode(vnode, null, context);
     const unwrappedState = unwrapRefs(context.componentState);
+
+    if (unwrappedState && unwrappedState.session) {
+      delete unwrappedState.session;
+    }
+
     return { html, componentState: unwrappedState };
   } catch (e) {
+    if (e instanceof TypeError && e.message.includes('null is not an object')) {
+      console.warn(
+        'SSR Warning: Null user object encountered. This is normal for unauthenticated requests.',
+      );
+      throw e;
+    }
     console.error(`[SSR Error] ${e.message}\n${e.stack}`);
     const html = `<div style="color:red; background:lightyellow; border: 1px solid red; padding: 1rem;">SSR Error: ${escapeHtml(e.message)}</div>`;
     return { html, componentState: {} };

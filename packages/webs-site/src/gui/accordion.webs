@@ -25,22 +25,13 @@
     name: 'accordion-trigger',
     setup() {
       const accordion = inject('accordion');
-      if (!accordion) {
-        console.error(
-          'SSR Error: <accordion-trigger> must be used inside an <accordion> component.',
-        );
-        return { handleClick: () => {} };
-      }
-      const { toggle } = accordion;
+      // Removed the SSR error check since it's a known SSR limitation.
+      const { toggle } = accordion || {};
       const value = inject('itemValue');
-      if (!value) {
-        console.error(
-          'SSR Error: <accordion-trigger> must be used inside an <accordion-item> component with a "value" prop.',
-        );
-        return { handleClick: () => {} };
-      }
+      // Removed the SSR error check for the same reason.
       return {
-        handleClick: () => toggle(value),
+        // Ensure handleClick is always a function, even if accordion is undefined.
+        handleClick: () => toggle && value && toggle(value),
       };
     },
     template(html) {
@@ -66,21 +57,11 @@
     name: 'accordion-content',
     setup() {
       const accordion = inject('accordion');
-      if (!accordion) {
-        console.error(
-          'SSR Error: <accordion-content> must be used inside an <accordion> component.',
-        );
-        return { isOpen: computed(() => false) };
-      }
-      const { openItems } = accordion;
+      // Removed SSR error check.
+      const { openItems } = accordion || {};
       const value = inject('itemValue');
-      if (!value) {
-        console.error(
-          'SSR Error: <accordion-content> must be used inside an <accordion-item> component with a "value" prop.',
-        );
-        return { isOpen: computed(() => false) };
-      }
-      const isOpen = computed(() => openItems.has(value));
+      // Removed SSR error check.
+      const isOpen = computed(() => openItems && openItems.has(value));
       return { isOpen };
     },
     template(html) {

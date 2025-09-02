@@ -7,6 +7,7 @@
   import ModalDemo from '../../gui/modal-demo.webs';
   import RadioGroupDemo from '../../gui/radio-group-demo.webs';
   import CheckboxDemo from '../../gui/checkbox-demo.webs';
+  import { state } from '@conradklek/webs';
 
   export default {
     components: {
@@ -18,6 +19,12 @@
       'modal-demo': ModalDemo,
       'radio-group-demo': RadioGroupDemo,
       'checkbox-demo': CheckboxDemo,
+    },
+    setup(props, { attrs }) {
+      const demoState = state(attrs.initialState);
+      return {
+        demoState,
+      };
     },
   };
 </script>

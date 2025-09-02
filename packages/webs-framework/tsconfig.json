@@ -7,6 +7,12 @@
     "allowJs": true,
     "checkJs": false
   },
-  "include": ["client/**/*.js", "server/**/*.js", "lib/**/*.js"],
+  "include": [
+    "index.js",
+    "server.js",
+    "plugin.js",
+    "service-worker.js",
+    "lib/**/*.js"
+  ],
   "exclude": ["dist", "node_modules"]
 }
