@@ -25,12 +25,9 @@
     name: 'accordion-trigger',
     setup() {
       const accordion = inject('accordion');
-      // Removed the SSR error check since it's a known SSR limitation.
       const { toggle } = accordion || {};
       const value = inject('itemValue');
-      // Removed the SSR error check for the same reason.
       return {
-        // Ensure handleClick is always a function, even if accordion is undefined.
         handleClick: () => toggle && value && toggle(value),
       };
     },
@@ -57,10 +54,8 @@
     name: 'accordion-content',
     setup() {
       const accordion = inject('accordion');
-      // Removed SSR error check.
       const { openItems } = accordion || {};
       const value = inject('itemValue');
-      // Removed SSR error check.
       const isOpen = computed(() => openItems && openItems.has(value));
       return { isOpen };
     },

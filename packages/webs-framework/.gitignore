@@ -3,6 +3,7 @@
 /.bun
 
 # Build Output
+/.tmp
 /dist
 
 # OS-specific

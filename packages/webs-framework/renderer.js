@@ -399,7 +399,7 @@ export function createRenderer(options) {
 
           if (prevTree.type === Fragment && prevTree.children) {
             const children = Array.isArray(prevTree.children)
-              ? prevTree.children
+              ? prev.children
               : [prevTree.children];
             if (children.length > 0 && children[0]) {
               anchorNodeForParent = children[0].el;
@@ -691,6 +691,9 @@ const setCurrentInstance = (instance) => {
 };
 
 function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
+  console.log('[Renderer] createComponent called');
+  console.log('[Renderer] VNode props:', vnode.props);
+
   const parentAppContext = parent ? parent.appContext : null;
   const appContext = vnode.appContext || parentAppContext || {};
   appContext.globals = appContext.globals || {};
@@ -760,13 +763,18 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
     currentInstance = instanceStack[instanceStack.length - 1] || null;
   }
 
-  const serverState = vnode.props.initialState || {};
+  const serverState = (vnode.props || {}).initialState || {};
+  console.log(
+    '[Renderer] serverState (from vnode.props.initialState):',
+    serverState,
+  );
+
   const finalState = { ...resolvedProps, ...setupResult };
 
   for (const key in serverState) {
+    const serverVal = serverState[key];
     if (finalState.hasOwnProperty(key)) {
       const existing = finalState[key];
-      const serverVal = serverState[key];
 
       if (isRef(existing)) {
         existing.value = serverVal;
@@ -786,11 +794,12 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
         finalState[key] = serverVal;
       }
     } else {
-      finalState[key] = serverState[key];
+      finalState[key] = serverVal;
     }
   }
 
   instance.internalCtx = finalState;
+  console.log('[Renderer] finalState (merged):', instance.internalCtx);
 
   instance.ctx = new Proxy(
     {},
@@ -864,7 +873,7 @@ export class VNode {
 }
 
 export function createVnode(type, propsOrChildren, children) {
-  let props = {};
+  let props = propsOrChildren || {};
   let finalChildren;
 
   if (arguments.length === 2) {

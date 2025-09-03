@@ -1,0 +1,134 @@
+<script>
+  import { resource, state, onReady, watch, session } from '@conradklek/webs';
+
+  export default {
+    actions: {
+      async ssrFetch(context) {
+        const { db, params } = context;
+        const channel = `#${params.channel.toLowerCase()}`;
+        try {
+          const history = db
+            .query(
+              `SELECT id, channel, username, message, user_id, created_at FROM chat_messages WHERE channel = ? ORDER BY created_at ASC`,
+            )
+            .all(channel);
+          console.log(
+            `[SSR] Fetched history for ${channel}:`,
+            history.length,
+            'messages',
+          );
+          return { history };
+        } catch (error) {
+          console.error(`[SSR] Error fetching history for ${channel}:`, error);
+          return { history: [] };
+        }
+      },
+    },
+    setup(props, ctx) {
+      const cleanChannelName = ctx.params.channel.toLowerCase();
+      const formattedChannelName = `#${cleanChannelName}`;
+      const initialState = props.initialState || {};
+
+      const messages = resource('chat_messages');
+      const currentMessage = state('');
+
+      onReady(() => {
+        messages.hydrate(initialState.history || []);
+      });
+
+      const handleSend = async () => {
+        const msg = currentMessage.value.trim();
+        if (msg) {
+          const newMessage = {
+            id: crypto.randomUUID(),
+            channel: formattedChannelName,
+            username: session.user?.username || 'anon',
+            message: msg,
+            created_at: new Date().toISOString(),
+          };
+
+          await messages.put(newMessage);
+          currentMessage.value = '';
+        }
+      };
+
+      watch(
+        () => messages.state.data,
+        () => {
+          setTimeout(() => {
+            const list = document.querySelector('.message-list');
+            if (list) list.scrollTop = list.scrollHeight;
+          }, 0);
+        },
+      );
+
+      return {
+        cleanChannelName,
+        formattedChannelName,
+        session,
+        messages,
+        currentMessage,
+        handleSend,
+      };
+    },
+  };
+</script>
+
+<template>
+  <div
+    class="w-full p-8 flex flex-col items-start justify-start gap-6 h-screen"
+  >
+    <div class="w-full flex flex-row items-center justify-between gap-4">
+      <a href="/" class="link font-medium">webs.site</a>
+      <user-navbar />
+    </div>
+    <main class="flex-1 w-full h-full">
+      <div class="chat-container">
+        <div class="message-list">
+          <div
+            w-for="msg in messages.state.data"
+            :key="msg.id"
+            class="message-item"
+          >
+            <div class="py-1 px-2 flex">
+              <span class="font-bold mr-2 text-left flex-shrink-0"
+                >&lt;{{ msg.username }}&gt;</span
+              >
+              <span class="break-words min-w-0">{{ msg.message }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="chat-input-area">
+          <div class="status-indicator"></div>
+          <form @submit.prevent="handleSend" class="w-full">
+            <input
+              type="text"
+              bind:value="currentMessage"
+              placeholder="Type a message..."
+              class="chat-input"
+              :disabled="messages.state.isLoading"
+            />
+          </form>
+        </div>
+      </div>
+    </main>
+  </div>
+</template>
+
+<style>
+  .chat-container {
+    @apply text-sm font-mono border border-border h-full flex flex-col;
+  }
+  .message-list {
+    @apply flex-grow p-2 overflow-y-auto;
+  }
+  .chat-input-area {
+    @apply border-t border-border flex items-center;
+  }
+  .status-indicator {
+    @apply w-2.5 h-2.5 rounded-full mx-3 flex-shrink-0 transition-colors;
+  }
+  .chat-input {
+    @apply w-full p-2 focus:outline-none text-sm font-mono;
+  }
+</style>

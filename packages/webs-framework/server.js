@@ -24,9 +24,13 @@ class ChatGateway {
 
   handleUpgrade(req) {
     const url = new URL(req.url);
-    const channel = url.searchParams.get('channel');
+    let channel = url.searchParams.get('channel');
     if (!channel) {
       return new Response("Missing 'channel' query parameter", { status: 400 });
+    }
+
+    if (channel.startsWith('#')) {
+      channel = channel.substring(1);
     }
 
     const { user } = req;
@@ -72,6 +76,9 @@ class ChatGateway {
           'INSERT INTO chat_messages (channel, username, message, user_id) VALUES (?, ?, ?, ?)',
         )
         .run(channel, user.username, text, user.id);
+      console.log(
+        `[ChatGateway] Successfully inserted message for channel: ${channel}`,
+      );
 
       this.#publish(channel, {
         type: 'message',
@@ -244,21 +251,45 @@ async function logoutUser(req, db) {
   return new Response(null, { status: 204, headers });
 }
 
-export async function createDatabase(Database, cwd) {
-  const dbConfigPath = resolve(cwd, 'src/sql/db.js');
-  let dbConfig;
-  try {
-    const configFile = Bun.file(dbConfigPath);
-    if (!(await configFile.exists())) {
-      return null;
-    }
-    const dbSchemaModule = await import(`${dbConfigPath}?t=${Date.now()}`);
-    dbConfig = dbSchemaModule.default;
-  } catch (e) {
-    console.error(`Could not load or parse src/sql/db.js:`, e);
-    process.exit(1);
-  }
+function createTableSql(table) {
+  const fields = Object.entries(table.fields)
+    .map(([name, type]) => `${name} ${type}`)
+    .join(', ');
+  const foreignKeys = table.foreignKeys
+    ? Object.entries(table.foreignKeys)
+        .map(
+          ([field, reference]) =>
+            `FOREIGN KEY (${field}) REFERENCES ${reference}`,
+        )
+        .join(', ')
+    : '';
+  const constraints = foreignKeys ? `, ${foreignKeys}` : '';
+  return `CREATE TABLE IF NOT EXISTS ${table.name} (${fields}${constraints});`;
+}
 
+function createUpsertSql(table) {
+  const fields = Object.keys(table.fields).join(', ');
+  const placeholders = Object.keys(table.fields)
+    .map(() => '?')
+    .join(', ');
+  const updates = Object.keys(table.fields)
+    .map((field) => `${field} = excluded.${field}`)
+    .join(', ');
+  return `INSERT INTO ${table.name} (${fields}) VALUES (${placeholders}) ON CONFLICT(${table.keyPath}) DO UPDATE SET ${updates};`;
+}
+
+function createDeleteSql(tableName, keyPath) {
+  return `DELETE FROM ${tableName} WHERE ${keyPath} = ? AND user_id = ?;`;
+}
+
+export async function createDatabaseAndActions(
+  Database,
+  dbConfig,
+  cwd,
+  writeFile,
+  config,
+) {
+  if (!dbConfig) return null;
   if (!dbConfig.name) {
     console.error('Database file name not specified in src/sql/db.js.');
     process.exit(1);
@@ -276,21 +307,62 @@ export async function createDatabase(Database, cwd) {
     .get();
   const lastVersion = lastVersionRow?.version || 0;
 
-  const migrations = (dbConfig.migrations || []).sort(
-    (a, b) => a.version - b.version,
-  );
-  const newMigrations = migrations.filter((m) => m.version > lastVersion);
+  if (dbConfig.version > lastVersion) {
+    console.log(
+      `[Build] Applying database migration to version ${dbConfig.version}.`,
+    );
 
-  if (newMigrations.length > 0) {
     db.transaction(() => {
-      for (const migration of newMigrations) {
-        migration.up(db);
-        db.query('INSERT INTO _migrations (version) VALUES (?)').run(
-          migration.version,
-        );
-      }
+      dbConfig.tables.forEach((table) => {
+        db.exec(createTableSql(table));
+      });
+      db.exec(`
+        INSERT INTO users (email, username, password)
+        VALUES ('anon@webs.site', 'anon', 'password')
+        ON CONFLICT(email) DO NOTHING;
+      `);
+
+      db.query('INSERT INTO _migrations (version) VALUES (?)').run(
+        dbConfig.version,
+      );
     })();
   }
+
+  const syncTables = dbConfig.tables.filter((t) => t.sync);
+  const generatedActionsContent =
+    syncTables.length > 0
+      ? syncTables
+          .map((table) => {
+            const upsertSql = createUpsertSql(table);
+            const deleteSql = createDeleteSql(table.name, table.keyPath);
+            const params = Object.keys(table.fields)
+              .map((field) => `record.${field}`)
+              .join(', ');
+
+            return `
+export async function upsert${table.name.charAt(0).toUpperCase() + table.name.slice(1)}({ db, user }, record) {
+  if (!user || !user.id) {
+    throw new Error('Authentication error: User ID not available.');
+  }
+  const stmt = db.prepare(\`${upsertSql}\`);
+  stmt.run(${params});
+  return { broadcast: { tableName: '${table.name}', type: 'put', data: record } };
+}
+
+export async function delete${table.name.charAt(0).toUpperCase() + table.name.slice(1)}({ db, user }, id) {
+  const stmt = db.prepare(\`${deleteSql}\`);
+  stmt.run(id, user.id);
+  return { broadcast: { tableName: '${table.name}', type: 'delete', id } };
+}
+`;
+          })
+          .join('\n')
+      : `// No syncable tables found.`;
+
+  await writeFile(
+    config.TMP_GENERATED_ACTIONS,
+    `// This file is auto-generated by the Webs build process.\n// Do not edit this file directly.\n\n${generatedActionsContent}`,
+  );
 
   return db;
 }
@@ -418,7 +490,7 @@ async function handleServerActions(req, context) {
   const routeDef = Object.values(appRoutes).find(
     (r) => r.componentName === componentName,
   );
-  const action = routeDef?.component?.actions?.[actionName];
+  const action = routeDef?.actions?.[actionName];
 
   if (typeof action !== 'function') {
     console.error(
@@ -460,7 +532,6 @@ async function handleServerActions(req, context) {
 
 async function handleDataRequest(req, routeDefinition, params) {
   const { db, user } = req;
-
   const props = { user, params, db };
 
   const appContext = {
@@ -474,13 +545,12 @@ async function handleDataRequest(req, routeDefinition, params) {
   const { componentState } = await renderToString(componentVnode);
 
   const websState = {
-    user: props.user,
+    user: req.user,
     params: props.params,
     componentState,
     componentName: routeDefinition.componentName,
     title: routeDefinition.component.name || 'Webs App',
   };
-
   return new Response(serializeState(websState), {
     headers: { 'Content-Type': 'application/json;charset=utf-8' },
   });
@@ -489,11 +559,18 @@ async function handleDataRequest(req, routeDefinition, params) {
 function handlePageRequest(req, routeDefinition, params, context) {
   return new Promise(async (resolve) => {
     const { manifest } = context;
-    const { db, user } = req;
+    const { db, user = {} } = req;
     const url = new URL(req.url);
 
-    const props = { user, params, db };
+    let initialState = null;
+    if (routeDefinition.component?.actions?.ssrFetch) {
+      initialState = await routeDefinition.component.actions.ssrFetch({
+        db,
+        user,
+      });
+    }
 
+    const props = { user: user, params, db, initialState };
     const fromRoute = { path: req.headers.get('referer') || null };
     const toRoute = {
       path: url.pathname,
@@ -521,11 +598,10 @@ function handlePageRequest(req, routeDefinition, params, context) {
 
         const componentVnode = h(routeDefinition.component, props);
         componentVnode.appContext = appContext;
-
         const { html: appHtml, componentState } =
           await renderToString(componentVnode);
         const websState = {
-          user: props.user,
+          user: req.user,
           params: props.params,
           componentState,
           componentName: routeDefinition.componentName,
@@ -565,7 +641,9 @@ export function createRequestHandler(context, findRouteMatch) {
       outdir,
       isProd,
     );
-    if (assetResponse) return assetResponse;
+    if (assetResponse) {
+      return assetResponse;
+    }
 
     const routeMatch = findRouteMatch(appRoutes, pathname);
     if (routeMatch) {

@@ -1,11 +1,7 @@
 <script>
   import { session, state } from '@conradklek/webs';
-  import UserNavbar from '../gui/user-navbar.webs';
 
   export default {
-    components: {
-      'user-navbar': UserNavbar,
-    },
     setup() {
       const email = state('');
       const username = state('');

@@ -1,33 +1,41 @@
 #!/usr/bin/env bun
 
-import { watch } from 'fs';
-import { rm, mkdir, exists } from 'fs/promises';
+import { rm, mkdir, exists, writeFile } from 'fs/promises';
 import { join, resolve } from 'path';
 import { Database } from 'bun:sqlite';
 
 import websPlugin from './plugin';
 import tailwind from 'bun-plugin-tailwind';
-import { createRequestHandler } from './server';
+import { createRequestHandler, createDatabaseAndActions } from './server';
 
+const FRAMEWORK_DIR = import.meta.dir;
 const CWD = process.cwd();
+
+console.log(`[Webs] Framework location: ${FRAMEWORK_DIR}`);
+console.log(`[Webs] Building project at: ${CWD}`);
+
+const globalCssExists = await exists(resolve(CWD, 'src/app.css'));
 
 const config = {
   CWD,
   PORT: process.env.PORT || 3000,
   IS_PROD: process.env.NODE_ENV === 'production',
   OUTDIR: resolve(CWD, 'dist'),
-  TMPDIR: resolve(CWD, '.tmp'),
-  TMP_SERVER_DIR: resolve(CWD, '.tmp/server'),
-  TMP_CSS: resolve(CWD, '.tmp/tmp.css'),
-  TMP_APP_JS: resolve(CWD, '.tmp/app.js'),
+  TMPDIR: resolve(CWD, '.webs'),
+  TMP_SERVER_DIR: resolve(CWD, '.webs/server'),
+  TMP_GENERATED_ACTIONS: resolve(CWD, '.webs/generated-actions.js'),
+  TMP_COMPONENT_MANIFEST: resolve(CWD, '.webs/component-manifest.js'),
+  TMP_CSS: resolve(CWD, '.webs/tmp.css'),
+  TMP_APP_JS: resolve(CWD, '.webs/app.js'),
   SRC_DIR: resolve(CWD, 'src'),
   APP_DIR: resolve(CWD, 'src/app'),
-  GLOBAL_CSS_PATH: resolve(CWD, 'src/app.css'),
+  GUI_DIR: resolve(CWD, 'src/gui'),
+  GLOBAL_CSS_PATH: globalCssExists ? resolve(CWD, 'src/app.css') : null,
 };
 
-let hmrClients = new Set();
-let hmrWatcher = null;
 const SYNC_TOPIC = 'webs-sync';
+let appRoutes = {};
+let dbConfig = null;
 
 async function ensureDir(dirPath) {
   await mkdir(dirPath, { recursive: true });
@@ -38,49 +46,16 @@ async function cleanDirectory(dirPath) {
   await ensureDir(dirPath);
 }
 
-async function createDatabase(Database, cwd) {
+async function loadDbConfig(cwd) {
   const dbConfigPath = resolve(cwd, 'src/sql/db.js');
-  let dbConfig;
   try {
     if (!(await exists(dbConfigPath))) return null;
     const dbSchemaModule = await import(`${dbConfigPath}?t=${Date.now()}`);
-    dbConfig = dbSchemaModule.default;
+    return dbSchemaModule.default;
   } catch (e) {
     console.error(`Could not load or parse src/sql/db.js:`, e);
     process.exit(1);
   }
-
-  if (!dbConfig.name) {
-    console.error('Database file name not specified in src/sql/db.js.');
-    process.exit(1);
-  }
-
-  const db = new Database(resolve(cwd, dbConfig.name), { create: true });
-  db.exec('PRAGMA journal_mode = WAL;');
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY);`,
-  );
-
-  const lastVersion =
-    db.query('SELECT MAX(version) as version FROM _migrations').get()
-      ?.version || 0;
-  const newMigrations = (dbConfig.migrations || [])
-    .filter((m) => m.version > lastVersion)
-    .sort((a, b) => a.version - b.version);
-
-  if (newMigrations.length > 0) {
-    db.transaction(() => {
-      for (const migration of newMigrations) {
-        migration.up(db);
-        db.query('INSERT INTO _migrations (version) VALUES (?)').run(
-          migration.version,
-        );
-      }
-    })();
-    console.log(`Applied ${newMigrations.length} new database migration(s).`);
-  }
-
-  return db;
 }
 
 function getUserFromSession(db, sessionId) {
@@ -98,75 +73,27 @@ function getUserFromSession(db, sessionId) {
     .get(session.user_id);
 }
 
-class ChatGateway {
-  #server = null;
-  #db = null;
-  initialize(server, db) {
-    this.#server = server;
-    this.#db = db;
-  }
-  #publish(topic, payload) {
-    this.#server.publish(topic.toLowerCase(), JSON.stringify(payload));
-  }
-  handleUpgrade(req) {
-    const channel = new URL(req.url).searchParams.get('channel');
-    if (!channel)
-      return new Response("Missing 'channel' query parameter", { status: 400 });
-    req.user = req.user || { id: null, username: 'anon' };
-    return this.#server.upgrade(req, {
-      data: {
-        user: { id: req.user.id, username: req.user.username },
-        channel: `#${channel.toLowerCase()}`,
-        isChatChannel: true,
-      },
-    })
-      ? undefined
-      : new Response('WebSocket upgrade failed', { status: 500 });
-  }
-  handleOpen(ws) {
-    ws.subscribe(ws.data.channel);
-    this.#publish(ws.data.channel, {
-      type: 'join',
-      user: ws.data.user.username,
-    });
-  }
-  handleMessage(ws, message) {
-    const text = message.toString().trim();
-    if (!text) return;
-    try {
-      this.#db
-        .query(
-          'INSERT INTO chat_messages (channel, username, message, user_id) VALUES (?, ?, ?, ?)',
-        )
-        .run(ws.data.channel, ws.data.user.username, text, ws.data.user.id);
-      this.#publish(ws.data.channel, {
-        type: 'message',
-        from: ws.data.user.username,
-        text,
-      });
-    } catch (error) {
-      console.error(`[ChatGateway] Database error: ${error.message}`);
-    }
-  }
-  handleClose(ws) {
-    if (ws.data.user?.username && ws.data.channel)
-      this.#publish(ws.data.channel, {
-        type: 'part',
-        user: ws.data.user.username,
-      });
-  }
-}
-const chat = new ChatGateway();
-
 async function buildServerComponents() {
   const glob = new Bun.Glob('**/*.webs');
   const entrypoints = [];
+
   if (await exists(config.APP_DIR)) {
+    console.log(`[Webs] Scanning for components in: ${config.APP_DIR}`);
     for await (const file of glob.scan(config.APP_DIR)) {
       entrypoints.push(join(config.APP_DIR, file));
     }
   }
-  if (entrypoints.length === 0) return { success: true, entrypoints: [] };
+  if (await exists(config.GUI_DIR)) {
+    console.log(`[Webs] Scanning for components in: ${config.GUI_DIR}`);
+    for await (const file of glob.scan(config.GUI_DIR)) {
+      entrypoints.push(join(config.GUI_DIR, file));
+    }
+  }
+
+  console.log(`[Webs] Found ${entrypoints.length} component entrypoints.`);
+  if (entrypoints.length === 0) {
+    return { success: true, entrypoints: [], pageEntrypoints: [] };
+  }
 
   const result = await Bun.build({
     entrypoints,
@@ -174,65 +101,82 @@ async function buildServerComponents() {
     target: 'bun',
     plugins: [websPlugin(config), tailwind],
     external: ['@conradklek/webs', 'bun-plugin-tailwind'],
+    naming: '[dir]/[name].[ext]',
+    root: config.SRC_DIR,
   });
 
   if (!result.success) {
     console.error('Server component compilation failed:', result.logs);
   }
-  return { success: result.success, entrypoints };
+
+  const pageEntrypoints = entrypoints.filter((p) =>
+    p.startsWith(config.APP_DIR),
+  );
+  return { success: result.success, entrypoints, pageEntrypoints };
 }
 
 async function prepareCss() {
   const glob = new Bun.Glob('**/*.webs');
   const componentStyles = [];
-  if (!(await exists(config.SRC_DIR))) return '';
-
-  const styleBlockRegex = /<style>([\s\S]*?)<\/style>/s;
-  for await (const file of glob.scan(config.SRC_DIR)) {
-    const src = await Bun.file(join(config.SRC_DIR, file)).text();
-    const styleMatch = src.match(styleBlockRegex);
-    if (styleMatch?.[1]?.trim()) {
-      componentStyles.push(styleMatch[1].trim());
+  if (config.GLOBAL_CSS_PATH) {
+    const globalCss = await Bun.file(config.GLOBAL_CSS_PATH).text();
+    componentStyles.push(globalCss);
+  }
+  if (await exists(config.SRC_DIR)) {
+    const styleBlockRegex = /<style>([\s\S]*?)<\/style>/s;
+    for await (const file of glob.scan(config.SRC_DIR)) {
+      const src = await Bun.file(join(config.SRC_DIR, file)).text();
+      const styleMatch = src.match(styleBlockRegex);
+      if (styleMatch?.[1]?.trim()) {
+        componentStyles.push(styleMatch[1].trim());
+      }
     }
   }
-  const globalCss = (await exists(config.GLOBAL_CSS_PATH))
-    ? await Bun.file(config.GLOBAL_CSS_PATH).text()
-    : '';
 
-  await Bun.write(
-    config.TMP_CSS,
-    `${globalCss}\n${componentStyles.join('\n')}`,
-  );
+  await Bun.write(config.TMP_CSS, componentStyles.join('\n'));
 }
 
-async function prepareClientEntrypoint(pageEntrypoints) {
-  const glob = new Bun.Glob('**/*.js');
+async function prepareClientEntrypoint(allEntrypoints) {
   const componentLoaders = [];
-  const pageComponentNames = new Set(
-    pageEntrypoints.map((p) =>
-      p.replace(`${config.APP_DIR}/`, '').replace('.webs', ''),
+  const componentNames = new Set(
+    allEntrypoints.map((p) =>
+      resolve(p)
+        .substring(config.SRC_DIR.length + 1)
+        .replace('.webs', ''),
     ),
   );
 
+  const glob = new Bun.Glob('**/*.js');
   if (await exists(config.TMP_SERVER_DIR)) {
     for await (const file of glob.scan(config.TMP_SERVER_DIR)) {
-      const componentName = file.replace('.js', '');
-      if (pageComponentNames.has(componentName)) {
+      const fullPath = resolve(config.TMP_SERVER_DIR, file);
+      const componentName = fullPath
+        .substring(config.TMP_SERVER_DIR.length + 1)
+        .replace('.js', '');
+
+      if (componentNames.has(componentName)) {
+        const relativePath = join(config.TMP_SERVER_DIR, file);
         componentLoaders.push(
-          `['${componentName}', () => import('./server/${file}')]`,
+          `['${componentName}', () => import('${relativePath}')]`,
         );
       }
     }
   }
 
+  const dbConfigPath = resolve(CWD, 'src/sql/db.js');
+  const dbConfigImport = (await exists(dbConfigPath))
+    ? `import dbConfig from '${dbConfigPath}';`
+    : 'const dbConfig = null;';
+
   const entrypointContent = `import { hydrate } from '@conradklek/webs';
-import './tmp.css';
+import '${config.TMP_CSS}';
+${dbConfigImport}
 
 const componentLoaders = new Map([
   ${componentLoaders.join(',\n  ')}
 ]);
 
-hydrate(componentLoaders);
+hydrate(componentLoaders, dbConfig);
 `;
   await Bun.write(config.TMP_APP_JS, entrypointContent);
 }
@@ -254,13 +198,12 @@ async function compressAssets(outputs) {
   return sizes;
 }
 
-async function buildServiceWorker(clientOutputs, appRoutes) {
-  const swUserPath = resolve(config.CWD, 'cache.js');
-  const swFrameworkPath = resolve(import.meta.dir, 'cache.js');
+async function buildServiceWorker(clientOutputs) {
+  const swUserPath = resolve(CWD, 'cache.js');
+  const swFrameworkPath = resolve(FRAMEWORK_DIR, 'cache.js');
   const swEntryPath = (await exists(swUserPath)) ? swUserPath : swFrameworkPath;
 
   if (!(await exists(swEntryPath))) {
-    console.warn('Service worker not found, skipping SW build.');
     return null;
   }
 
@@ -299,12 +242,12 @@ async function buildServiceWorker(clientOutputs, appRoutes) {
   return swOutput;
 }
 
-async function buildClientAndNotify(appRoutes, changedFile, pageEntrypoints) {
-  await prepareClientEntrypoint(pageEntrypoints);
+async function buildClientAndNotify(entrypoints) {
+  await prepareClientEntrypoint(entrypoints);
   await prepareCss();
 
   const clientBuildResult = await Bun.build({
-    entrypoints: [config.TMP_APP_JS, config.TMP_CSS],
+    entrypoints: [config.TMP_APP_JS],
     outdir: config.OUTDIR,
     target: 'browser',
     splitting: true,
@@ -319,15 +262,7 @@ async function buildClientAndNotify(appRoutes, changedFile, pageEntrypoints) {
     return null;
   }
 
-  if (changedFile) {
-    hmrClients.forEach((ws) => ws.send(JSON.stringify({ type: 'update' })));
-    console.log(`[HMR] Reloaded due to change in ${changedFile}`);
-  }
-
-  const swOutput = await buildServiceWorker(
-    clientBuildResult.outputs,
-    appRoutes,
-  );
+  const swOutput = await buildServiceWorker(clientBuildResult.outputs);
   const allOutputs = [
     ...clientBuildResult.outputs,
     ...(swOutput ? [swOutput] : []),
@@ -351,46 +286,58 @@ async function buildClientAndNotify(appRoutes, changedFile, pageEntrypoints) {
 }
 
 async function generateRoutesFromFileSystem(pageEntrypoints) {
+  console.log('[Webs] Generating routes from server components...');
   if (!(await exists(config.TMP_SERVER_DIR))) {
     return {};
   }
+
   const pageFiles = new Set(
-    (pageEntrypoints || []).map((p) =>
-      p.replace(`${config.APP_DIR}/`, '').replace('.webs', '.js'),
-    ),
+    (pageEntrypoints || []).map((p) => p.substring(config.SRC_DIR.length + 1)),
   );
+
   const glob = new Bun.Glob('**/*.js');
   const routeDefinitions = [];
+  const actionDefinitions = {};
+
+  if (await exists(config.TMP_GENERATED_ACTIONS)) {
+    const generatedActionsModule = await import(
+      `${config.TMP_GENERATED_ACTIONS}?t=${Date.now()}`
+    );
+    Object.assign(actionDefinitions, generatedActionsModule);
+  }
 
   for await (const file of glob.scan(config.TMP_SERVER_DIR)) {
-    if (!pageFiles.has(file)) continue;
+    const fullPath = resolve(config.TMP_SERVER_DIR, file);
+    const relativePath = fullPath.substring(config.TMP_SERVER_DIR.length + 1);
 
-    const mod = await import(
-      `${join(config.TMP_SERVER_DIR, file)}?t=${Date.now()}`
-    );
-    if (!mod.default) {
-      console.warn(`[Skipping] ${file} does not have a default export.`);
-      continue;
+    if (pageFiles.has(relativePath.replace('.js', '.webs'))) {
+      const mod = await import(`${fullPath}?t=${Date.now()}`);
+      if (!mod.default) {
+        continue;
+      }
+
+      let componentName = relativePath.replace('.js', '');
+
+      let urlPath = componentName
+        .substring('app/'.length)
+        .replace(/index$/, '')
+        .replace(/\[(\w+)\]/g, ':$1');
+
+      if (urlPath.endsWith('/')) urlPath = urlPath.slice(0, -1);
+      if (!urlPath.startsWith('/')) urlPath = '/' + urlPath;
+      if (urlPath === '') urlPath = '/';
+
+      routeDefinitions.push({
+        path: urlPath,
+        definition: {
+          component: mod.default,
+          actions: { ...mod.default.actions, ...actionDefinitions },
+          componentName: componentName,
+          middleware: mod.middleware || [],
+          websocket: mod.default.websocket || null,
+        },
+      });
     }
-
-    let urlPath = file
-      .replace(/\.js$/, '')
-      .replace(/index$/, '')
-      .replace(/\[(\w+)\]/g, ':$1');
-
-    if (urlPath.endsWith('/')) urlPath = urlPath.slice(0, -1);
-    if (!urlPath.startsWith('/')) urlPath = '/' + urlPath;
-    if (urlPath === '') urlPath = '/';
-
-    routeDefinitions.push({
-      path: urlPath,
-      definition: {
-        component: mod.default,
-        componentName: file.replace(/\.js$/, ''),
-        middleware: mod.middleware || [],
-        websocket: mod.default.websocket || null,
-      },
-    });
   }
 
   routeDefinitions.sort((a, b) => {
@@ -402,17 +349,28 @@ async function generateRoutesFromFileSystem(pageEntrypoints) {
     );
   });
 
-  return routeDefinitions.reduce((acc, { path, definition }) => {
+  const finalRoutes = routeDefinitions.reduce((acc, { path, definition }) => {
     acc[path] = definition;
     return acc;
   }, {});
+
+  console.log(`[Webs] Generated ${routeDefinitions.length} page routes.`);
+  Object.keys(finalRoutes).forEach((routePath) => {
+    console.log(
+      `[Webs] --> Route: ${routePath}, Component: ${finalRoutes[routePath].componentName}`,
+    );
+  });
+
+  return { finalRoutes, actionDefinitions };
 }
 
 function findRouteMatch(appRoutes, pathname) {
   const normalizedPathname =
-    pathname.length > 1 && pathname.endsWith('/')
+    pathname && pathname.length > 1 && pathname.endsWith('/')
       ? pathname.slice(0, -1)
       : pathname;
+  if (typeof normalizedPathname !== 'string') return null;
+
   for (const routePath in appRoutes) {
     const paramNames = [];
     const regexPath =
@@ -435,11 +393,8 @@ function findRouteMatch(appRoutes, pathname) {
   return null;
 }
 
-/**
- * Starts the Bun server.
- */
 function startServer(serverContext) {
-  const { db, appRoutes, outdir, manifest, isProd } = serverContext;
+  const { db, dbConfig, outdir, manifest, isProd } = serverContext;
   const authMiddleware = (req) => {
     req.db = db;
     const sessionId = req.headers
@@ -460,16 +415,15 @@ function startServer(serverContext) {
       const url = new URL(req.url);
 
       if (req.headers.get('upgrade') === 'websocket') {
-        if (!isProd && url.pathname === '/hmr-ws') {
-          return server.upgrade(req, { data: { isHmrChannel: true } })
-            ? undefined
-            : new Response('HMR upgrade failed', { status: 400 });
-        }
-        if (url.pathname === '/ws/chat') {
-          return chat.handleUpgrade(req);
-        }
         if (url.pathname === '/api/sync') {
-          return server.upgrade(req, { data: { isSyncChannel: true } })
+          const user = getUserFromSession(
+            db,
+            req.headers.get('cookie')?.match(/session_id=([^;]+)/)?.[1],
+          );
+          if (!user) return new Response('Unauthorized', { status: 401 });
+          return server.upgrade(req, {
+            data: { isSyncChannel: true, user, id: crypto.randomUUID() },
+          })
             ? undefined
             : new Response('Sync upgrade failed', { status: 400 });
         }
@@ -484,11 +438,7 @@ function startServer(serverContext) {
     },
     websocket: {
       open(ws) {
-        if (ws.data?.isHmrChannel) {
-          hmrClients.add(ws);
-        } else if (ws.data?.isChatChannel) {
-          chat.handleOpen(ws);
-        } else if (ws.data?.isSyncChannel) {
+        if (ws.data?.isSyncChannel) {
           ws.subscribe(SYNC_TOPIC);
         } else {
           appRoutes[ws.data.routePath]?.websocket?.open?.(ws, {
@@ -497,11 +447,58 @@ function startServer(serverContext) {
           });
         }
       },
-      message(ws, message) {
-        if (ws.data?.isChatChannel) {
-          chat.handleMessage(ws, message);
-        } else if (ws.data?.isSyncChannel) {
-          ws.publish(SYNC_TOPIC, message);
+      async message(ws, message) {
+        if (ws.data?.isSyncChannel) {
+          let payload;
+          try {
+            payload = JSON.parse(message);
+            const { tableName, type, data, id, opId } = payload;
+
+            if (!tableName || !type || !opId) return;
+
+            const tableConfig = dbConfig?.tables?.find(
+              (t) => t.name === tableName,
+            );
+            if (!tableConfig || !tableConfig.sync) {
+              throw new Error(
+                `Table '${tableName}' is not configured for syncing. Add a 'sync' property in your db.js config.`,
+              );
+            }
+
+            const actionName =
+              type === 'put'
+                ? `upsert${tableConfig.name.charAt(0).toUpperCase() + tableConfig.name.slice(1)}`
+                : `delete${tableConfig.name.charAt(0).toUpperCase() + tableConfig.name.slice(1)}`;
+
+            const actionArg = type === 'put' ? data : id;
+
+            const actionFn = serverContext.actionDefinitions[actionName];
+
+            if (actionFn) {
+              const actionContext = { db, user: ws.data.user };
+              const result = await actionFn(actionContext, actionArg);
+
+              ws.send(JSON.stringify({ type: 'ack', opId }));
+
+              if (result && result.broadcast) {
+                server.publish(
+                  SYNC_TOPIC,
+                  JSON.stringify({ type: 'sync', data: result.broadcast }),
+                );
+              }
+            } else {
+              throw new Error(`Action '${actionName}' not found.`);
+            }
+          } catch (e) {
+            console.error('[Sync Error] Failed to process message:', e.message);
+            ws.send(
+              JSON.stringify({
+                type: 'sync-error',
+                opId: payload?.opId,
+                error: e.message,
+              }),
+            );
+          }
         } else {
           appRoutes[ws.data.routePath]?.websocket?.message?.(ws, message, {
             db,
@@ -510,11 +507,7 @@ function startServer(serverContext) {
         }
       },
       close(ws, code, reason) {
-        if (ws.data?.isHmrChannel) {
-          hmrClients.delete(ws);
-        } else if (ws.data?.isChatChannel) {
-          chat.handleClose(ws);
-        } else if (ws.data?.isSyncChannel) {
+        if (ws.data?.isSyncChannel) {
         } else {
           appRoutes[ws.data.routePath]?.websocket?.close?.(ws, code, reason, {
             db,
@@ -529,68 +522,61 @@ function startServer(serverContext) {
     },
   });
 
-  chat.initialize(server, db);
   console.log(`Server running at http://localhost:${server.port}`);
   return server;
 }
 
-async function runFullBuild(appRoutes) {
-  await ensureDir(config.TMPDIR);
+async function runFullBuild() {
   if (config.IS_PROD) await cleanDirectory(config.OUTDIR);
 
-  const { success, entrypoints } = await buildServerComponents();
-  if (!success) return { manifest: null, entrypoints: [] };
+  const { success, entrypoints, pageEntrypoints } =
+    await buildServerComponents();
+  if (!success) {
+    console.error('Initial build failed. Server will not start.');
+    return { manifest: null, entrypoints: [], pageEntrypoints: [] };
+  }
 
-  const manifest = await buildClientAndNotify(appRoutes, null, entrypoints);
-  return { manifest, entrypoints };
+  const manifest = await buildClientAndNotify(entrypoints);
+  return { manifest, entrypoints, pageEntrypoints };
 }
 
 async function main() {
+  await ensureDir(config.TMPDIR);
+
+  dbConfig = await loadDbConfig(config.CWD);
+  const db = await createDatabaseAndActions(
+    Database,
+    dbConfig,
+    config.CWD,
+    writeFile,
+    config,
+  );
+
   const serverContext = {
-    db: await createDatabase(Database, config.CWD),
-    appRoutes: {},
+    db: db,
+    dbConfig,
     outdir: config.OUTDIR,
     manifest: {},
     isProd: config.IS_PROD,
+    actionDefinitions: {},
   };
 
-  const { manifest, entrypoints } = await runFullBuild(serverContext.appRoutes);
+  const { manifest, pageEntrypoints } = await runFullBuild();
   if (!manifest) {
     console.error('Initial build failed. Server will not start.');
     if (config.IS_PROD) process.exit(1);
     return;
   }
   serverContext.manifest = manifest;
-  serverContext.appRoutes = await generateRoutesFromFileSystem(entrypoints);
+  const { finalRoutes, actionDefinitions } =
+    await generateRoutesFromFileSystem(pageEntrypoints);
+  appRoutes = finalRoutes;
+  serverContext.actionDefinitions = actionDefinitions;
 
   const server = startServer(serverContext);
 
   if (!config.IS_PROD) {
-    hmrWatcher = watch(
-      config.SRC_DIR,
-      { recursive: true },
-      async (_, filename) => {
-        if (
-          filename &&
-          (filename.endsWith('.webs') || filename.endsWith('.css'))
-        ) {
-          const { success, entrypoints } = await buildServerComponents();
-          if (success) {
-            serverContext.appRoutes =
-              await generateRoutesFromFileSystem(entrypoints);
-            const newManifest = await buildClientAndNotify(
-              serverContext.appRoutes,
-              filename,
-              entrypoints,
-            );
-            if (newManifest) serverContext.manifest = newManifest;
-          }
-        }
-      },
-    );
-
     const cleanup = () => {
-      if (hmrWatcher) hmrWatcher.close();
       server.stop();
       console.log('\n gracefully shutting down...');
       process.exit(0);

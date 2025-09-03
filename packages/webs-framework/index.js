@@ -1,4 +1,5 @@
-import { store, state, computed } from './reactivity';
+import { store, state, computed, watch } from './reactivity';
+import { onUnmounted, onReady } from './renderer';
 
 export * from './reactivity';
 export * from './renderer';
@@ -66,28 +67,51 @@ const sessionStore = store({
     setUser(user) {
       this.user = user || null;
       this.isReady = true;
+      console.log('[Index] Session user set:', this.user);
     },
   },
 });
 
 const session = sessionStore;
 
-const DB_NAME = 'webs-local-db';
-const DB_VERSION = 1;
+if (typeof window !== 'undefined') {
+  const websState = window.__WEBS_STATE__ || {};
+  session.setUser(websState.user);
+}
 
+const DB_NAME = 'webs-local-db';
 let dbPromise = null;
 let socket = null;
 let isOnline = navigator.onLine;
 let reconnectTimeout = null;
+let reconnectAttempts = 0;
 const messageListeners = new Set();
+let processingOutbox = false;
 
 function openDB(config) {
   if (typeof window === 'undefined') return Promise.resolve(null);
   if (dbPromise) return dbPromise;
 
   dbPromise = new Promise((resolve, reject) => {
-    const version = config?.version || DB_VERSION;
-    const request = indexedDB.open(DB_NAME, version);
+    if (!config || !config.version) {
+      console.warn(
+        'No database configuration found. IndexedDB will not be fully initialized.',
+      );
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains('outbox')) {
+          db.createObjectStore('outbox', {
+            keyPath: 'opId',
+          });
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = (e) => reject(e);
+      return;
+    }
+
+    const request = indexedDB.open(DB_NAME, config.version);
 
     request.onerror = () => {
       console.error('IndexedDB error:', request.error);
@@ -100,14 +124,33 @@ function openDB(config) {
 
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
-
-      if (config && typeof config.upgrade === 'function') {
-        config.upgrade(db, event.oldVersion);
-      }
+      const transaction = event.target.transaction;
 
       if (!db.objectStoreNames.contains('outbox')) {
-        db.createObjectStore('outbox', { autoIncrement: true });
+        db.createObjectStore('outbox', {
+          keyPath: 'opId',
+        });
       }
+
+      config.tables.forEach((tableSchema) => {
+        if (!db.objectStoreNames.contains(tableSchema.name)) {
+          const store = db.createObjectStore(tableSchema.name, {
+            keyPath: tableSchema.keyPath,
+            autoIncrement: tableSchema.autoIncrement,
+          });
+          tableSchema.indexes?.forEach((index) => {
+            store.createIndex(index.name, index.keyPath, index.options);
+          });
+        } else {
+          const store = transaction.objectStore(tableSchema.name);
+          const existingIndexNames = new Set(store.indexNames);
+          tableSchema.indexes?.forEach((index) => {
+            if (!existingIndexNames.has(index.name)) {
+              store.createIndex(index.name, index.keyPath, index.options);
+            }
+          });
+        }
+      });
     };
   });
   return dbPromise;
@@ -157,26 +200,36 @@ const localDB = {
     const store = transaction.objectStore(tableName);
     const outboxStore = transaction.objectStore('outbox');
 
-    const serializedRecord = JSON.parse(
-      JSON.stringify(record, (_, value) => {
-        if (value instanceof Set) return { __type: 'Set', values: [...value] };
-        if (value instanceof Map)
-          return { __type: 'Map', entries: [...value.entries()] };
-        return value;
-      }),
-    );
-
     await new Promise((resolve, reject) => {
-      const request = store.put(serializedRecord);
+      const request = store.put(record);
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
 
-    const payload = { tableName, type: 'put', data: serializedRecord };
+    const payload = {
+      tableName,
+      type: 'put',
+      data: record,
+      opId: crypto.randomUUID(),
+    };
     outboxStore.add(payload);
     await transaction.done;
+
     notify(tableName);
+
     syncEngine.process();
+  },
+  async bulkPut(tableName, records) {
+    if (!records || records.length === 0) return;
+    const db = await this._getDB();
+    if (!db) return;
+    const transaction = db.transaction([tableName], 'readwrite');
+    const store = transaction.objectStore(tableName);
+    for (const record of records) {
+      store.put(record);
+    }
+    await transaction.done;
+    notify(tableName);
   },
   async delete(tableName, key) {
     const db = await this._getDB();
@@ -191,10 +244,17 @@ const localDB = {
       request.onerror = () => reject(request.error);
     });
 
-    const payload = { tableName, type: 'delete', id: key };
+    const payload = {
+      tableName,
+      type: 'delete',
+      id: key,
+      opId: crypto.randomUUID(),
+    };
     outboxStore.add(payload);
     await transaction.done;
+
     notify(tableName);
+
     syncEngine.process();
   },
   subscribe(tableName, callback) {
@@ -241,14 +301,35 @@ function connectToSyncServer() {
   socket = new WebSocket(`${protocol}//${window.location.host}/api/sync`);
 
   socket.onopen = () => {
+    reconnectAttempts = 0;
     processOutbox();
   };
 
-  socket.onmessage = (event) => {
+  socket.onmessage = async (event) => {
     try {
       const payload = JSON.parse(event.data);
-      if (payload.tableName && payload.type) {
-        localDB.sync(payload);
+      if (payload.type === 'sync') {
+        localDB.sync(payload.data);
+      } else if (payload.type === 'ack') {
+        const db = await localDB._getDB();
+        if (!db) return;
+        const tx = db.transaction('outbox', 'readwrite');
+        tx.objectStore('outbox').delete(payload.opId);
+        await tx.done;
+        processingOutbox = false;
+        processOutbox();
+      } else if (payload.type === 'sync-error') {
+        console.error(
+          `[Sync Engine] Server failed to process operation ${payload.opId}:`,
+          payload.error,
+        );
+        const db = await localDB._getDB();
+        if (!db) return;
+        const tx = db.transaction('outbox', 'readwrite');
+        tx.objectStore('outbox').delete(payload.opId);
+        await tx.done;
+        processingOutbox = false;
+        processOutbox();
       }
       messageListeners.forEach((listener) => listener(payload));
     } catch (e) {
@@ -261,7 +342,10 @@ function connectToSyncServer() {
       `[Sync Engine] Disconnected. Code: ${event.code}, Reason: ${event.reason}`,
     );
     if (event.code !== 1000 && event.code !== 1008) {
-      reconnectTimeout = setTimeout(connectToSyncServer, 3000);
+      reconnectAttempts++;
+      const delay = Math.min(30000, 1000 * 2 ** reconnectAttempts);
+      console.log(`[Sync Engine] Reconnecting in ${delay / 1000}s...`);
+      reconnectTimeout = setTimeout(connectToSyncServer, delay);
     }
   };
 
@@ -272,42 +356,62 @@ function connectToSyncServer() {
 }
 
 async function processOutbox() {
+  if (processingOutbox) return;
   if (socket && socket.readyState === WebSocket.OPEN) {
-    const outboxItems = await localDB.getAll('outbox');
-    if (outboxItems.length === 0) return;
-
     const db = await localDB._getDB();
     if (!db) return;
     const transaction = db.transaction('outbox', 'readonly');
     const store = transaction.objectStore('outbox');
-    const keysRequest = store.getAllKeys();
+    const request = store.openCursor();
 
-    keysRequest.onsuccess = async () => {
-      const keys = keysRequest.result;
-      for (let i = 0; i < outboxItems.length; i++) {
-        const payload = outboxItems[i];
-        const key = keys[i];
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (cursor) {
+        processingOutbox = true;
+        const payload = cursor.value;
         socket.send(JSON.stringify(payload));
-        await localDB.delete('outbox', key);
       }
     };
-    keysRequest.onerror = (e) =>
-      console.error('[Sync Engine] Could not get outbox keys:', e);
+    request.onerror = (e) =>
+      console.error('[Sync Engine] Could not read from outbox:', e);
   }
 }
 
 const syncEngine = {
   start() {
     if (typeof window !== 'undefined') {
+      watch(
+        () => session.user,
+        (newUser, oldUser) => {
+          if (newUser && !oldUser) {
+            isOnline = navigator.onLine;
+            connectToSyncServer();
+          } else if (!newUser && oldUser) {
+            if (socket) {
+              socket.close(1000, 'User logged out');
+              socket = null;
+            }
+          }
+        },
+      );
+
       window.addEventListener('online', () => {
         isOnline = true;
-        connectToSyncServer();
+        if (session.user) {
+          connectToSyncServer();
+        }
       });
       window.addEventListener('offline', () => {
         isOnline = false;
         console.warn('[Sync Engine] Application is offline.');
+        if (reconnectTimeout) {
+          clearTimeout(reconnectTimeout);
+          reconnectTimeout = null;
+        }
+        if (socket) {
+          socket.close(1000, 'Network offline');
+        }
       });
-      connectToSyncServer();
     }
   },
   process() {
@@ -410,6 +514,63 @@ function action(actionName, componentName) {
   };
 
   return { call, state: s };
+}
+
+export function resource(tableName, initialData = []) {
+  const s = state({
+    data: initialData,
+    isLoading: initialData === null,
+    error: null,
+  });
+
+  const fetchData = async () => {
+    try {
+      s.isLoading = true;
+      s.data = await localDB.getAll(tableName);
+    } catch (e) {
+      s.error = e;
+      console.error(`[Resource] Error fetching data for ${tableName}:`, e);
+    } finally {
+      s.isLoading = false;
+    }
+  };
+
+  const unsubscribe = localDB.subscribe(tableName, fetchData);
+  onUnmounted(unsubscribe);
+
+  const hydrate = async (serverData) => {
+    if (serverData) {
+      await localDB.bulkPut(tableName, serverData);
+    } else {
+      await fetchData();
+    }
+  };
+
+  const put = async (record) => {
+    try {
+      if (!session.user || !session.user.id) {
+        throw new Error('Cannot mutate item without a valid user ID.');
+      }
+      await localDB.put(tableName, record);
+    } catch (e) {
+      s.error = e;
+      console.error('Mutation failed:', e);
+    }
+  };
+
+  const destroy = async (id) => {
+    try {
+      if (!session.user || !session.user.id) {
+        throw new Error('Cannot delete item without a valid user ID.');
+      }
+      await localDB.delete(tableName, id);
+    } catch (e) {
+      s.error = e;
+      console.error('Deletion failed:', e);
+    }
+  };
+
+  return { state: s, hydrate, put, destroy };
 }
 
 export { session, localDB, syncEngine, action };

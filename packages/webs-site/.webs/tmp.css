@@ -89,3 +89,19 @@
     @apply flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm;
   }
 }
+
+.chat-container {
+    @apply text-sm font-mono border border-border h-full flex flex-col;
+  }
+  .message-list {
+    @apply flex-grow p-2 overflow-y-auto;
+  }
+  .chat-input-area {
+    @apply border-t border-border flex items-center;
+  }
+  .status-indicator {
+    @apply w-2.5 h-2.5 rounded-full mx-3 flex-shrink-0 transition-colors;
+  }
+  .chat-input {
+    @apply w-full p-2 focus:outline-none text-sm font-mono;
+  }

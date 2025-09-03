@@ -2,6 +2,48 @@
 
 A Javascript Framework
 
+```
+build.js
+
+This file is a build script that orchestrates the entire development process, including compiling components, preparing CSS, handling client-side assets, and starting the development server.
+
+server.js
+
+This file defines the core server-side logic, including request handling, authentication, and server-side rendering of .webs components.
+
+runtime.js
+
+This file provides the core runtime functionality for the client-side, including hydration of server-rendered HTML and client-side navigation.
+
+cache.js
+
+This file contains logic for a service worker that caches assets and full-page navigations.
+
+compiler.js
+
+This file contains the compiler logic that transforms the HTML-like template syntax of .webs components into a JavaScript render function.
+
+plugin.js
+
+This file defines a file system router, WebSocket handlers for chat and sync, and a session management system for the webs framework.
+
+parser.js
+
+This file contains the parser and tokenizer for both JavaScript expressions and HTML, which are used by the compiler.
+
+renderer.js
+
+This file defines the core rendering functions, including creating virtual nodes (VNode), patching the DOM, and handling component lifecycle hooks.
+
+index.js
+
+This file provides an API for client-side actions, local IndexedDB management, and a WebSocket-based data synchronization engine.
+
+reactivity.js
+
+This file defines the core reactivity system, including state, watch, and computed, which are used to manage and track changes in component data.
+```
+
 ## Core Concepts
 
 ### 1. File-Based Routing
@@ -33,7 +75,7 @@ A component is defined by exporting a default object from the `<script>` block.
 
 ```html
 <script>
-  import { useState, onMounted } from '@conradklek/webs';
+  import { useState, onMounted } from "@conradklek/webs";
 
   export default {
     name: "Counter",
@@ -123,7 +165,7 @@ To use a component within another, you must import it and register it in the `co
 
 To pass content _into_ a component, use the `<slot>` tag. Any child elements you place inside your custom component tag in the parent will be rendered where the `<slot>` tag is.
 
-```html
+````html
 <template>
   <div class="wrapper">
     <slot></slot>
@@ -132,7 +174,7 @@ To pass content _into_ a component, use the `<slot>` tag. Any child elements you
 
 ```html
 <script>
-  import Wrapper from '../components/Wrapper.webs';
+  import Wrapper from "../components/Wrapper.webs";
 
   export default {
     name: "HomePage",
@@ -145,7 +187,7 @@ To pass content _into_ a component, use the `<slot>` tag. Any child elements you
     <p>This content will be placed inside the wrapper.</p>
   </Wrapper>
 </template>
-```
+````
 
 ## Backend & Data
 
@@ -191,10 +233,10 @@ export const middleware = [
   },
   (to, from, next) => {
     if (!to.user) {
-      return next('/login');
+      return next("/login");
     }
     next();
-  }
+  },
 ];
 
 export default {
@@ -204,6 +246,7 @@ export default {
 ```
 
 ---
+
 ## Frontend
 
 ### 6. Template Syntax
@@ -254,4 +297,3 @@ Of course, you can also use standard Tailwind utility classes directly in your t
 ## License
 
 MIT
-

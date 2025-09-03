@@ -1,7 +1,7 @@
 {
   "name": "@conradklek/webs",
   "author": "Conrad Klek",
-  "version": "0.1.32",
+  "version": "0.1.33",
   "type": "module",
   "description": "A Javascript framework",
   "bin": {
@@ -28,10 +28,9 @@
   },
   "scripts": {
     "dev": "NODE_ENV=development bun run ./build.js",
-    "dev:demo": "cd ../webs-site && NODE_ENV=development bun run ../webs-framework/build.js",
     "start": "NODE_ENV=production bun run ./build.js",
-    "start:demo": "cd ../webs-site && NODE_ENV=production bun run ../webs-framework/build.js",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "dev:demo": "cd ../webs-site && bun run dev"
   },
   "dependencies": {},
   "peerDependencies": {

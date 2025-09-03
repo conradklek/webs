@@ -1,0 +1,72 @@
+<script>
+  import UserNavbar from '../../gui/user-navbar.webs';
+  import { resource } from '@conradklek/webs';
+
+  export default {
+    name: 'results',
+    components: {
+      'user-navbar': UserNavbar,
+    },
+    actions: {
+      async ssrFetch({ db }) {
+        const channels = db
+          .query(
+            `SELECT DISTINCT channel FROM chat_messages ORDER BY channel ASC`,
+          )
+          .all();
+        console.log(`[SSR] Fetched ${channels.length} unique channels.`);
+        return { channels };
+      },
+    },
+    setup(props, ctx) {
+      // Initialize the resource with server-side data
+      const channelsResource = resource(
+        'chat_messages',
+        props.initialState?.channels || [],
+      );
+
+      // Perform a one-time calculation for the list of unique channels.
+      // This avoids the read-only property issue during hydration.
+      const uniqueChannels = (channelsResource.state.data || [])
+        .map((message) => message.channel)
+        .filter((value, index, self) => self.indexOf(value) === index)
+        .sort();
+
+      return { uniqueChannels };
+    },
+  };
+</script>
+
+<template>
+  <div
+    class="w-full p-8 flex flex-col items-start justify-start gap-6 h-screen"
+  >
+    <div class="w-full flex flex-row items-center justify-between gap-4">
+      <a href="/" class="link font-medium">webs.site</a>
+      <user-navbar />
+    </div>
+    <main class="flex-1 w-full h-full flex flex-col items-center">
+      <div class="w-full max-w-lg mt-8">
+        <div w-if="uniqueChannels.length > 0" class="flex flex-col gap-2">
+          <div
+            w-for="channel in uniqueChannels"
+            :key="channel"
+            class="border border-gray-200 rounded-lg p-4 bg-white hover:bg-gray-50 transition-colors duration-200"
+          >
+            <a
+              :href="'/irc/' + channel.replace('#', '')"
+              class="block text-blue-600 font-medium hover:underline"
+              >{{ channel }}</a
+            >
+          </div>
+        </div>
+        <div
+          w-else
+          class="text-gray-500 text-center p-8 border border-dashed rounded-lg"
+        >
+          No channels found. Start a new one by typing its name in the URL.
+        </div>
+      </div>
+    </main>
+  </div>
+</template>

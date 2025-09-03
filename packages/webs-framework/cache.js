@@ -1,18 +1,21 @@
 const CACHE_NAME = 'webs-cache-v1';
 
-const urlsToCache = self.__WEBS_MANIFEST || [];
+const fullManifest = self.__WEBS_MANIFEST || [];
+
+const assetManifest = fullManifest.filter((entry) => entry.url.includes('.'));
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
       .then((cache) => {
-        const assetsToCache = urlsToCache.filter(
-          (entry) => !entry.isNavigation,
-        );
-        return cache.addAll(assetsToCache.map((entry) => entry.url));
+        console.log('Service Worker: Caching assets on install.');
+        return cache.addAll(assetManifest.map((entry) => entry.url));
       })
-      .then(() => self.skipWaiting()),
+      .then(() => {
+        console.log('Service Worker: Installed successfully.');
+        return self.skipWaiting();
+      }),
   );
 });
 
@@ -21,15 +24,46 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((cacheNames) => {
-        return Promise.all(
-          cacheNames.map((cache) => {
-            if (cache !== CACHE_NAME) {
-              return cache.delete(cache);
-            }
-          }),
+        const oldCachesPromise = Promise.all(
+          cacheNames
+            .filter((name) => name !== CACHE_NAME)
+            .map((name) => {
+              console.log('Service Worker: Deleting old cache:', name);
+              return caches.delete(name);
+            }),
         );
+
+        const currentCachePromise = caches.open(CACHE_NAME).then((cache) => {
+          const urlsToKeep = new Set(
+            assetManifest.map(
+              (entry) => new URL(entry.url, self.location.origin).href,
+            ),
+          );
+
+          return cache.keys().then((requests) => {
+            const requestsToDelete = requests.filter(
+              (request) => !urlsToKeep.has(request.url),
+            );
+
+            if (requestsToDelete.length > 0) {
+              console.log(
+                'Service Worker: Deleting outdated assets:',
+                requestsToDelete.map((r) => r.url),
+              );
+            }
+
+            return Promise.all(
+              requestsToDelete.map((request) => cache.delete(request)),
+            );
+          });
+        });
+
+        return Promise.all([oldCachesPromise, currentCachePromise]);
       })
-      .then(() => self.clients.claim()),
+      .then(() => {
+        console.log('Service Worker: Activated and caches cleaned.');
+        return self.clients.claim();
+      }),
   );
 });
 

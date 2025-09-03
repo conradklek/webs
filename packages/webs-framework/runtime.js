@@ -1,5 +1,5 @@
 import { createRenderer, createVnode } from './renderer';
-import { syncEngine, session } from './index';
+import { syncEngine, session, localDB } from './index';
 
 function normalizeClass(value) {
   let res = '';
@@ -48,9 +48,6 @@ export function createAppApi(rendererOptions) {
 
         if (rootInstance) {
           installNavigationHandler(app, components);
-          if (process.env.NODE_ENV !== 'production') {
-            installHMRHandler(app, components);
-          }
         } else {
           console.error(
             'Hydration did not return a root instance. Navigation handler not installed.',
@@ -105,14 +102,18 @@ export const createApp = createAppApi({
   querySelector: (selector) => document?.querySelector(selector),
 });
 
-export async function hydrate(components, dbConfig = null) {
+export async function hydrate(componentManifest, dbConfig = null) {
   if (typeof window === 'undefined') return;
+  console.log('[Runtime] Starting hydration...');
+
+  const websState = deserializeState(window.__WEBS_STATE__ || {});
+  console.log('[Runtime] Deserialized websState:', websState);
+
+  session.setUser(websState.user);
 
   window.__WEBS_DB_CONFIG__ = dbConfig;
 
   syncEngine.start();
-
-  const websState = deserializeState(window.__WEBS_STATE__ || {});
 
   if ('serviceWorker' in navigator && websState.swPath) {
     window.addEventListener('load', () => {
@@ -122,82 +123,62 @@ export async function hydrate(components, dbConfig = null) {
     });
   }
 
-  if (process.env.NODE_ENV !== 'production') {
-    if (!window.__WEBS_DEVELOPER__) {
-      const listeners = [];
-      window.__WEBS_DEVELOPER__ = {
-        componentInstances: new Map(),
-        subscribe(fn) {
-          listeners.push(fn);
-          return () => {
-            const index = listeners.indexOf(fn);
-            if (index > -1) listeners.splice(index, 1);
-          };
-        },
-        notify() {
-          listeners.forEach((fn) => fn());
-        },
-      };
-    }
-  }
-
   const root = document.getElementById('root');
   if (!root) {
     return console.error('Hydration failed: #root element not found.');
   }
 
   window.__WEBS_STATE__ = { componentName: websState.componentName };
-  const { componentName, user, params, componentState } = websState;
+  const { componentName, user = {}, params, componentState } = websState;
+  console.log('[Runtime] Extracted componentName:', componentName);
+  console.log('[Runtime] Extracted componentState:', componentState);
 
   if (!componentName) {
     console.error('Hydration failed: No component name provided in state.');
     return;
   }
 
-  const componentLoader = components.get(componentName);
+  const componentLoader = componentManifest.get(componentName);
   if (!componentLoader) {
     console.error(
-      `Hydration failed: No component loader found for "${componentName}".`,
+      `Hydration failed: Component loader not found for "${componentName}".`,
     );
     return;
   }
 
-  try {
-    const componentModule = await componentLoader();
-    const rootComponent = componentModule.default;
+  const componentModule = await componentLoader();
+  const rootComponent = componentModule.default;
 
-    if (
-      !rootComponent ||
-      typeof rootComponent !== 'object' ||
-      !rootComponent.name ||
-      (typeof rootComponent.render !== 'function' &&
-        typeof rootComponent.template !== 'string')
-    ) {
-      console.error(
-        `Hydration failed: Default export from component "${componentName}" is not a valid component (missing render function or template).`,
-        'Received:',
-        rootComponent,
-      );
-      return;
-    }
-
-    const props = {
-      params,
-      initialState: componentState,
-    };
-
-    const app = createApp(rootComponent, props);
-    app.mount(root, components);
-
-    Promise.resolve().then(() => {
-      session.setUser(user);
-    });
-  } catch (error) {
-    console.error(`Failed to hydrate component "${componentName}":`, error);
+  if (
+    !rootComponent ||
+    typeof rootComponent !== 'object' ||
+    !rootComponent.name ||
+    (typeof rootComponent.render !== 'function' &&
+      typeof rootComponent.template !== 'string')
+  ) {
+    console.error(
+      `Hydration failed: Default export from component "${componentName}" is not a valid component (missing render function or template).`,
+      'Received:',
+      rootComponent,
+    );
+    return;
   }
+
+  const props = {
+    params,
+    initialState: componentState || {},
+    user,
+  };
+  console.log('[Runtime] Props object passed to createApp:', props);
+
+  const app = createApp(rootComponent, props);
+  const rootInstance = app.mount(root, componentManifest);
+  rootInstance.hooks.onReady?.forEach((h) =>
+    h.call(rootInstance.ctx, { user, initialState: componentState || {} }),
+  );
 }
 
-function installNavigationHandler(app, components) {
+function installNavigationHandler(app, componentManifest) {
   const prefetchCache = new Map();
   const prefetch = async (url) => {
     if (prefetchCache.has(url.href)) {
@@ -308,7 +289,7 @@ function installNavigationHandler(app, components) {
 
       session.setUser(data.user);
 
-      const componentLoader = components.get(data.componentName);
+      const componentLoader = componentManifest.get(data.componentName);
       if (!componentLoader) {
         throw new Error(
           `Component loader not found for: ${data.componentName}`,
@@ -323,10 +304,18 @@ function installNavigationHandler(app, components) {
       const oldVnode = app._vnode;
       const newProps = {
         params: data.params,
-        initialState: data.componentState,
+        initialState: data.componentState || {},
       };
 
       app._context.params = data.params;
+
+      if (
+        newProps.initialState &&
+        newProps.initialState.initialTodos &&
+        newProps.initialState.initialTodos.length > 0
+      ) {
+        await localDB.bulkPut('todos', newProps.initialState.initialTodos);
+      }
 
       const newVnode = createVnode(newComponentDef, newProps);
       newVnode.appContext = app._context;
@@ -368,7 +357,7 @@ function installNavigationHandler(app, components) {
 
       session.setUser(data.user);
 
-      const componentLoader = components.get(data.componentName);
+      const componentLoader = componentManifest.get(data.componentName);
       if (!componentLoader) {
         throw new Error(
           `Component loader not found for: ${data.componentName}`,
@@ -382,10 +371,18 @@ function installNavigationHandler(app, components) {
       const oldVnode = app._vnode;
       const newProps = {
         params: data.params,
-        initialState: data.componentState,
+        initialState: data.componentState || {},
       };
 
       app._context.params = data.params;
+
+      if (
+        newProps.initialState &&
+        newProps.initialState.initialTodos &&
+        newProps.initialState.initialTodos.length > 0
+      ) {
+        await localDB.bulkPut('todos', newProps.initialState.initialTodos);
+      }
 
       const newVnode = createVnode(newComponentDef, newProps);
       newVnode.appContext = app._context;
@@ -398,27 +395,6 @@ function installNavigationHandler(app, components) {
       window.location.assign(url.href);
     }
   });
-}
-
-function installHMRHandler(app, components) {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const hmrSocketUrl = `${protocol}//${window.location.host}/hmr-ws`;
-  const hmrSocket = new WebSocket(hmrSocketUrl);
-
-  hmrSocket.onmessage = async (event) => {
-    try {
-      const message = JSON.parse(event.data);
-      if (message.type === 'update') {
-        window.location.reload();
-      }
-    } catch (e) {
-      console.error('HMR message error:', e);
-    }
-  };
-
-  hmrSocket.onclose = () => {
-    setTimeout(() => installHMRHandler(app, components), 1000);
-  };
 }
 
 function deserializeState(input) {

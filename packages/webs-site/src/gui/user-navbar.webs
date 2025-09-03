@@ -1,32 +1,47 @@
 <script>
-  import { session } from '@conradklek/webs';
+  import { session, onReady, state } from '@conradklek/webs';
 
   export default {
-    setup(props, ctx) {
+    props: {
+      user: Object,
+    },
+    setup(props) {
+      const isReady = state(false);
+
+      onReady(() => {
+        if (props.user) {
+          session.setUser(props.user);
+        }
+        isReady.value = true;
+      });
+
       function handleLogout() {
         session.logout();
       }
-      return { session, handleLogout };
+
+      return { session, handleLogout, isReady };
     },
   };
 </script>
 
 <template>
   <div class="w-full">
-    <nav
-      w-if="!session?.user"
+    <div
+      w-if="isReady"
       class="w-full flex flex-row items-center justify-end gap-4"
     >
-      <a href="/login" class="link">Login</a>
-      <span>|</span>
-      <a href="/signup" class="link">Signup</a>
-    </nav>
-    <nav w-else class="w-full flex flex-row items-center justify-end gap-4">
-      <a :href="'/profile/' + session.user?.username" class="link"
-        >@{{ session.user?.username }}</a
-      >
-      <span>|</span>
-      <button type="button" @click="handleLogout">Logout</button>
-    </nav>
+      <nav w-if="!session?.user" class="contents">
+        <a href="/login" class="link">Login</a>
+        <span>|</span>
+        <a href="/signup" class="link">Signup</a>
+      </nav>
+      <nav w-else class="contents">
+        <a :href="'/profile/' + session.user?.username" class="link"
+          >@{{ session.user?.username }}</a
+        >
+        <span>|</span>
+        <button type="button" @click="handleLogout">Logout</button>
+      </nav>
+    </div>
   </div>
 </template>
