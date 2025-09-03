@@ -2,6 +2,28 @@ import { watch, isRef } from './reactivity';
 import { voidElements } from './parser';
 import { compile } from './compiler';
 
+const LOG_PREFIX = '[Renderer]';
+const log = (...args) => console.log(LOG_PREFIX, ...args);
+const warn = (...args) => console.warn(LOG_PREFIX, ...args);
+const error = (...args) => console.error(LOG_PREFIX, ...args);
+const group = (label) => console.group(label);
+const groupEnd = () => console.groupEnd();
+
+function getNodeDescription(node) {
+  if (!node) return 'null';
+  switch (node.nodeType) {
+    case 1:
+      return `<${node.tagName.toLowerCase()}>`;
+    case 3:
+      const text = node.textContent.trim();
+      return `#text "${text.length > 30 ? text.slice(0, 27) + '...' : text}"`;
+    case 8:
+      return `<!--${node.data}-->`;
+    default:
+      return node.nodeName;
+  }
+}
+
 const isObjectAndNotArray = (val) =>
   val !== null && typeof val === 'object' && !Array.isArray(val);
 const isString = (val) => typeof val === 'string';
@@ -372,11 +394,44 @@ export function createRenderer(options) {
           }
 
           if (isHydrating) {
-            hydrateNode(subTree, vnode.el, vnode.el.parentElement, instance);
+            log(`Hydrating component subtree for <${instance.type.name}>`);
+            if (!vnode.el) {
+              error(
+                `CRITICAL HYDRATION ERROR for <${instance.type.name}>: vnode.el is null. This means no corresponding DOM element was found for this component.`,
+                vnode,
+              );
+              throw new Error(
+                `Hydration failed for <${instance.type.name}>: no DOM element to hydrate against.`,
+              );
+            }
+            const parentEl = vnode.el.parentElement;
+            if (!parentEl) {
+              error(
+                `CRITICAL HYDRATION ERROR for <${instance.type.name}>: vnode.el.parentElement is null. The DOM node is detached.`,
+                vnode.el,
+              );
+              throw new Error(
+                `Hydration failed for component <${instance.type.name}>: DOM node is detached.`,
+              );
+            }
+            log('Component vnode.el is:', getNodeDescription(vnode.el));
+            log(
+              'Parent for component subtree is:',
+              getNodeDescription(parentEl),
+            );
+            hydrateNode(subTree, vnode.el, parentEl, instance);
           } else {
             patch(null, subTree, container, anchor, instance);
           }
           vnode.el = subTree.el;
+          if (subTree.type === Fragment) {
+            const firstChild = (
+              Array.isArray(subTree.children)
+                ? subTree.children
+                : [subTree.children]
+            ).flat()[0];
+            vnode.el = firstChild?.el;
+          }
 
           instance.isMounted = true;
           instance.hooks.onMounted?.forEach((h) => h.call(instance.ctx));
@@ -415,8 +470,9 @@ export function createRenderer(options) {
             vnode.el = nextTree.el;
             instance.hooks.onUpdated?.forEach((h) => h.call(instance.ctx));
           } else {
-            console.warn(
-              '[Renderer] Could not find parent container to patch component update.',
+            warn(
+              `Could not find parent container to patch component update for <${instance.type.name}>. Anchor node:`,
+              anchorNodeForParent,
             );
           }
         }
@@ -523,10 +579,20 @@ export function createRenderer(options) {
   };
 
   const hydrate = (vnode, container) => {
+    log('HYDRATION PROCESS STARTED.');
+    if (!container.firstChild) {
+      warn(
+        'Container has no server-rendered children. Falling back to a clean mount.',
+      );
+      patch(null, vnode, container);
+      return vnode.component;
+    }
     try {
+      log('Hydrating vnode:', vnode, 'into container:', container);
       hydrateNode(vnode, container.firstChild, container, null);
+      log('HYDRATION PROCESS COMPLETED SUCCESSFULLY.');
     } catch (e) {
-      console.error('[Hydration Error]', e.message);
+      error('HYDRATION PROCESS FAILED.', e);
     }
     return vnode.component;
   };
@@ -535,11 +601,13 @@ export function createRenderer(options) {
     let currentNode = node;
     while (
       currentNode &&
-      currentNode.nodeType === 8 &&
-      currentNode.data !== '[' &&
-      currentNode.data !== ']' &&
-      currentNode.data !== 'w-if'
+      ((currentNode.nodeType === 8 &&
+        currentNode.data !== '[' &&
+        currentNode.data !== ']' &&
+        currentNode.data !== 'w-if') ||
+        (currentNode.nodeType === 3 && currentNode.textContent.trim() === ''))
     ) {
+      log(`Skipping non-essential node: ${getNodeDescription(currentNode)}`);
       currentNode = currentNode.nextSibling;
     }
     return currentNode;
@@ -547,115 +615,171 @@ export function createRenderer(options) {
 
   const hydrateNode = (vnode, domNode, parentDom, parentComponent = null) => {
     if (!vnode) {
+      log(
+        'hydrateNode: vnode is null, returning current domNode:',
+        getNodeDescription(domNode),
+      );
       return domNode;
     }
-    const { type, props, children } = vnode;
+
+    const vnodeDesc =
+      vnode.type.name ||
+      (typeof vnode.type === 'symbol' ? vnode.type.toString() : vnode.type);
+    group(`Hydrating VNode: ${vnodeDesc}`);
+    log('VNode details:', vnode);
+    log('Targeting DOM Node:', getNodeDescription(domNode));
+    log('Parent DOM is:', getNodeDescription(parentDom));
+
+    if (vnode.type === Fragment) {
+      log('Hydrating Fragment children...');
+      const nextDomNode = hydrateChildren(
+        vnode.children,
+        parentDom,
+        domNode,
+        parentComponent,
+      );
+      const firstChildVNode = (
+        Array.isArray(vnode.children) ? vnode.children : [vnode.children]
+      )
+        .flat()
+        .find((c) => c && c.el);
+      vnode.el = firstChildVNode ? firstChildVNode.el : null;
+      groupEnd();
+      return nextDomNode;
+    }
 
     let currentDomNode = skipNonEssentialNodes(domNode);
+    log(
+      'Effective DOM node after skipping:',
+      getNodeDescription(currentDomNode),
+    );
+
+    if (!currentDomNode) {
+      error(
+        `Hydration Mismatch: DOM exhausted. Expected a node for vnode:`,
+        vnode,
+        `but found null.`,
+      );
+      warn(
+        'To prevent crashing, patching the remaining vnode into parent:',
+        parentDom,
+      );
+      patch(null, vnode, parentDom, null, parentComponent);
+      groupEnd();
+      return null;
+    }
+
     vnode.el = currentDomNode;
 
-    switch (type) {
-      case Text:
-        if (props && props['w-dynamic']) {
-          if (
-            !currentDomNode ||
-            currentDomNode.nodeType !== 8 ||
-            currentDomNode.data !== '['
-          ) {
-            throw new Error(
-              `[Hydration Mismatch] Could not find opening comment marker for dynamic text. Found: ${currentDomNode}`,
-            );
-          }
+    const { type, props, children } = vnode;
 
-          const textNode = currentDomNode.nextSibling;
-          const closingComment = textNode ? textNode.nextSibling : null;
-          if (
-            !closingComment ||
-            closingComment.nodeType !== 8 ||
-            closingComment.data !== ']'
-          ) {
+    try {
+      switch (type) {
+        case Text:
+          if (props && props['w-dynamic']) {
+            if (
+              !currentDomNode ||
+              currentDomNode.nodeType !== 8 ||
+              currentDomNode.data !== '['
+            ) {
+              throw new Error(
+                `[Hydration Mismatch] Could not find opening comment marker for dynamic text. Found: ${getNodeDescription(currentDomNode)}`,
+              );
+            }
+
+            const textNode = currentDomNode.nextSibling;
+            const closingComment = textNode ? textNode.nextSibling : null;
+            if (
+              !closingComment ||
+              closingComment.nodeType !== 8 ||
+              closingComment.data !== ']'
+            ) {
+              throw new Error(
+                `[Hydration Mismatch] Expected a closing comment '<!--]-->' but found: ${getNodeDescription(closingComment)}`,
+              );
+            }
+            log('Successfully hydrated dynamic text content.');
+            vnode.el = textNode;
+            return closingComment.nextSibling;
+          } else {
+            if (!currentDomNode || currentDomNode.nodeType !== 3) {
+              throw new Error(
+                `[Hydration Mismatch] Expected a text node, but found: ${getNodeDescription(currentDomNode)}`,
+              );
+            }
+            log('Successfully hydrated static text node.');
+            return currentDomNode.nextSibling;
+          }
+        case Comment:
+          if (!currentDomNode || currentDomNode.nodeType !== 8) {
             throw new Error(
-              `[Hydration Mismatch] Expected a closing comment '<!--]-->' but found: ${closingComment}`,
+              `[Hydration Mismatch] Expected a comment node, but found: ${getNodeDescription(currentDomNode)}`,
             );
           }
-          vnode.el = textNode;
-          return closingComment.nextSibling;
-        } else {
-          if (!currentDomNode || currentDomNode.nodeType !== 3) {
-            throw new Error(
-              `[Hydration Mismatch] Expected a text node, but found: ${currentDomNode}`,
-            );
-          }
+          log('Successfully hydrated comment node.');
           return currentDomNode.nextSibling;
-        }
-      case Comment:
-        if (!currentDomNode || currentDomNode.nodeType !== 8) {
-          if (currentDomNode !== null) {
-            throw new Error(
-              `[Hydration Mismatch] Expected a comment node, but found: ${currentDomNode}`,
-            );
-          }
-        }
-        return currentDomNode ? currentDomNode.nextSibling : null;
-      case Fragment:
-        return hydrateChildren(
-          children,
-          parentDom,
-          currentDomNode,
-          parentComponent,
-        );
-      case Teleport:
-        return hydrateChildren(
-          children,
-          hostQuerySelector(props.to),
-          null,
-          parentComponent,
-        );
-      default:
-        if (isObjectAndNotArray(type)) {
-          if (
-            currentDomNode &&
-            currentDomNode.nodeType === 8 &&
-            currentDomNode.data === 'w-if'
-          ) {
-            const tempContainer = hostCreateElement('div');
-            patch(null, vnode, tempContainer, null, parentComponent);
-            const newEl = tempContainer.firstChild;
-            if (newEl) {
-              hostInsert(newEl, currentDomNode.parentNode, currentDomNode);
-              hostRemove(currentDomNode);
-              vnode.el = newEl;
-              return newEl.nextSibling;
-            }
-          }
-
-          mountComponent(vnode, null, null, parentComponent, true);
-          return vnode.el ? vnode.el.nextSibling : null;
-        } else if (isString(type)) {
-          if (
-            !currentDomNode ||
-            currentDomNode.nodeType !== 1 ||
-            currentDomNode.tagName.toLowerCase() !== type.toLowerCase()
-          ) {
-            throw new Error(
-              `[Hydration Mismatch] Expected element <${type}>, but found: ${currentDomNode}`,
-            );
-          }
-          if (props) {
-            for (const key in props) {
-              hostPatchProp(currentDomNode, key, null, props[key]);
-            }
-          }
-          hydrateChildren(
+        case Teleport:
+          log(`Hydrating Teleport content to target: "${props.to}"`);
+          return hydrateChildren(
             children,
-            currentDomNode,
-            currentDomNode.firstChild,
+            hostQuerySelector(props.to),
+            null,
             parentComponent,
           );
-          return currentDomNode.nextSibling;
-        }
+        default:
+          if (isObjectAndNotArray(type)) {
+            if (
+              currentDomNode &&
+              currentDomNode.nodeType === 8 &&
+              currentDomNode.data === 'w-if'
+            ) {
+              warn(
+                `Hydrating a component that was conditionally rendered as 'false' on the server.`,
+              );
+              const tempContainer = hostCreateElement('div');
+              patch(null, vnode, tempContainer, null, parentComponent);
+              const newEl = tempContainer.firstChild;
+              if (newEl) {
+                hostInsert(newEl, currentDomNode.parentNode, currentDomNode);
+                hostRemove(currentDomNode);
+                vnode.el = newEl;
+                return newEl.nextSibling;
+              }
+            }
+            log('Mounting component in hydration mode...');
+            mountComponent(vnode, null, null, parentComponent, true);
+            return vnode.el ? vnode.el.nextSibling : null;
+          } else if (isString(type)) {
+            if (
+              !currentDomNode ||
+              currentDomNode.nodeType !== 1 ||
+              currentDomNode.tagName.toLowerCase() !== type.toLowerCase()
+            ) {
+              throw new Error(
+                `[Hydration Mismatch] Expected element <${type}>, but found: ${getNodeDescription(currentDomNode)}`,
+              );
+            }
+            log(
+              `Successfully matched element <${type}>. Patching props and hydrating children.`,
+            );
+            if (props) {
+              for (const key in props) {
+                hostPatchProp(currentDomNode, key, null, props[key]);
+              }
+            }
+            hydrateChildren(
+              children,
+              currentDomNode,
+              currentDomNode.firstChild,
+              parentComponent,
+            );
+            return currentDomNode.nextSibling;
+          }
+      }
+      return currentDomNode ? currentDomNode.nextSibling : null;
+    } finally {
+      groupEnd();
     }
-    return currentDomNode ? currentDomNode.nextSibling : null;
   };
 
   const hydrateChildren = (
@@ -686,14 +810,7 @@ export function createRenderer(options) {
   return { patch, hydrate };
 }
 
-const setCurrentInstance = (instance) => {
-  currentInstance = instance;
-};
-
 function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
-  console.log('[Renderer] createComponent called');
-  console.log('[Renderer] VNode props:', vnode.props);
-
   const parentAppContext = parent ? parent.appContext : null;
   const appContext = vnode.appContext || parentAppContext || {};
   appContext.globals = appContext.globals || {};
@@ -764,10 +881,6 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
   }
 
   const serverState = (vnode.props || {}).initialState || {};
-  console.log(
-    '[Renderer] serverState (from vnode.props.initialState):',
-    serverState,
-  );
 
   const finalState = { ...resolvedProps, ...setupResult };
 
@@ -799,7 +912,6 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
   }
 
   instance.internalCtx = finalState;
-  console.log('[Renderer] finalState (merged):', instance.internalCtx);
 
   instance.ctx = new Proxy(
     {},
@@ -808,6 +920,7 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
         key in instance.internalCtx ||
         key === '$attrs' ||
         key === '$slots' ||
+        key === '$props' ||
         (instance.appContext.params && key === 'params') ||
         (instance.type.components && key in instance.type.components) ||
         (instance.appContext.globals && key in instance.appContext.globals),
@@ -824,6 +937,15 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
         }
         if (key === '$slots') {
           return instance.slots;
+        }
+        if (key === '$props') {
+          const allProps = { ...instance.props };
+          for (const key in allProps) {
+            if (isRef(allProps[key])) {
+              allProps[key] = allProps[key].value;
+            }
+          }
+          return allProps;
         }
         if (instance.type.components && key in instance.type.components)
           return instance.type.components[key];
@@ -873,28 +995,37 @@ export class VNode {
 }
 
 export function createVnode(type, propsOrChildren, children) {
-  let props = propsOrChildren || {};
-  let finalChildren;
+  let props = {};
+  let finalChildren = null;
 
-  if (arguments.length === 2) {
-    if (
-      isObjectAndNotArray(propsOrChildren) &&
-      !Array.isArray(propsOrChildren)
-    ) {
-      props = propsOrChildren;
-      finalChildren = null;
-    } else {
-      props = {};
-      finalChildren = propsOrChildren;
-    }
-  } else if (arguments.length > 2) {
-    props = propsOrChildren || {};
-    finalChildren = Array.prototype.slice.call(arguments, 2);
-    if (finalChildren.length === 1) {
-      finalChildren = finalChildren[0];
+  if (isObjectAndNotArray(propsOrChildren) && !Array.isArray(propsOrChildren)) {
+    props = propsOrChildren;
+    if (arguments.length > 2) {
+      finalChildren = Array.prototype.slice.call(arguments, 2);
     }
   } else {
-    props = propsOrChildren || {};
+    finalChildren =
+      arguments.length > 1 ? Array.prototype.slice.call(arguments, 1) : [];
+  }
+
+  if (Array.isArray(finalChildren)) {
+    if (finalChildren.length === 1) {
+      finalChildren = finalChildren[0];
+    } else if (finalChildren.length === 0) {
+      finalChildren = null;
+    }
+  }
+
+  if (arguments.length > 2) {
+    const lastArg = arguments[arguments.length - 1];
+    if (isObjectAndNotArray(lastArg) && !lastArg.type) {
+      finalChildren = lastArg;
+    }
+  } else if (
+    isObjectAndNotArray(children) &&
+    !Array.isArray(children) &&
+    !children.type
+  ) {
     finalChildren = children;
   }
 
@@ -905,7 +1036,19 @@ export function createVnode(type, propsOrChildren, children) {
   return new VNode(type, props, finalChildren);
 }
 
-export const h = createVnode;
+export const h = (...args) => {
+  if (typeof args[0] === 'function' || typeof args[0] === 'object') {
+    const [type, props, children] = args;
+    if (
+      args.length === 3 &&
+      isObjectAndNotArray(children) &&
+      !Array.isArray(children)
+    ) {
+      return new VNode(type, props || {}, children);
+    }
+  }
+  return createVnode(...args);
+};
 
 function getLongestIncreasingSubsequence(arr) {
   if (arr.length === 0) return [];
@@ -1017,6 +1160,10 @@ async function renderVnode(vnode, parentComponent, context) {
       return `<!--${escapeHtml(children)}-->`;
     case Fragment:
     case Teleport:
+      if (isObjectAndNotArray(children) && !Array.isArray(children)) {
+        const slotContent = children.default ? children.default() : [];
+        return await renderChildren(slotContent, parentComponent, context);
+      }
       return await renderChildren(children, parentComponent, context);
     default:
       if (isString(type)) {
@@ -1029,6 +1176,11 @@ async function renderVnode(vnode, parentComponent, context) {
         return html;
       } else if (isObjectAndNotArray(type)) {
         const instance = createComponent(vnode, parentComponent, true);
+
+        if (parentComponent) {
+          // noop
+        }
+
         let subTree = instance.render.call(instance.ctx, instance.ctx);
 
         if (!subTree) {
@@ -1092,7 +1244,7 @@ function escapeHtml(str) {
       case '"':
         return '&quot;';
       case "'":
-        return '&#39;';
+        return '&#039;';
       default:
         return match;
     }

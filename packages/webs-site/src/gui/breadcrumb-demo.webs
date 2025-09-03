@@ -2,7 +2,10 @@
   import Breadcrumb from './breadcrumb.webs';
 
   export default {
-    components: Breadcrumb.components,
+    components: {
+      breadcrumb: Breadcrumb,
+      ...Breadcrumb.components,
+    },
   };
 </script>
 

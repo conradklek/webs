@@ -1,46 +1,33 @@
 <script>
-  import { session, onReady, state } from '@conradklek/webs';
+  import { session } from '@conradklek/webs';
 
   export default {
     props: {
       user: Object,
     },
     setup(props) {
-      const isReady = state(false);
-
-      onReady(() => {
-        if (props.user) {
-          session.setUser(props.user);
-        }
-        isReady.value = true;
-      });
-
       function handleLogout() {
         session.logout();
+        window.location.href = '/';
       }
 
-      return { session, handleLogout, isReady };
+      return { ...props, session, handleLogout };
     },
   };
 </script>
 
 <template>
-  <div class="w-full">
-    <div
-      w-if="isReady"
-      class="w-full flex flex-row items-center justify-end gap-4"
-    >
-      <nav w-if="!session?.user" class="contents">
+  <div class="flex-1">
+    <div class="w-full flex flex-row items-center justify-end gap-4">
+      <nav w-if="!user" class="contents">
         <a href="/login" class="link">Login</a>
         <span>|</span>
         <a href="/signup" class="link">Signup</a>
       </nav>
       <nav w-else class="contents">
-        <a :href="'/profile/' + session.user?.username" class="link"
-          >@{{ session.user?.username }}</a
-        >
+        <a :href="'/' + user.username" class="link">@{{ user.username }}</a>
         <span>|</span>
-        <button type="button" @click="handleLogout">Logout</button>
+        <button type="button" @click="handleLogout" class="link">Logout</button>
       </nav>
     </div>
   </div>

@@ -10,6 +10,7 @@
   --color-green: #39FF14;
   --color-yellow: #FFD700;
   --color-red: #CC0000;
+
   --color-background: oklch(1 0 0);
   --color-foreground: oklch(0.145 0 0);
   --color-card: oklch(1 0 0);
@@ -28,6 +29,7 @@
   --color-border: oklch(0.922 0 0);
   --color-input: oklch(0.922 0 0);
   --color-ring: oklch(0.708 0 0);
+  
   --font-primary-serif: 'Georgia', Times, 'Times New Roman', serif;
   --font-primary-sans: 'Verdana', Geneva, sans-serif;
   --font-primary-mono: 'Courier New', 'Courier', monospace;

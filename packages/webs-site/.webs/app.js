@@ -21,14 +21,24 @@ const componentLoaders = new Map([
   ['gui/checkbox-demo', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/gui/checkbox-demo.js')],
   ['gui/radio-group', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/gui/radio-group.js')],
   ['gui/accordion', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/gui/accordion.js')],
+  ['app/layout', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/layout.js')],
   ['app/index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/index.js')],
   ['app/signup', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/signup.js')],
   ['app/login', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/login.js')],
-  ['app/profile/[username]', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/profile/[username].js')],
+  ['app/[username]', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/[username].js')],
   ['app/components/[component]', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/components/[component].js')],
   ['app/components/index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/components/index.js')],
+  ['app/irc/layout', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/irc/layout.js')],
   ['app/irc/[channel]', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/irc/[channel].js')],
-  ['app/irc/index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/irc/index.js')]
+  ['app/irc/index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/irc/index.js')],
+  ['wrappers/app_[username]', () => import('/Users/conradklek/webs/packages/webs-site/.webs/wrappers/app_[username].js')],
+  ['wrappers/app_components_[component]', () => import('/Users/conradklek/webs/packages/webs-site/.webs/wrappers/app_components_[component].js')],
+  ['wrappers/app_index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/wrappers/app_index.js')],
+  ['wrappers/app_signup', () => import('/Users/conradklek/webs/packages/webs-site/.webs/wrappers/app_signup.js')],
+  ['wrappers/app_login', () => import('/Users/conradklek/webs/packages/webs-site/.webs/wrappers/app_login.js')],
+  ['wrappers/app_irc_index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/wrappers/app_irc_index.js')],
+  ['wrappers/app_irc_[channel]', () => import('/Users/conradklek/webs/packages/webs-site/.webs/wrappers/app_irc_[channel].js')],
+  ['wrappers/app_components_index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/wrappers/app_components_index.js')]
 ]);
 
 hydrate(componentLoaders, dbConfig);

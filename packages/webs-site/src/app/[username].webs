@@ -1,10 +1,8 @@
 <script>
-  import UserNavbar from '../../gui/user-navbar.webs';
-  import TodoList from '../../gui/todo-list.webs';
+  import TodoList from '../gui/todo-list.webs';
 
   export default {
     components: {
-      'user-navbar': UserNavbar,
       'todo-list': TodoList,
     },
     actions: {
@@ -28,12 +26,5 @@
 </script>
 
 <template>
-  <div class="w-full p-8 flex flex-col items-start justify-start gap-6">
-    <div class="w-full mb-2 flex flex-row items-center justify-between gap-4">
-      <a href="/" class="font-medium">webs.site</a>
-      <user-navbar />
-    </div>
-
-    <todo-list :initialState="initialState" />
-  </div>
+  <todo-list :initialState="initialState" />
 </template>

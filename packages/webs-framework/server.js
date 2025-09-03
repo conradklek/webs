@@ -532,11 +532,12 @@ async function handleServerActions(req, context) {
 
 async function handleDataRequest(req, routeDefinition, params) {
   const { db, user } = req;
-  const props = { user, params, db };
+  const props = { user, params };
 
   const appContext = {
     params: params,
     components: routeDefinition.component.components || {},
+    db: db,
   };
 
   const componentVnode = h(routeDefinition.component, props);
@@ -570,7 +571,7 @@ function handlePageRequest(req, routeDefinition, params, context) {
       });
     }
 
-    const props = { user: user, params, db, initialState };
+    const props = { user: user, params, initialState };
     const fromRoute = { path: req.headers.get('referer') || null };
     const toRoute = {
       path: url.pathname,
@@ -594,6 +595,7 @@ function handlePageRequest(req, routeDefinition, params, context) {
         const appContext = {
           params: params,
           components: routeDefinition.component.components || {},
+          db: db,
         };
 
         const componentVnode = h(routeDefinition.component, props);

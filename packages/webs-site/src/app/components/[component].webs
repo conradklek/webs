@@ -26,13 +26,14 @@
 </script>
 
 <template>
-  <div class="w-full p-8 flex flex-col items-start justify-start gap-6">
+  <div class="w-full flex flex-col items-start justify-start gap-6">
     <div class="w-full flex flex-row items-center justify-start gap-4">
       <a href="/components" class="link">components</a>
-      <span>|</span>
+      <span>/</span>
       <h1>{{ params.component }}</h1>
     </div>
-    <!-- This will now correctly find and render the registered component -->
-    <component :is="params.component + '-demo'"></component>
+    <div class="w-full p-6 border rounded-lg">
+      <component :is="params.component + '-demo'"></component>
+    </div>
   </div>
 </template>

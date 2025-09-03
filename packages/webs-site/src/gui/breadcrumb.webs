@@ -22,7 +22,7 @@
   export const BreadcrumbLink = {
     template(html) {
       return html`
-        <a class="text-blue-600 underline hover:opacity-75 active:opacity-50">
+        <a class="text-hyperlink underline hover:opacity-75 active:opacity-50">
           <slot></slot>
         </a>
       `;
@@ -50,7 +50,7 @@
         <li
           role="presentation"
           aria-hidden="true"
-          class="text-muted-foreground"
+          class="text-system"
         >
           /
         </li>

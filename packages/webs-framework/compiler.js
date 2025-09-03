@@ -128,6 +128,12 @@ export function generateRenderFn(ast) {
         .filter(Boolean)
         .join(',')}}`;
     },
+    genSlots(slots) {
+      const slotEntries = Object.entries(slots).map(([name, children]) => {
+        return `${name}: () => ${this.genChildren(children)}`;
+      });
+      return `{ ${slotEntries.join(', ')} }`;
+    },
     genChildren(children) {
       const childNodes = children
         .map((c) => this.genNode(c))
@@ -146,7 +152,7 @@ export function generateRenderFn(ast) {
         case NODE_TYPES.FRAGMENT:
           return `_h(_Fragment, null, ${this.genChildren(node.children)})`;
         case NODE_TYPES.COMPONENT: {
-          const slots = `{ default: () => ${this.genChildren(node.children)} }`;
+          const slots = this.genSlots(node.slots);
           let componentAccess;
           if (node.isDynamic) {
             const dynamicNameExpr = this.genExpr(node.tagName);
@@ -174,9 +180,9 @@ export function generateRenderFn(ast) {
         case NODE_TYPES.COMMENT:
           return `_h(_Comment, null, ${JSON.stringify(node.value)})`;
         case NODE_TYPES.SLOT: {
-          return `_h(_Fragment, null, _ctx.$slots.default ? _ctx.$slots.default() : ${this.genChildren(
-            node.children,
-          )})`;
+          const slotName = node.name || 'default';
+          const fallbackContent = this.genChildren(node.children);
+          return `_h(_Fragment, null, _ctx.$slots.${slotName} ? _ctx.$slots.${slotName}() : ${fallbackContent})`;
         }
         case NODE_TYPES.IF: {
           const genBranch = (branch) => {
@@ -271,6 +277,34 @@ export class Compiler {
       return null;
     }
   }
+
+  _processSlots(children) {
+    const slots = {};
+    const defaultChildren = [];
+    let hasNamedSlots = false;
+
+    for (const child of children) {
+      if (child.type === 'element' && child.tagName === 'template') {
+        const slotAttr = child.attributes.find((a) => a.name.startsWith('#'));
+        if (slotAttr) {
+          const slotName = slotAttr.name.substring(1) || 'default';
+          slots[slotName] = this._transformChildren(child.children);
+          hasNamedSlots = true;
+          continue;
+        }
+      }
+      if (child.type === 'text' && !child.content.trim()) {
+        continue;
+      }
+      defaultChildren.push(child);
+    }
+
+    if (defaultChildren.length > 0 || !hasNamedSlots) {
+      slots.default = this._transformChildren(defaultChildren);
+    }
+    return slots;
+  }
+
   _transformNode(node) {
     switch (node.type) {
       case 'root':
@@ -295,7 +329,7 @@ export class Compiler {
 
     const unescape = (str) => {
       return str.replace(
-        /&amp;|&lt;|&gt;|&quot;|&#039;|&larr;|&rarr;|&uarr;|&darr;|&harr;|&crarr;|&nbsp;/g,
+        /&amp;|&lt;|&gt;|&quot;|&#039;|&larr;|&rarr;|&uarr;|&darr;|&harr;|&crarr;|&nbsp;|&copy;/g,
         (tag) => {
           const replacements = {
             '&amp;': '&',
@@ -310,6 +344,7 @@ export class Compiler {
             '&harr;': '↔',
             '&crarr;': '↵',
             '&nbsp;': ' ',
+            '&copy;': '©',
           };
           return replacements[tag] || tag;
         },
@@ -451,16 +486,20 @@ export class Compiler {
         children: [this._transformNode(forNodeChild)],
       };
     }
-    return this._transformNativeElement(el);
-  }
-  _transformNativeElement(el) {
+
     if (el.tagName === 'slot') {
+      const nameAttr = el.attributes.find((a) => a.name === 'name');
       return {
         type: NODE_TYPES.SLOT,
+        name: nameAttr ? nameAttr.value : 'default',
         children: this._transformChildren(el.children),
       };
     }
 
+    return this._transformNativeElement(el);
+  }
+
+  _transformNativeElement(el) {
     if (el.tagName === 'component') {
       const isAttr = el.attributes.find(
         (a) => a.name === ':is' || a.name === 'is',
@@ -473,7 +512,7 @@ export class Compiler {
           properties: this._processAttributes(
             el.attributes.filter((a) => a.name !== ':is' && a.name !== 'is'),
           ),
-          children: this._transformChildren(el.children),
+          slots: this._processSlots(el.children),
         };
       }
     }
@@ -482,13 +521,21 @@ export class Compiler {
     const registeredCompKey = this.componentNameMap.get(tagName);
     const isComponent = !!registeredCompKey;
 
-    const node = {
-      type: isComponent ? NODE_TYPES.COMPONENT : NODE_TYPES.ELEMENT,
-      tagName: isComponent ? registeredCompKey : tagName,
-      properties: this._processAttributes(el.attributes),
-      children: this._transformChildren(el.children),
-    };
-    return node;
+    if (isComponent) {
+      return {
+        type: NODE_TYPES.COMPONENT,
+        tagName: registeredCompKey,
+        properties: this._processAttributes(el.attributes),
+        slots: this._processSlots(el.children),
+      };
+    } else {
+      return {
+        type: NODE_TYPES.ELEMENT,
+        tagName: tagName,
+        properties: this._processAttributes(el.attributes),
+        children: this._transformChildren(el.children),
+      };
+    }
   }
 
   _processAttributes(attrs) {
@@ -540,7 +587,7 @@ export class Compiler {
           name: propName.includes('-') ? propName : camelize(propName),
           expression: this._parseExpr(attr.value),
         });
-      } else if (!name.startsWith('w-')) {
+      } else if (!name.startsWith('w-') && !name.startsWith('#')) {
         properties.push({ type: ATTR_TYPES.STATIC, name, value: attr.value });
       }
     }
@@ -548,7 +595,13 @@ export class Compiler {
   }
 }
 
+const compileCache = new WeakMap();
+
 export function compile(componentDef) {
+  if (compileCache.has(componentDef)) {
+    return compileCache.get(componentDef);
+  }
+
   let templateContent = componentDef.template;
   if (typeof templateContent === 'function') {
     const htmlTagFn = (strings, ...values) => {
@@ -576,5 +629,7 @@ export function compile(componentDef) {
 
   const finalComponentDef = { ...componentDef, template: templateContent };
   const compiler = new Compiler(finalComponentDef);
-  return compiler.compile();
+  const renderFn = compiler.compile();
+  compileCache.set(componentDef, renderFn);
+  return renderFn;
 }

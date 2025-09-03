@@ -1,6 +1,117 @@
 import { createRenderer, createVnode } from './renderer';
 import { syncEngine, session, localDB } from './index';
 
+let appInstance = null;
+let componentManifestInstance = null;
+const prefetchCache = new Map();
+
+async function performNavigation(url, { isPopState = false } = {}) {
+  console.log(`[Router] Performing navigation to: ${url.href}`, { isPopState });
+  try {
+    let data;
+    if (!isPopState && prefetchCache.has(url.href)) {
+      data = prefetchCache.get(url.href);
+      prefetchCache.delete(url.href);
+      console.log('[Router] Using prefetched data for navigation.');
+    } else {
+      console.log('[Router] Fetching navigation data from server.');
+      const response = await fetch(url.pathname + url.search, {
+        headers: { 'X-Webs-Navigate': 'true' },
+      });
+
+      if (!response.ok) {
+        console.warn(
+          `[Router] Navigation fetch failed with status ${response.status}. Falling back to full page load.`,
+        );
+        window.location.assign(url.href);
+        return;
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = deserializeState(await response.json());
+      } else {
+        console.warn(
+          '[Router] Response was not JSON. Falling back to full page load.',
+        );
+        window.location.assign(url.href);
+        return;
+      }
+    }
+
+    console.log('[Router] Navigation data received:', data);
+
+    window.__WEBS_STATE__ = { componentName: data.componentName };
+
+    session.setUser(data.user);
+
+    const componentLoader = componentManifestInstance.get(data.componentName);
+    if (!componentLoader) {
+      throw new Error(
+        `[Router] Component loader not found for: ${data.componentName}`,
+      );
+    }
+    const componentModule = await componentLoader();
+    const newComponentDef = componentModule.default;
+    console.log(
+      `[Router] Loaded new component definition for "${data.componentName}"`,
+    );
+
+    if (!isPopState) {
+      window.history.pushState({}, '', url.href);
+    }
+    document.title = data.title;
+
+    const oldVnode = appInstance._vnode;
+    const newProps = {
+      params: data.params,
+      initialState: data.componentState || {},
+      user: data.user || null,
+    };
+
+    appInstance._context.params = data.params;
+
+    if (
+      newProps.initialState &&
+      newProps.initialState.initialTodos &&
+      newProps.initialState.initialTodos.length > 0
+    ) {
+      await localDB.bulkPut('todos', newProps.initialState.initialTodos);
+    }
+
+    const newVnode = createVnode(newComponentDef, newProps);
+    newVnode.appContext = appInstance._context;
+
+    console.log('[Router] Patching DOM with new component...');
+    appInstance._context.patch(oldVnode, newVnode, appInstance._container);
+
+    appInstance._vnode = newVnode;
+    console.log(`[Router] Navigation to "${data.componentName}" complete.`);
+  } catch (err) {
+    console.error('[Router] Client-side navigation failed:', err);
+    window.location.assign(url.href);
+  }
+}
+
+export const router = {
+  push(href) {
+    const url = new URL(href, window.location.origin);
+    if (url.origin !== window.location.origin) {
+      window.location.assign(href);
+      return;
+    }
+
+    if (
+      url.pathname === window.location.pathname &&
+      url.search === window.location.search
+    ) {
+      return;
+    }
+
+    performNavigation(url);
+  },
+};
+
 function normalizeClass(value) {
   let res = '';
   if (typeof value === 'string') {
@@ -104,10 +215,10 @@ export const createApp = createAppApi({
 
 export async function hydrate(componentManifest, dbConfig = null) {
   if (typeof window === 'undefined') return;
-  console.log('[Runtime] Starting hydration...');
+  console.log('[Hydration] Starting application hydration.');
 
   const websState = deserializeState(window.__WEBS_STATE__ || {});
-  console.log('[Runtime] Deserialized websState:', websState);
+  console.log('[Hydration] Initial state from server:', websState);
 
   session.setUser(websState.user);
 
@@ -125,29 +236,37 @@ export async function hydrate(componentManifest, dbConfig = null) {
 
   const root = document.getElementById('root');
   if (!root) {
-    return console.error('Hydration failed: #root element not found.');
+    return console.error(
+      '[Hydration] Hydration failed: #root element not found.',
+    );
   }
+  console.log('[Hydration] Root element found:', root);
 
   window.__WEBS_STATE__ = { componentName: websState.componentName };
   const { componentName, user = {}, params, componentState } = websState;
-  console.log('[Runtime] Extracted componentName:', componentName);
-  console.log('[Runtime] Extracted componentState:', componentState);
 
   if (!componentName) {
-    console.error('Hydration failed: No component name provided in state.');
+    console.error(
+      '[Hydration] Hydration failed: No component name provided in state.',
+    );
     return;
   }
 
   const componentLoader = componentManifest.get(componentName);
   if (!componentLoader) {
     console.error(
-      `Hydration failed: Component loader not found for "${componentName}".`,
+      `[Hydration] Hydration failed: Component loader not found for "${componentName}".`,
     );
     return;
   }
 
+  console.log(`[Hydration] Loading component: "${componentName}"`);
   const componentModule = await componentLoader();
   const rootComponent = componentModule.default;
+  console.log(
+    `[Hydration] Loaded root component definition for "${componentName}"`,
+    rootComponent,
+  );
 
   if (
     !rootComponent ||
@@ -157,7 +276,7 @@ export async function hydrate(componentManifest, dbConfig = null) {
       typeof rootComponent.template !== 'string')
   ) {
     console.error(
-      `Hydration failed: Default export from component "${componentName}" is not a valid component (missing render function or template).`,
+      `[Hydration] Hydration failed: Default export from component "${componentName}" is not a valid component (missing render function or template).`,
       'Received:',
       rootComponent,
     );
@@ -169,17 +288,21 @@ export async function hydrate(componentManifest, dbConfig = null) {
     initialState: componentState || {},
     user,
   };
-  console.log('[Runtime] Props object passed to createApp:', props);
+  console.log('[Hydration] Creating app with initial props:', props);
 
   const app = createApp(rootComponent, props);
-  const rootInstance = app.mount(root, componentManifest);
-  rootInstance.hooks.onReady?.forEach((h) =>
-    h.call(rootInstance.ctx, { user, initialState: componentState || {} }),
-  );
+  appInstance = app;
+  componentManifestInstance = componentManifest;
+
+  console.log('[Hydration] Mounting app into #root...');
+  app.mount(root, componentManifest);
+  console.log('[Hydration] App mount process finished.');
 }
 
 function installNavigationHandler(app, componentManifest) {
-  const prefetchCache = new Map();
+  appInstance = app;
+  componentManifestInstance = componentManifest;
+
   const prefetch = async (url) => {
     if (prefetchCache.has(url.href)) {
       return;
@@ -245,155 +368,13 @@ function installNavigationHandler(app, componentManifest) {
     const href = link.getAttribute('href');
     if (!href || href.startsWith('#')) return;
 
-    const url = new URL(href, window.location.origin);
-    if (url.origin !== window.location.origin) {
-      return;
-    }
-
     e.preventDefault();
-
-    if (
-      url.pathname === window.location.pathname &&
-      url.search === window.location.search
-    ) {
-      return;
-    }
-
-    try {
-      let data;
-      if (prefetchCache.has(url.href)) {
-        data = prefetchCache.get(url.href);
-        prefetchCache.delete(url.href);
-      } else {
-        const response = await fetch(url.pathname + url.search, {
-          headers: { 'X-Webs-Navigate': 'true' },
-        });
-
-        if (!response.ok) {
-          console.warn(
-            `Navigation fetch failed with status ${response.status}. Falling back to full page load.`,
-          );
-          window.location.assign(url.href);
-          return;
-        }
-
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          data = deserializeState(await response.json());
-        } else {
-          return;
-        }
-      }
-
-      window.__WEBS_STATE__ = { componentName: data.componentName };
-
-      session.setUser(data.user);
-
-      const componentLoader = componentManifest.get(data.componentName);
-      if (!componentLoader) {
-        throw new Error(
-          `Component loader not found for: ${data.componentName}`,
-        );
-      }
-      const componentModule = await componentLoader();
-      const newComponentDef = componentModule.default;
-
-      window.history.pushState({}, '', url.href);
-      document.title = data.title;
-
-      const oldVnode = app._vnode;
-      const newProps = {
-        params: data.params,
-        initialState: data.componentState || {},
-      };
-
-      app._context.params = data.params;
-
-      if (
-        newProps.initialState &&
-        newProps.initialState.initialTodos &&
-        newProps.initialState.initialTodos.length > 0
-      ) {
-        await localDB.bulkPut('todos', newProps.initialState.initialTodos);
-      }
-
-      const newVnode = createVnode(newComponentDef, newProps);
-      newVnode.appContext = app._context;
-
-      app._context.patch(oldVnode, newVnode, app._container);
-
-      app._vnode = newVnode;
-    } catch (err) {
-      console.error('Client-side navigation failed:', err);
-      window.location.assign(url.href);
-    }
+    router.push(href);
   });
 
   window.addEventListener('popstate', async () => {
     const url = new URL(window.location.href);
-    try {
-      const response = await fetch(url.pathname + url.search, {
-        headers: { 'X-Webs-Navigate': 'true' },
-      });
-
-      if (!response.ok) {
-        console.warn(
-          `Popstate fetch failed with status ${response.status}. Falling back to full page load.`,
-        );
-        window.location.assign(url.href);
-        return;
-      }
-
-      const contentType = response.headers.get('content-type');
-      let data;
-      if (contentType && contentType.includes('application/json')) {
-        data = deserializeState(await response.json());
-      } else {
-        window.location.assign(url.href);
-        return;
-      }
-
-      window.__WEBS_STATE__ = { componentName: data.componentName };
-
-      session.setUser(data.user);
-
-      const componentLoader = componentManifest.get(data.componentName);
-      if (!componentLoader) {
-        throw new Error(
-          `Component loader not found for: ${data.componentName}`,
-        );
-      }
-      const componentModule = await componentLoader();
-      const newComponentDef = componentModule.default;
-
-      document.title = data.title;
-
-      const oldVnode = app._vnode;
-      const newProps = {
-        params: data.params,
-        initialState: data.componentState || {},
-      };
-
-      app._context.params = data.params;
-
-      if (
-        newProps.initialState &&
-        newProps.initialState.initialTodos &&
-        newProps.initialState.initialTodos.length > 0
-      ) {
-        await localDB.bulkPut('todos', newProps.initialState.initialTodos);
-      }
-
-      const newVnode = createVnode(newComponentDef, newProps);
-      newVnode.appContext = app._context;
-
-      app._context.patch(oldVnode, newVnode, app._container);
-
-      app._vnode = newVnode;
-    } catch (err) {
-      console.error('Popstate navigation failed:', err);
-      window.location.assign(url.href);
-    }
+    performNavigation(url, { isPopState: true });
   });
 }
 

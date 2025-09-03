@@ -12,11 +12,6 @@
               `SELECT id, channel, username, message, user_id, created_at FROM chat_messages WHERE channel = ? ORDER BY created_at ASC`,
             )
             .all(channel);
-          console.log(
-            `[SSR] Fetched history for ${channel}:`,
-            history.length,
-            'messages',
-          );
           return { history };
         } catch (error) {
           console.error(`[SSR] Error fetching history for ${channel}:`, error);
@@ -25,29 +20,34 @@
       },
     },
     setup(props, ctx) {
-      const cleanChannelName = ctx.params.channel.toLowerCase();
-      const formattedChannelName = `#${cleanChannelName}`;
+      const formattedChannelName = `#${ctx.params.channel.toLowerCase()}`;
       const initialState = props.initialState || {};
 
       const messages = resource('chat_messages');
       const currentMessage = state('');
+      const messageListEl = state(null);
 
       onReady(() => {
         messages.hydrate(initialState.history || []);
+        messageListEl.value = document.querySelector('.message-list');
+        setTimeout(() => {
+          if (messageListEl.value) {
+            messageListEl.value.scrollTop = messageListEl.value.scrollHeight;
+          }
+        }, 50);
       });
 
       const handleSend = async () => {
         const msg = currentMessage.value.trim();
-        if (msg) {
-          const newMessage = {
+        if (msg && session.user) {
+          await messages.put({
             id: crypto.randomUUID(),
             channel: formattedChannelName,
-            username: session.user?.username || 'anon',
+            username: session.user.username,
             message: msg,
+            user_id: session.user.id,
             created_at: new Date().toISOString(),
-          };
-
-          await messages.put(newMessage);
+          });
           currentMessage.value = '';
         }
       };
@@ -56,14 +56,14 @@
         () => messages.state.data,
         () => {
           setTimeout(() => {
-            const list = document.querySelector('.message-list');
-            if (list) list.scrollTop = list.scrollHeight;
+            if (messageListEl.value) {
+              messageListEl.value.scrollTop = messageListEl.value.scrollHeight;
+            }
           }, 0);
         },
       );
 
       return {
-        cleanChannelName,
         formattedChannelName,
         session,
         messages,
@@ -75,60 +75,49 @@
 </script>
 
 <template>
-  <div
-    class="w-full p-8 flex flex-col items-start justify-start gap-6 h-screen"
-  >
-    <div class="w-full flex flex-row items-center justify-between gap-4">
-      <a href="/" class="link font-medium">webs.site</a>
-      <user-navbar />
-    </div>
-    <main class="flex-1 w-full h-full">
-      <div class="chat-container">
-        <div class="message-list">
-          <div
-            w-for="msg in messages.state.data"
-            :key="msg.id"
-            class="message-item"
+  <div class="chat-container">
+    <h2 class="p-2 border-b border-gray-300 font-bold bg-gray-100 rounded-t-lg">
+      {{ formattedChannelName }}
+    </h2>
+    <div class="message-list">
+      <div
+        w-for="msg in messages.state.data"
+        :key="msg.id"
+        class="message-item"
+      >
+        <div class="py-1 px-2 flex">
+          <span class="font-bold mr-2 text-left flex-shrink-0"
+            >&lt;{{ msg.username }}&gt;</span
           >
-            <div class="py-1 px-2 flex">
-              <span class="font-bold mr-2 text-left flex-shrink-0"
-                >&lt;{{ msg.username }}&gt;</span
-              >
-              <span class="break-words min-w-0">{{ msg.message }}</span>
-            </div>
-          </div>
-        </div>
-        <div class="chat-input-area">
-          <div class="status-indicator"></div>
-          <form @submit.prevent="handleSend" class="w-full">
-            <input
-              type="text"
-              bind:value="currentMessage"
-              placeholder="Type a message..."
-              class="chat-input"
-              :disabled="messages.state.isLoading"
-            />
-          </form>
+          <span class="break-words min-w-0">{{ msg.message }}</span>
         </div>
       </div>
-    </main>
+    </div>
+    <div class="chat-input-area">
+      <form @submit.prevent="handleSend" class="w-full">
+        <input
+          type="text"
+          bind:value="currentMessage"
+          placeholder="{{ session.user ? 'Type a message...' : 'You must be logged in to chat.' }}"
+          class="chat-input"
+          :disabled="!session.user"
+        />
+      </form>
+    </div>
   </div>
 </template>
 
 <style>
   .chat-container {
-    @apply text-sm font-mono border border-border h-full flex flex-col;
+    @apply text-sm font-mono border border-gray-300 h-full flex flex-col bg-white rounded-lg shadow-md;
   }
   .message-list {
     @apply flex-grow p-2 overflow-y-auto;
   }
   .chat-input-area {
-    @apply border-t border-border flex items-center;
-  }
-  .status-indicator {
-    @apply w-2.5 h-2.5 rounded-full mx-3 flex-shrink-0 transition-colors;
+    @apply border-t border-gray-300 flex items-center bg-gray-50 rounded-b-lg;
   }
   .chat-input {
-    @apply w-full p-2 focus:outline-none text-sm font-mono;
+    @apply w-full p-2 focus:outline-none text-sm font-mono bg-transparent disabled:bg-gray-100 disabled:cursor-not-allowed;
   }
 </style>

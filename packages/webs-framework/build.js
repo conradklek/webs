@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { rm, mkdir, exists, writeFile } from 'fs/promises';
-import { join, resolve } from 'path';
+import { join, resolve, dirname, basename } from 'path';
 import { Database } from 'bun:sqlite';
 
 import websPlugin from './plugin';
@@ -23,6 +23,7 @@ const config = {
   OUTDIR: resolve(CWD, 'dist'),
   TMPDIR: resolve(CWD, '.webs'),
   TMP_SERVER_DIR: resolve(CWD, '.webs/server'),
+  TMP_WRAPPERS_DIR: resolve(CWD, '.webs/wrappers'),
   TMP_GENERATED_ACTIONS: resolve(CWD, '.webs/generated-actions.js'),
   TMP_COMPONENT_MANIFEST: resolve(CWD, '.webs/component-manifest.js'),
   TMP_CSS: resolve(CWD, '.webs/tmp.css'),
@@ -95,6 +96,8 @@ async function buildServerComponents() {
     return { success: true, entrypoints: [], pageEntrypoints: [] };
   }
 
+  if (config.IS_PROD) await cleanDirectory(config.OUTDIR);
+
   const result = await Bun.build({
     entrypoints,
     outdir: config.TMP_SERVER_DIR,
@@ -147,6 +150,7 @@ async function prepareClientEntrypoint(allEntrypoints) {
   );
 
   const glob = new Bun.Glob('**/*.js');
+
   if (await exists(config.TMP_SERVER_DIR)) {
     for await (const file of glob.scan(config.TMP_SERVER_DIR)) {
       const fullPath = resolve(config.TMP_SERVER_DIR, file);
@@ -160,6 +164,16 @@ async function prepareClientEntrypoint(allEntrypoints) {
           `['${componentName}', () => import('${relativePath}')]`,
         );
       }
+    }
+  }
+
+  if (await exists(config.TMP_WRAPPERS_DIR)) {
+    for await (const file of glob.scan(config.TMP_WRAPPERS_DIR)) {
+      const componentName = `wrappers/${file.replace('.js', '')}`;
+      const relativePath = join(config.TMP_WRAPPERS_DIR, file);
+      componentLoaders.push(
+        `['${componentName}', () => import('${relativePath}')]`,
+      );
     }
   }
 
@@ -285,11 +299,27 @@ async function buildClientAndNotify(entrypoints) {
   return manifest;
 }
 
+async function findLayoutsForPage(pagePath) {
+  const layouts = [];
+  let currentDir = dirname(pagePath);
+  while (currentDir.startsWith(config.APP_DIR)) {
+    const layoutPath = join(currentDir, 'layout.webs');
+    if (await exists(layoutPath)) {
+      layouts.push(layoutPath);
+    }
+    if (currentDir === config.APP_DIR) break;
+    currentDir = dirname(currentDir);
+  }
+  return layouts.reverse();
+}
+
 async function generateRoutesFromFileSystem(pageEntrypoints) {
   console.log('[Webs] Generating routes from server components...');
   if (!(await exists(config.TMP_SERVER_DIR))) {
     return {};
   }
+
+  await ensureDir(config.TMP_WRAPPERS_DIR);
 
   const pageFiles = new Set(
     (pageEntrypoints || []).map((p) => p.substring(config.SRC_DIR.length + 1)),
@@ -306,38 +336,106 @@ async function generateRoutesFromFileSystem(pageEntrypoints) {
     Object.assign(actionDefinitions, generatedActionsModule);
   }
 
+  const compiledPageModules = new Map();
   for await (const file of glob.scan(config.TMP_SERVER_DIR)) {
     const fullPath = resolve(config.TMP_SERVER_DIR, file);
     const relativePath = fullPath.substring(config.TMP_SERVER_DIR.length + 1);
-
     if (pageFiles.has(relativePath.replace('.js', '.webs'))) {
       const mod = await import(`${fullPath}?t=${Date.now()}`);
-      if (!mod.default) {
-        continue;
+      if (mod.default) {
+        compiledPageModules.set(relativePath.replace('.js', ''), mod);
       }
-
-      let componentName = relativePath.replace('.js', '');
-
-      let urlPath = componentName
-        .substring('app/'.length)
-        .replace(/index$/, '')
-        .replace(/\[(\w+)\]/g, ':$1');
-
-      if (urlPath.endsWith('/')) urlPath = urlPath.slice(0, -1);
-      if (!urlPath.startsWith('/')) urlPath = '/' + urlPath;
-      if (urlPath === '') urlPath = '/';
-
-      routeDefinitions.push({
-        path: urlPath,
-        definition: {
-          component: mod.default,
-          actions: { ...mod.default.actions, ...actionDefinitions },
-          componentName: componentName,
-          middleware: mod.middleware || [],
-          websocket: mod.default.websocket || null,
-        },
-      });
     }
+  }
+
+  for (const [componentName, mod] of compiledPageModules.entries()) {
+    if (basename(componentName) === 'layout') {
+      continue;
+    }
+
+    const originalComponentPath = join(config.SRC_DIR, `${componentName}.webs`);
+    const layouts = await findLayoutsForPage(originalComponentPath);
+    let finalComponent = mod.default;
+    let finalComponentName = componentName;
+
+    if (layouts.length > 0) {
+      const wrapperName = `wrappers/${componentName.replace(/\//g, '_')}`;
+      const wrapperPath = join(
+        config.TMP_WRAPPERS_DIR,
+        `${componentName.replace(/\//g, '_')}.js`,
+      );
+
+      const layoutImports = layouts
+        .map((p, i) => {
+          const layoutComponentName = p
+            .substring(config.SRC_DIR.length + 1)
+            .replace('.webs', '');
+          const layoutVarName = `Layout${i}`;
+          const layoutModulePath = resolve(
+            config.TMP_SERVER_DIR,
+            `${layoutComponentName}.js`,
+          );
+          return `import ${layoutVarName} from '${layoutModulePath}';`;
+        })
+        .join('\n');
+
+      const pageModulePath = resolve(
+        config.TMP_SERVER_DIR,
+        `${componentName}.js`,
+      );
+      const pageVarName = 'PageComponent';
+
+      const wrapperContent = `
+        import { h } from '@conradklek/webs';
+        ${layoutImports}
+        import ${pageVarName} from '${pageModulePath}';
+        
+        export default {
+          name: '${wrapperName}',
+          props: {
+            params: Object,
+            initialState: Object,
+            user: Object,
+          },
+          render() {
+            const pageNode = h(${pageVarName}, { ...this.$props });
+            return ${layouts
+          .reverse()
+          .reduce(
+            (acc, _, i) =>
+              `h(Layout${i}, { ...this.$props }, { default: () => ${acc} })`,
+            'pageNode',
+          )};
+          }
+        };
+      `;
+
+      await writeFile(wrapperPath, wrapperContent);
+      const wrapperMod = await import(`${wrapperPath}?t=${Date.now()}`);
+      finalComponent = wrapperMod.default;
+      finalComponentName = wrapperName;
+    }
+
+    let urlPath = componentName
+      .substring('app/'.length)
+      .replace(/index$/, '')
+      .replace(/\/\(.*\)\//g, '/')
+      .replace(/\[(\w+)\]/g, ':$1');
+
+    if (urlPath.endsWith('/')) urlPath = urlPath.slice(0, -1);
+    if (!urlPath.startsWith('/')) urlPath = '/' + urlPath;
+    if (urlPath === '') urlPath = '/';
+
+    routeDefinitions.push({
+      path: urlPath,
+      definition: {
+        component: finalComponent,
+        actions: { ...mod.default.actions, ...actionDefinitions },
+        componentName: finalComponentName,
+        middleware: mod.middleware || [],
+        websocket: mod.default.websocket || null,
+      },
+    });
   }
 
   routeDefinitions.sort((a, b) => {
@@ -526,22 +624,9 @@ function startServer(serverContext) {
   return server;
 }
 
-async function runFullBuild() {
-  if (config.IS_PROD) await cleanDirectory(config.OUTDIR);
-
-  const { success, entrypoints, pageEntrypoints } =
-    await buildServerComponents();
-  if (!success) {
-    console.error('Initial build failed. Server will not start.');
-    return { manifest: null, entrypoints: [], pageEntrypoints: [] };
-  }
-
-  const manifest = await buildClientAndNotify(entrypoints);
-  return { manifest, entrypoints, pageEntrypoints };
-}
-
 async function main() {
   await ensureDir(config.TMPDIR);
+  await ensureDir(config.TMP_WRAPPERS_DIR);
 
   dbConfig = await loadDbConfig(config.CWD);
   const db = await createDatabaseAndActions(
@@ -561,17 +646,20 @@ async function main() {
     actionDefinitions: {},
   };
 
-  const { manifest, pageEntrypoints } = await runFullBuild();
-  if (!manifest) {
-    console.error('Initial build failed. Server will not start.');
-    if (config.IS_PROD) process.exit(1);
-    return;
-  }
-  serverContext.manifest = manifest;
+  const { entrypoints, pageEntrypoints } = await buildServerComponents();
+
   const { finalRoutes, actionDefinitions } =
     await generateRoutesFromFileSystem(pageEntrypoints);
   appRoutes = finalRoutes;
   serverContext.actionDefinitions = actionDefinitions;
+
+  const manifest = await buildClientAndNotify(entrypoints);
+  if (!manifest) {
+    console.error('Client build failed. Server will not start.');
+    if (config.IS_PROD) process.exit(1);
+    return;
+  }
+  serverContext.manifest = manifest;
 
   const server = startServer(serverContext);
 

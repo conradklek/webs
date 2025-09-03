@@ -10,6 +10,7 @@
   --color-green: #39FF14;
   --color-yellow: #FFD700;
   --color-red: #CC0000;
+
   --color-background: oklch(1 0 0);
   --color-foreground: oklch(0.145 0 0);
   --color-card: oklch(1 0 0);
@@ -28,6 +29,7 @@
   --color-border: oklch(0.922 0 0);
   --color-input: oklch(0.922 0 0);
   --color-ring: oklch(0.708 0 0);
+  
   --font-primary-serif: 'Georgia', Times, 'Times New Roman', serif;
   --font-primary-sans: 'Verdana', Geneva, sans-serif;
   --font-primary-mono: 'Courier New', 'Courier', monospace;
@@ -91,17 +93,14 @@
 }
 
 .chat-container {
-    @apply text-sm font-mono border border-border h-full flex flex-col;
+    @apply text-sm font-mono border border-gray-300 h-full flex flex-col bg-white rounded-lg shadow-md;
   }
   .message-list {
     @apply flex-grow p-2 overflow-y-auto;
   }
   .chat-input-area {
-    @apply border-t border-border flex items-center;
-  }
-  .status-indicator {
-    @apply w-2.5 h-2.5 rounded-full mx-3 flex-shrink-0 transition-colors;
+    @apply border-t border-gray-300 flex items-center bg-gray-50 rounded-b-lg;
   }
   .chat-input {
-    @apply w-full p-2 focus:outline-none text-sm font-mono;
+    @apply w-full p-2 focus:outline-none text-sm font-mono bg-transparent disabled:bg-gray-100 disabled:cursor-not-allowed;
   }

@@ -1,5 +1,6 @@
 import { store, state, computed, watch } from './reactivity';
 import { onUnmounted, onReady } from './renderer';
+import { router } from './runtime';
 
 export * from './reactivity';
 export * from './renderer';
@@ -49,6 +50,7 @@ const sessionStore = store({
         }
         const user_data = await response.json();
         this.user = user_data;
+        return user_data;
       } catch (err) {
         this.error = err.message;
         console.error('Login failed:', err);
@@ -573,4 +575,4 @@ export function resource(tableName, initialData = []) {
   return { state: s, hydrate, put, destroy };
 }
 
-export { session, localDB, syncEngine, action };
+export { session, localDB, syncEngine, action, router };

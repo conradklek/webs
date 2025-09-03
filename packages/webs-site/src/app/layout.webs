@@ -1,0 +1,29 @@
+<script>
+  import UserNavbar from '../gui/user-navbar.webs';
+
+  export default {
+    components: {
+      'user-navbar': UserNavbar,
+    },
+  };
+</script>
+
+<template>
+  <div
+    class="w-full min-h-screen p-6 flex flex-col items-start justify-start gap-8 bg-off-white text-terminal leading-relaxed"
+  >
+    <header class="w-full flex flex-row items-center justify-between gap-4">
+      <a href="/" class="link text-lg font-primary-serif">webs.site</a>
+      <user-navbar></user-navbar>
+    </header>
+
+    <main class="w-full flex-1">
+      <slot>Default</slot>
+    </main>
+
+    <footer class="w-full text-center font-primary-serif">
+      <p><i>Webs is dedicated to the public domain.</i></p>
+      <p><i>No rights reserved.</i></p>
+    </footer>
+  </div>
+</template>
