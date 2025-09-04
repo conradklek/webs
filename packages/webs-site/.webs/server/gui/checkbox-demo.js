@@ -2,8 +2,6 @@
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/checkbox.webs
 import { state } from "@conradklek/webs";
 var checkbox_default = {
-  template: ``,
-  style: ``,
   name: "checkbox",
   props: {
     defaultChecked: {
@@ -37,6 +35,7 @@ var checkbox_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/checkbox-demo.webs
 var checkbox_demo_default = {
+  name: "checkbox-demo",
   template: `
   <div class="flex items-center space-x-2">
     <checkbox id="terms" />
@@ -49,7 +48,6 @@ var checkbox_demo_default = {
   </div>
 `,
   style: ``,
-  name: "checkbox-demo",
   components: {
     checkbox: checkbox_default
   }

@@ -51,8 +51,6 @@ var CardTitle = {
   }
 };
 var card_default = {
-  template: ``,
-  style: ``,
   name: "card",
   components: {
     "card-header": CardHeader,

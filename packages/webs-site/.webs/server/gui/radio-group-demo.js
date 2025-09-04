@@ -31,8 +31,6 @@ var RadioGroupItem = {
   }
 };
 var radio_group_default = {
-  template: ``,
-  style: ``,
   name: "radio-group",
   components: { "radio-group-item": RadioGroupItem },
   props: {
@@ -59,6 +57,7 @@ var radio_group_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/radio-group-demo.webs
 var radio_group_demo_default = {
+  name: "radio-group-demo",
   template: `
   <radio-group defaultValue="comfortable">
     <div class="flex items-center space-x-2">
@@ -76,7 +75,6 @@ var radio_group_demo_default = {
   </radio-group>
 `,
   style: ``,
-  name: "radio-group-demo",
   components: {
     "radio-group": radio_group_default,
     ...radio_group_default.components

@@ -66,8 +66,6 @@ var AccordionContent = {
   }
 };
 var accordion_default = {
-  template: ``,
-  style: ``,
   name: "accordion",
   components: {
     "accordion-item": AccordionItem,
@@ -120,6 +118,7 @@ var accordion_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/accordion-demo.webs
 var accordion_demo_default = {
+  name: "accordion-demo",
   template: `
   <accordion type="single" collapsible>
     <accordion-item value="item-1">
@@ -145,7 +144,6 @@ var accordion_demo_default = {
   </accordion>
 `,
   style: ``,
-  name: "accordion-demo",
   components: {
     accordion: accordion_default,
     ...accordion_default.components
@@ -197,13 +195,7 @@ var BreadcrumbActive = {
 var BreadcrumbSeparator = {
   template(html) {
     return html`
-        <li
-          role="presentation"
-          aria-hidden="true"
-          class="text-system"
-        >
-          /
-        </li>
+        <li role="presentation" aria-hidden="true" class="text-system">/</li>
       `;
   }
 };
@@ -221,9 +213,6 @@ var BreadcrumbEllipsis = {
   }
 };
 var breadcrumb_default = {
-  template: ``,
-  style: ``,
-  name: "breadcrumb",
   components: {
     "breadcrumb-list": BreadcrumbList,
     "breadcrumb-item": BreadcrumbItem,
@@ -241,6 +230,7 @@ var breadcrumb_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/breadcrumb-demo.webs
 var breadcrumb_demo_default = {
+  name: "breadcrumb-demo",
   template: `
   <breadcrumb>
     <breadcrumb-list>
@@ -259,7 +249,6 @@ var breadcrumb_demo_default = {
   </breadcrumb>
 `,
   style: ``,
-  name: "breadcrumb-demo",
   components: {
     breadcrumb: breadcrumb_default,
     ...breadcrumb_default.components
@@ -318,8 +307,6 @@ var CardTitle = {
   }
 };
 var card_default = {
-  template: ``,
-  style: ``,
   name: "card",
   components: {
     "card-header": CardHeader,
@@ -341,6 +328,7 @@ var card_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/card-demo.webs
 var card_demo_default = {
+  name: "card-demo",
   template: `
   <card class="w-[350px]">
     <card-header>
@@ -358,7 +346,6 @@ var card_demo_default = {
   </card>
 `,
   style: ``,
-  name: "card-demo",
   components: {
     card: card_default,
     ...card_default.components
@@ -368,8 +355,6 @@ var card_demo_default = {
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/checkbox.webs
 import { state as state2 } from "@conradklek/webs";
 var checkbox_default = {
-  template: ``,
-  style: ``,
   name: "checkbox",
   props: {
     defaultChecked: {
@@ -403,6 +388,7 @@ var checkbox_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/checkbox-demo.webs
 var checkbox_demo_default = {
+  name: "checkbox-demo",
   template: `
   <div class="flex items-center space-x-2">
     <checkbox id="terms" />
@@ -415,7 +401,6 @@ var checkbox_demo_default = {
   </div>
 `,
   style: ``,
-  name: "checkbox-demo",
   components: {
     checkbox: checkbox_default
   }
@@ -584,8 +569,6 @@ var MenubarGroup = {
   }
 };
 var menubar_default = {
-  template: ``,
-  style: ``,
   name: "menubar",
   components: {
     "menubar-menu": MenubarMenu,
@@ -621,7 +604,7 @@ var menubar_default = {
   template(html) {
     return html`
         <div
-          class="flex h-10 items-center space-x-1 border border-border rounded-md bg-background p-1"
+          class="flex h-10 items-center space-x-1 border border-border rounded-md bg-popover p-1"
         >
           <slot></slot>
         </div>
@@ -631,6 +614,7 @@ var menubar_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/menubar-demo.webs
 var menubar_demo_default = {
+  name: "menubar-demo",
   template: `
   <menubar>
     <menubar-menu value="file">
@@ -687,7 +671,6 @@ var menubar_demo_default = {
   </menubar>
 `,
   style: ``,
-  name: "menubar-demo",
   components: {
     menubar: menubar_default,
     ...menubar_default.components
@@ -771,8 +754,6 @@ var ModalDescription = {
   }
 };
 var modal_default = {
-  template: ``,
-  style: ``,
   name: "modal",
   components: {
     "modal-trigger": ModalTrigger,
@@ -803,6 +784,7 @@ var modal_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/modal-demo.webs
 var modal_demo_default = {
+  name: "modal-demo",
   template: `
   <modal>
     <modal-trigger>
@@ -838,7 +820,6 @@ var modal_demo_default = {
   </modal>
 `,
   style: ``,
-  name: "modal-demo",
   components: {
     modal: modal_default,
     ...modal_default.components
@@ -877,8 +858,6 @@ var RadioGroupItem = {
   }
 };
 var radio_group_default = {
-  template: ``,
-  style: ``,
   name: "radio-group",
   components: { "radio-group-item": RadioGroupItem },
   props: {
@@ -905,6 +884,7 @@ var radio_group_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/radio-group-demo.webs
 var radio_group_demo_default = {
+  name: "radio-group-demo",
   template: `
   <radio-group defaultValue="comfortable">
     <div class="flex items-center space-x-2">
@@ -922,7 +902,6 @@ var radio_group_demo_default = {
   </radio-group>
 `,
   style: ``,
-  name: "radio-group-demo",
   components: {
     "radio-group": radio_group_default,
     ...radio_group_default.components
@@ -962,7 +941,7 @@ var TabsTrigger = {
         <button
           type="button"
           @click="handleClick"
-          class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+          class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-popover data-[state=active]:text-foreground data-[state=active]:shadow-sm"
           :data-state="isActive ? 'active' : 'inactive'"
         >
           <slot></slot>
@@ -981,8 +960,6 @@ var TabsList = {
   }
 };
 var tabs_default = {
-  template: ``,
-  style: ``,
   name: "tabs",
   components: {
     "tabs-list": TabsList,
@@ -1004,6 +981,7 @@ var tabs_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/tabs-demo.webs
 var tabs_demo_default = {
+  name: "tabs-demo",
   template: `
   <tabs defaultValue="account">
     <tabs-list>
@@ -1019,7 +997,6 @@ var tabs_demo_default = {
   </tabs>
 `,
   style: ``,
-  name: "tabs-demo",
   components: {
     tabs: tabs_default,
     ...tabs_default.components
@@ -1028,6 +1005,7 @@ var tabs_demo_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/app/components/[component].webs
 var __component__default = {
+  name: "[component]",
   template: `
   <div class="w-full flex flex-col items-start justify-start gap-6">
     <div class="w-full flex flex-row items-center justify-start gap-4">
@@ -1035,13 +1013,12 @@ var __component__default = {
       <span>/</span>
       <h1>{{ params.component }}</h1>
     </div>
-    <div class="w-full p-6 border rounded-lg">
+    <div class="w-full p-6 bg-white border border-border rounded-lg">
       <component :is="params.component + '-demo'"></component>
     </div>
   </div>
 `,
   style: ``,
-  name: "-component-",
   components: {
     "accordion-demo": accordion_demo_default,
     "breadcrumb-demo": breadcrumb_demo_default,

@@ -44,13 +44,7 @@ var BreadcrumbActive = {
 var BreadcrumbSeparator = {
   template(html) {
     return html`
-        <li
-          role="presentation"
-          aria-hidden="true"
-          class="text-system"
-        >
-          /
-        </li>
+        <li role="presentation" aria-hidden="true" class="text-system">/</li>
       `;
   }
 };
@@ -68,9 +62,6 @@ var BreadcrumbEllipsis = {
   }
 };
 var breadcrumb_default = {
-  template: ``,
-  style: ``,
-  name: "breadcrumb",
   components: {
     "breadcrumb-list": BreadcrumbList,
     "breadcrumb-item": BreadcrumbItem,
@@ -88,6 +79,7 @@ var breadcrumb_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/breadcrumb-demo.webs
 var breadcrumb_demo_default = {
+  name: "breadcrumb-demo",
   template: `
   <breadcrumb>
     <breadcrumb-list>
@@ -106,7 +98,6 @@ var breadcrumb_demo_default = {
   </breadcrumb>
 `,
   style: ``,
-  name: "breadcrumb-demo",
   components: {
     breadcrumb: breadcrumb_default,
     ...breadcrumb_default.components

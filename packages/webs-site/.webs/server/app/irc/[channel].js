@@ -1,7 +1,8 @@
 // @bun
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/app/irc/[channel].webs
-import { resource, state, onReady, watch, session } from "@conradklek/webs";
+import { useTable, state, onReady, watch, session } from "@conradklek/webs";
 var __channel__default = {
+  name: "[channel]",
   template: `
   <div class="chat-container">
     <h2 class="p-2 border-b border-gray-300 font-bold bg-gray-100 rounded-t-lg">
@@ -46,7 +47,6 @@ var __channel__default = {
   .chat-input {
     @apply w-full p-2 focus:outline-none text-sm font-mono bg-transparent disabled:bg-gray-100 disabled:cursor-not-allowed;
   }`,
-  name: "-channel-",
   actions: {
     async ssrFetch(context) {
       const { db, params } = context;
@@ -63,7 +63,7 @@ var __channel__default = {
   setup(props, ctx) {
     const formattedChannelName = `#${ctx.params.channel.toLowerCase()}`;
     const initialState = props.initialState || {};
-    const messages = resource("chat_messages");
+    const messages = useTable("chat_messages");
     const currentMessage = state("");
     const messageListEl = state(null);
     onReady(() => {

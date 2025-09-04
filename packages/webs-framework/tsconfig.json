@@ -7,12 +7,6 @@
     "allowJs": true,
     "checkJs": false
   },
-  "include": [
-    "index.js",
-    "server.js",
-    "plugin.js",
-    "service-worker.js",
-    "lib/**/*.js"
-  ],
+  "include": ["./*.js"],
   "exclude": ["dist", "node_modules"]
 }

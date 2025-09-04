@@ -162,8 +162,6 @@ var MenubarGroup = {
   }
 };
 var menubar_default = {
-  template: ``,
-  style: ``,
   name: "menubar",
   components: {
     "menubar-menu": MenubarMenu,
@@ -199,7 +197,7 @@ var menubar_default = {
   template(html) {
     return html`
         <div
-          class="flex h-10 items-center space-x-1 border border-border rounded-md bg-background p-1"
+          class="flex h-10 items-center space-x-1 border border-border rounded-md bg-popover p-1"
         >
           <slot></slot>
         </div>
@@ -209,6 +207,7 @@ var menubar_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/menubar-demo.webs
 var menubar_demo_default = {
+  name: "menubar-demo",
   template: `
   <menubar>
     <menubar-menu value="file">
@@ -265,7 +264,6 @@ var menubar_demo_default = {
   </menubar>
 `,
   style: ``,
-  name: "menubar-demo",
   components: {
     menubar: menubar_default,
     ...menubar_default.components

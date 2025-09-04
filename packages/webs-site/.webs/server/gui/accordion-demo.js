@@ -66,8 +66,6 @@ var AccordionContent = {
   }
 };
 var accordion_default = {
-  template: ``,
-  style: ``,
   name: "accordion",
   components: {
     "accordion-item": AccordionItem,
@@ -120,6 +118,7 @@ var accordion_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/accordion-demo.webs
 var accordion_demo_default = {
+  name: "accordion-demo",
   template: `
   <accordion type="single" collapsible>
     <accordion-item value="item-1">
@@ -145,7 +144,6 @@ var accordion_demo_default = {
   </accordion>
 `,
   style: ``,
-  name: "accordion-demo",
   components: {
     accordion: accordion_default,
     ...accordion_default.components

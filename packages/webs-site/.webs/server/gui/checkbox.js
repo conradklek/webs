@@ -2,8 +2,6 @@
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/checkbox.webs
 import { state } from "@conradklek/webs";
 var checkbox_default = {
-  template: ``,
-  style: ``,
   name: "checkbox",
   props: {
     defaultChecked: {

@@ -1,4 +1,4 @@
-preload = ["../webs-framework/plugin.js"]
+preload = ["./webs-plugin.js"]
 
 [serve.static]
 plugins = ["bun-plugin-tailwind"]

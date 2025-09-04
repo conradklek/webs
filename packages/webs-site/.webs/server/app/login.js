@@ -1,13 +1,13 @@
 // @bun
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/app/login.webs
-import { session, state, router } from "@conradklek/webs";
+import { session, state, router, onReady } from "@conradklek/webs";
 var login_default = {
+  name: "login",
   template: `
   <form
     @submit.prevent="handleLogin"
-    class="flex-1 max-w-xs flex flex-col items-start justify-start gap-2"
+    class="flex-1 max-w-xs mx-auto mt-8 flex flex-col items-start justify-start gap-2"
   >
-    <h1 class="text-xl font-primary-serif mb-4">Login</h1>
     <input bind:value="email" type="email" placeholder="Email" class="input" />
     <input
       bind:value="password"
@@ -15,18 +15,22 @@ var login_default = {
       placeholder="Password"
       class="input"
     />
-    <button type="submit" class="btn btn-default btn-size-lg mt-4">
-      Submit
+    <button type="submit" class="btn btn-default btn-size-lg w-full mt-4">
+      Enter
     </button>
     <p w-if="error" class="text-red-500 mt-2">{{ error }}</p>
   </form>
 `,
   style: ``,
-  name: "login",
   setup() {
-    const email = state("anon@webs.site");
-    const password = state("password");
+    const email = state("");
+    const password = state("");
     const error = state(null);
+    onReady(() => {
+      if (session.isLoggedIn) {
+        router.push(`/${session.user.username}`);
+      }
+    });
     async function handleLogin() {
       error.value = null;
       try {
@@ -38,7 +42,7 @@ var login_default = {
         error.value = err.message;
       }
     }
-    return { email, password, error, handleLogin };
+    return { email, password, error, handleLogin, session };
   }
 };
 export {

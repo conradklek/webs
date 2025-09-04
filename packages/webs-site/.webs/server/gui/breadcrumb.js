@@ -44,13 +44,7 @@ var BreadcrumbActive = {
 var BreadcrumbSeparator = {
   template(html) {
     return html`
-        <li
-          role="presentation"
-          aria-hidden="true"
-          class="text-system"
-        >
-          /
-        </li>
+        <li role="presentation" aria-hidden="true" class="text-system">/</li>
       `;
   }
 };
@@ -68,9 +62,6 @@ var BreadcrumbEllipsis = {
   }
 };
 var breadcrumb_default = {
-  template: ``,
-  style: ``,
-  name: "breadcrumb",
   components: {
     "breadcrumb-list": BreadcrumbList,
     "breadcrumb-item": BreadcrumbItem,

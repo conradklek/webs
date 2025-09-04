@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "webs",
-    "start": "NODE_ENV=production webs",
+    "dev": "webs .",
+    "start": "NODE_ENV=production webs .",
     "format": "prettier --write ."
   },
   "dependencies": {

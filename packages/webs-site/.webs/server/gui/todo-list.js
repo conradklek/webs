@@ -3,16 +3,19 @@
 import {
   state,
   session,
-  resource,
+  useTable,
   onReady,
   computed
 } from "@conradklek/webs";
 var todo_list_default = {
+  name: "todo-list",
   template: `
-  <div class="w-full flex-1 flex flex-col items-start justify-start gap-4">
+  <div
+    class="w-full max-w-lg mx-auto flex-1 flex flex-col items-start justify-start gap-4"
+  >
     <form @submit.prevent="addTodo" class="w-full mb-2 flex gap-2">
       <input
-        bind:value="newTodo"
+        bind:value="newTodoContent"
         type="text"
         placeholder="What needs to be done?"
         class="input"
@@ -20,29 +23,29 @@ var todo_list_default = {
       <button type="submit" class="btn btn-default btn-size-lg">Add</button>
     </form>
     <div class="w-full">
-      <ul class="w-full">
-        <!-- We now loop over the 'sortedTodos' computed property -->
+      <ul class="w-full space-y-2">
         <li
           w-for="todo in sortedTodos"
           :key="todo.id"
-          class="w-full flex flex-row items-center gap-3"
+          class="w-full flex items-center gap-3 p-2 rounded-md hover:bg-gray-100"
         >
           <input
             :id="'todo-' + todo.id"
             type="checkbox"
             :checked="todo.completed"
             @change="toggleTodo(todo)"
-            class="block size-4 rounded border border-border"
+            class="block size-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
           />
           <label
             :for="'todo-' + todo.id"
             :class="{ 'line-through text-muted-foreground': todo.completed }"
+            class="flex-grow"
           >
             {{ todo.content }}
           </label>
           <button
             @click="deleteTodo(todo.id)"
-            class="shrink-0 whitespce-nowrap ml-auto flex items-center justify-center text-muted-foreground"
+            class="shrink-0 text-sm text-red-500 hover:text-red-700"
             aria-label="Delete todo"
           >
             Remove
@@ -53,57 +56,64 @@ var todo_list_default = {
   </div>
 `,
   style: ``,
-  name: "todo-list",
-  props: {
-    initialState: {
-      type: Object,
-      default: () => ({})
+  tables: {
+    todos: {
+      sync: true,
+      keyPath: "id",
+      fields: {
+        id: { type: "text", primaryKey: true },
+        user_id: {
+          type: "integer",
+          notNull: true,
+          references: "users(id)",
+          onDelete: "CASCADE"
+        },
+        content: { type: "text", notNull: true },
+        completed: { type: "boolean", default: 0 },
+        created_at: { type: "timestamp", default: "CURRENT_TIMESTAMP" },
+        updated_at: { type: "timestamp", default: "CURRENT_TIMESTAMP" }
+      },
+      indexes: [{ name: "by_completed", keyPath: "completed" }]
     }
   },
+  props: {
+    initialState: Object
+  },
   setup(props) {
-    const newTodo = state("");
-    const todosResource = resource("todos", props.initialState?.initialTodos || []);
-    const sortedTodos = computed(() => {
-      return (todosResource.state.data || []).slice().sort((a, b) => {
-        return new Date(b.created_at) - new Date(a.created_at);
-      });
-    });
+    const newTodoContent = state("");
+    const todos = useTable("todos", props.initialState?.initialTodos);
+    const sortedTodos = computed(() => [...todos.data || []].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
     function addTodo() {
-      const content = newTodo.value.trim();
+      const content = newTodoContent.value.trim();
       if (!content || !session.user?.id)
         return;
-      const newTodoItem = {
+      todos.put({
         id: crypto.randomUUID(),
         content,
         completed: 0,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         user_id: session.user.id
-      };
-      todosResource.put(newTodoItem);
-      newTodo.value = "";
+      });
+      newTodoContent.value = "";
     }
     function toggleTodo(todo) {
-      const updatedTodo = {
+      todos.put({
         ...todo,
         completed: todo.completed ? 0 : 1,
         updated_at: new Date().toISOString()
-      };
-      todosResource.put(updatedTodo);
-    }
-    function deleteTodo(id) {
-      todosResource.destroy(id);
+      });
     }
     onReady(() => {
-      todosResource.hydrate(props.initialState?.initialTodos);
+      todos.hydrate(props.initialState?.initialTodos);
     });
     return {
-      newTodo,
-      todos: todosResource.state,
+      newTodoContent,
+      todos,
       sortedTodos,
       addTodo,
       toggleTodo,
-      deleteTodo
+      deleteTodo: todos.destroy
     };
   }
 };

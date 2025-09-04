@@ -66,8 +66,6 @@ var AccordionContent = {
   }
 };
 var accordion_default = {
-  template: ``,
-  style: ``,
   name: "accordion",
   components: {
     "accordion-item": AccordionItem,

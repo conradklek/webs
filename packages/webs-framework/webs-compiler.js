@@ -1,5 +1,5 @@
-import { parseHtml, parseJs, tokenizeJs } from './parser';
-import * as Webs from './renderer';
+import { parseHtml, parseJs, tokenizeJs } from './webs-parser';
+import * as Webs from './webs-renderer';
 
 export const NODE_TYPES = {
   ROOT: 0,
@@ -21,8 +21,6 @@ export const ATTR_TYPES = {
 };
 
 const DIR_IF = 'w-if';
-const DIR_ELSE_IF = 'w-else-if';
-const DIR_ELSE = 'w-else';
 const DIR_FOR = 'w-for';
 
 const cacheStringFunction = (fn) => {
@@ -142,6 +140,7 @@ export function generateRenderFn(ast) {
     },
     genNode(node) {
       if (!node) return 'null';
+
       switch (node.type) {
         case NODE_TYPES.ROOT: {
           if (node.children.length === 1) {
@@ -185,21 +184,8 @@ export function generateRenderFn(ast) {
           return `_h(_Fragment, null, _ctx.$slots.${slotName} ? _ctx.$slots.${slotName}() : ${fallbackContent})`;
         }
         case NODE_TYPES.IF: {
-          const genBranch = (branch) => {
-            if (branch.condition) {
-              return `(${this.genExpr(
-                branch.condition,
-              )}) ? ${this.genNode(branch.node)} : `;
-            }
-            return this.genNode(branch.node);
-          };
-          const hasElse =
-            node.branches[node.branches.length - 1].condition === null;
-          let code = node.branches.map(genBranch).join('');
-          if (!hasElse) {
-            code += `null`;
-          }
-          return `(${code})`;
+          const branch = node.branches[0];
+          return `(${this.genExpr(branch.condition)}) ? ${this.genNode(branch.node)} : null`;
         }
         case NODE_TYPES.FOR: {
           const { source, value, key } = node;
@@ -406,49 +392,7 @@ export class Compiler {
             condition: this._parseExpr(ifAttr.value),
             node: this._transformNode(ifNodeClone),
           });
-          let j = i + 1;
-          while (j < children.length) {
-            const next = children[j];
-            const isWhitespaceText =
-              next.type === 'text' && !next.content.trim();
-            if (next.type === 'element') {
-              const elseIfAttr = next.attributes.find(
-                (a) => a.name === DIR_ELSE_IF,
-              );
-              const elseAttr = next.attributes.find((a) => a.name === DIR_ELSE);
-              if (elseIfAttr) {
-                const elseIfNodeClone = {
-                  ...next,
-                  attributes: next.attributes.filter(
-                    (a) => a.name !== DIR_ELSE_IF,
-                  ),
-                };
-                branches.push({
-                  condition: this._parseExpr(elseIfAttr.value),
-                  node: this._transformNode(elseIfNodeClone),
-                });
-                i = j;
-              } else if (elseAttr) {
-                const elseNodeClone = {
-                  ...next,
-                  attributes: next.attributes.filter(
-                    (a) => a.name !== DIR_ELSE,
-                  ),
-                };
-                branches.push({
-                  condition: null,
-                  node: this._transformNode(elseNodeClone),
-                });
-                i = j;
-                break;
-              } else {
-                break;
-              }
-            } else if (!isWhitespaceText) {
-              break;
-            }
-            j++;
-          }
+
           transformed.push({ type: NODE_TYPES.IF, branches });
           continue;
         }

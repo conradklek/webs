@@ -31,8 +31,6 @@ var RadioGroupItem = {
   }
 };
 var radio_group_default = {
-  template: ``,
-  style: ``,
   name: "radio-group",
   components: { "radio-group-item": RadioGroupItem },
   props: {

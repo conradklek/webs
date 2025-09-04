@@ -1,6 +1,7 @@
 // @bun
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/app/components/index.webs
 var components_default = {
+  name: "index",
   template: `
   <div class="w-full flex flex-col items-start justify-start gap-4">
     <ul class="list-disc pl-8 space-y-1">
@@ -11,7 +12,6 @@ var components_default = {
   </div>
 `,
   style: ``,
-  name: "index",
   setup() {
     const components = [
       { name: "Accordion", url: "/components/accordion" },

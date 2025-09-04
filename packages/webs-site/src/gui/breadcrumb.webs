@@ -47,13 +47,7 @@
   export const BreadcrumbSeparator = {
     template(html) {
       return html`
-        <li
-          role="presentation"
-          aria-hidden="true"
-          class="text-system"
-        >
-          /
-        </li>
+        <li role="presentation" aria-hidden="true" class="text-system">/</li>
       `;
     },
   };

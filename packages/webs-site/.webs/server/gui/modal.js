@@ -76,8 +76,6 @@ var ModalDescription = {
   }
 };
 var modal_default = {
-  template: ``,
-  style: ``,
   name: "modal",
   components: {
     "modal-trigger": ModalTrigger,

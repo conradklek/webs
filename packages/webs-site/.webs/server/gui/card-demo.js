@@ -51,8 +51,6 @@ var CardTitle = {
   }
 };
 var card_default = {
-  template: ``,
-  style: ``,
   name: "card",
   components: {
     "card-header": CardHeader,
@@ -74,6 +72,7 @@ var card_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/card-demo.webs
 var card_demo_default = {
+  name: "card-demo",
   template: `
   <card class="w-[350px]">
     <card-header>
@@ -91,7 +90,6 @@ var card_demo_default = {
   </card>
 `,
   style: ``,
-  name: "card-demo",
   components: {
     card: card_default,
     ...card_default.components

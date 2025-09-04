@@ -1,5 +1,5 @@
 <script>
-  import TodoList from '../gui/todo-list.webs';
+  import TodoList from '../../gui/todo-list.webs';
 
   export default {
     components: {
@@ -10,7 +10,6 @@
         if (!user || user.username !== params.username) {
           return { initialTodos: [] };
         }
-
         const todos = db
           .query(
             'SELECT * FROM todos WHERE user_id = ? ORDER BY created_at DESC',

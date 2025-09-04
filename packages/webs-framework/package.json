@@ -1,43 +1,59 @@
 {
   "name": "@conradklek/webs",
   "author": "Conrad Klek",
-  "version": "0.1.33",
+  "version": "0.2.0",
   "type": "module",
   "description": "A Javascript framework",
+  "license": "MIT",
+  "homepage": "https://github.com/conradklek/webs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/conradklek/webs.git"
+  },
+  "keywords": [
+    "javascript",
+    "framework",
+    "frontend",
+    "backend",
+    "webs"
+  ],
   "bin": {
-    "webs": "build.js"
+    "webs": "webs-build.js"
   },
   "files": [
-    "lib",
-    "build.js",
-    "compiler.js",
-    "index.js",
-    "parser.js",
-    "plugin.js",
-    "reactivity.js",
-    "renderer.js",
-    "runtime.js",
+    "client-db.js",
+    "client-fs.js",
+    "client-me.js",
+    "client-sw.js",
+    "client.js",
+    "server-ai.js",
+    "server-db.js",
+    "server-fs.js",
+    "server-me.js",
     "server.js",
-    "cache.js"
+    "webs-build.js",
+    "webs-compiler.js",
+    "webs-engine.js",
+    "webs-parser.js",
+    "webs-plugin.js",
+    "webs-renderer.js",
+    "bunfig.toml"
   ],
   "exports": {
-    ".": "./index.js",
+    ".": "./client.js",
     "./server": "./server.js",
-    "./compiler": "./lib/compiler.js",
-    "./plugin": "./plugin.js"
+    "./plugin": "./webs-plugin.js"
   },
   "scripts": {
-    "dev": "NODE_ENV=development bun run ./build.js",
-    "start": "NODE_ENV=production bun run ./build.js",
-    "format": "prettier --write .",
-    "dev:demo": "cd ../webs-site && bun run dev"
+    "dev": "NODE_ENV=development bun run webs-build.js",
+    "start": "NODE_ENV=production bun run webs-build.js",
+    "format": "prettier --write ."
   },
-  "dependencies": {},
-  "peerDependencies": {
-    "tailwindcss": "^4.1.12",
-    "bun-plugin-tailwind": "^0.0.15"
+  "dependencies": {
+    "bun-plugin-tailwind": "^0.0.15",
+    "tailwindcss": "^4.1.12"
   },
   "devDependencies": {
-    "typescript": "^5.9.2"
+    "prettier": "^3.6.2"
   }
 }

@@ -1,0 +1,521 @@
+#!/usr/bin/env bun
+
+import { rm, mkdir, exists, writeFile } from 'fs/promises';
+import { join, resolve, dirname, basename } from 'path';
+import { Database } from 'bun:sqlite';
+import { createHash } from 'crypto';
+
+import websPlugin from './webs-plugin';
+import tailwind from 'bun-plugin-tailwind';
+import { createDatabaseAndActions } from './server-db';
+import { startServer } from './server';
+
+const userProjectDir = process.argv[2]
+  ? resolve(process.argv[2])
+  : process.cwd();
+
+const frameworkSchema = {
+  version: 1,
+  tables: {
+    users: {
+      keyPath: 'id',
+      fields: {
+        id: { type: 'integer', primaryKey: true },
+        email: { type: 'text', notNull: true, unique: true },
+        username: { type: 'text', notNull: true, unique: true },
+        password: { type: 'text', notNull: true },
+        created_at: { type: 'timestamp', default: 'CURRENT_TIMESTAMP' },
+      },
+    },
+    sessions: {
+      keyPath: 'id',
+      fields: {
+        id: { type: 'text', primaryKey: true },
+        user_id: {
+          type: 'integer',
+          notNull: true,
+          references: 'users(id)',
+          onDelete: 'CASCADE',
+        },
+        expires_at: { type: 'timestamp', notNull: true },
+      },
+    },
+    files: {
+      sync: true,
+      keyPath: 'path',
+      fields: {
+        path: { type: 'text', primaryKey: true },
+        user_id: {
+          type: 'integer',
+          notNull: true,
+          references: 'users(id)',
+          onDelete: 'CASCADE',
+        },
+        content: { type: 'blob' },
+        access: { type: 'text', notNull: true, default: 'private' },
+        size: { type: 'integer', notNull: true, default: 0 },
+        last_modified: { type: 'timestamp', default: 'CURRENT_TIMESTAMP' },
+      },
+      indexes: [{ name: 'by-user', keyPath: 'user_id' }],
+    },
+  },
+};
+
+const FRAMEWORK_DIR = import.meta.dir;
+const config = {
+  CWD: userProjectDir,
+  PORT: process.env.PORT || 3000,
+  IS_PROD: process.env.NODE_ENV === 'production',
+  OUTDIR: resolve(userProjectDir, 'dist'),
+  TMPDIR: resolve(userProjectDir, '.webs'),
+  TMP_SERVER_DIR: resolve(userProjectDir, '.webs/server'),
+  TMP_WRAPPERS_DIR: resolve(userProjectDir, '.webs/layout'),
+  TMP_GENERATED_ACTIONS: resolve(userProjectDir, '.webs/actions.js'),
+  TMP_APP_CSS: resolve(userProjectDir, '.webs/app.css'),
+  TMP_APP_JS: resolve(userProjectDir, '.webs/app.js'),
+  SRC_DIR: resolve(userProjectDir, 'src'),
+  APP_DIR: resolve(userProjectDir, 'src/app'),
+  GUI_DIR: resolve(userProjectDir, 'src/gui'),
+  USER_FILES_ROOT: resolve(userProjectDir, '.webs/files'),
+  DB_SCHEMA_HASH_PATH: resolve(userProjectDir, '.webs/db_schema.hash'),
+};
+
+const SYNC_TOPIC = 'webs-sync';
+let appRoutes = {};
+
+async function buildServerComponents() {
+  const glob = new Bun.Glob('**/*.webs');
+  const entrypoints = [];
+  if (await exists(config.APP_DIR)) {
+    for await (const file of glob.scan(config.APP_DIR))
+      entrypoints.push(join(config.APP_DIR, file));
+  }
+  if (await exists(config.GUI_DIR)) {
+    for await (const file of glob.scan(config.GUI_DIR))
+      entrypoints.push(join(config.GUI_DIR, file));
+  }
+  if (entrypoints.length === 0)
+    return { success: true, entrypoints: [], pageEntrypoints: [] };
+
+  if (config.IS_PROD) await rm(config.OUTDIR, { recursive: true, force: true });
+  await ensureDir(config.OUTDIR);
+
+  const result = await Bun.build({
+    entrypoints,
+    outdir: config.TMP_SERVER_DIR,
+    target: 'bun',
+    plugins: [websPlugin({ root: config.SRC_DIR }), tailwind],
+    external: ['@conradklek/webs', 'bun-plugin-tailwind'],
+    naming: '[dir]/[name].[ext]',
+    root: config.SRC_DIR,
+  });
+
+  if (!result.success) {
+    console.error('Server component compilation failed:', result.logs);
+    return { success: false, entrypoints: [], pageEntrypoints: [] };
+  }
+  const pageEntrypoints = entrypoints.filter((p) =>
+    p.startsWith(config.APP_DIR),
+  );
+  return { success: true, entrypoints, pageEntrypoints };
+}
+
+async function ensureDir(dirPath) {
+  if (!(await exists(dirPath))) {
+    await mkdir(dirPath, { recursive: true });
+  }
+}
+
+async function discoverAndBuildDbConfig() {
+  const userTables = {};
+
+  const clientTables = Object.entries(frameworkSchema.tables)
+    .filter(([, schema]) => schema.sync || schema.keyPath)
+    .map(([name, schema]) => ({
+      name,
+      keyPath: schema.keyPath,
+      indexes: schema.indexes || [],
+      sync: !!schema.sync,
+    }));
+
+  const glob = new Bun.Glob('**/*.js');
+  if (!(await exists(config.TMP_SERVER_DIR))) {
+    console.warn(
+      'Temp server directory not found, skipping user schema discovery.',
+    );
+    return { ...frameworkSchema, clientTables };
+  }
+
+  for await (const file of glob.scan(config.TMP_SERVER_DIR)) {
+    const fullPath = resolve(config.TMP_SERVER_DIR, file);
+    try {
+      const mod = await import(`${fullPath}?t=${Date.now()}`);
+      const componentTables = mod.default?.tables;
+
+      if (componentTables && typeof componentTables === 'object') {
+        for (const [tableName, schema] of Object.entries(componentTables)) {
+          if (userTables[tableName]) {
+            console.warn(
+              `[Build] Warning: Duplicate table definition for '${tableName}'. Overwriting.`,
+            );
+          }
+          userTables[tableName] = schema;
+          if (!clientTables.some((t) => t.name === tableName)) {
+            clientTables.push({
+              name: tableName,
+              keyPath: schema.keyPath,
+              indexes: schema.indexes || [],
+              sync: !!schema.sync,
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error(
+        `Error importing compiled component ${file} for schema discovery:`,
+        e,
+      );
+    }
+  }
+
+  const finalTables = { ...frameworkSchema.tables, ...userTables };
+  const schemaString = JSON.stringify(finalTables);
+  const currentHash = createHash('sha256')
+    .update(schemaString)
+    .digest('hex')
+    .substring(0, 16);
+
+  let lastVersion = 0;
+  if (await exists(config.DB_SCHEMA_HASH_PATH)) {
+    const stored = await Bun.file(config.DB_SCHEMA_HASH_PATH).text();
+    const [hash, version] = stored.split(':');
+    if (hash === currentHash) {
+      return {
+        name: 'webs.db',
+        version: parseInt(version, 10),
+        tables: finalTables,
+        clientTables,
+      };
+    }
+    lastVersion = parseInt(version, 10);
+  }
+
+  const newVersion = lastVersion + 1;
+  await writeFile(config.DB_SCHEMA_HASH_PATH, `${currentHash}:${newVersion}`);
+  console.log(
+    `[Build] Database schema change detected. New version: ${newVersion}`,
+  );
+
+  return {
+    name: 'webs.db',
+    version: newVersion,
+    tables: finalTables,
+    clientTables,
+  };
+}
+
+async function buildServiceWorker(clientOutputs) {
+  const swEntryPath = (await exists(resolve(config.CWD, 'client-sw.js')))
+    ? resolve(config.CWD, 'client-sw.js')
+    : resolve(FRAMEWORK_DIR, 'client-sw.js');
+  if (!(await exists(swEntryPath))) return null;
+
+  const swBuildResult = await Bun.build({
+    entrypoints: [swEntryPath],
+    outdir: config.OUTDIR,
+    target: 'browser',
+    minify: config.IS_PROD,
+    naming: config.IS_PROD ? 'sw-[hash].js' : 'sw.js',
+    sourcemap: 'none',
+  });
+  if (!swBuildResult.success) {
+    console.error('Service worker build failed:', swBuildResult.logs);
+    return null;
+  }
+
+  const swOutput = swBuildResult.outputs[0];
+  const assetManifest = clientOutputs.map((o) => ({
+    url: `/${basename(o.path)}`,
+    revision: null,
+  }));
+  const routeManifest = Object.keys(appRoutes).map((routePath) => ({
+    url: routePath,
+    revision: null,
+  }));
+  if (!appRoutes['/']) routeManifest.push({ url: '/', revision: null });
+
+  let swContent = await swOutput.text();
+  swContent =
+    `self.__WEBS_MANIFEST = ${JSON.stringify([...assetManifest, ...routeManifest], null, 2)};\n` +
+    swContent;
+  await Bun.write(swOutput.path, swContent);
+  return swOutput;
+}
+
+async function buildClientAndNotify(entrypoints, currentDbConfig) {
+  await prepareClientEntrypoint(entrypoints, currentDbConfig);
+  await prepareCss();
+
+  const clientBuildResult = await Bun.build({
+    entrypoints: [config.TMP_APP_JS],
+    outdir: config.OUTDIR,
+    target: 'browser',
+    splitting: true,
+    minify: config.IS_PROD,
+    naming: config.IS_PROD ? '[name]-[hash].[ext]' : '[name].[ext]',
+    plugins: [websPlugin({ root: config.SRC_DIR }), tailwind],
+    sourcemap: config.IS_PROD ? 'none' : 'inline',
+  });
+  if (!clientBuildResult.success) {
+    console.error('Client app build failed:', clientBuildResult.logs);
+    return null;
+  }
+
+  const swOutput = await buildServiceWorker(clientBuildResult.outputs);
+
+  const manifest = {
+    js: clientBuildResult.outputs.find(
+      (o) => o.kind === 'entry-point' && o.path.endsWith('.js'),
+    )?.path,
+    css: clientBuildResult.outputs.find((o) => o.path.endsWith('.css'))?.path,
+    sw: swOutput?.path,
+  };
+
+  return manifest;
+}
+
+async function prepareCss() {
+  const glob = new Bun.Glob('**/*.webs');
+  const componentStyles = [];
+  const styleBlockRegex = /<style>([\s\S]*?)<\/style>/s;
+
+  for await (const file of glob.scan(config.SRC_DIR)) {
+    const fullPath = join(config.SRC_DIR, file);
+    const src = await Bun.file(fullPath).text();
+    const styleMatch = src.match(styleBlockRegex);
+    if (styleMatch?.[1]?.trim()) {
+      componentStyles.push(styleMatch[1].trim());
+    }
+  }
+  await Bun.write(config.TMP_APP_CSS, componentStyles.join('\n'));
+}
+
+async function prepareClientEntrypoint(allEntrypoints, currentDbConfig) {
+  const componentLoaders = [];
+  const componentNames = new Set(
+    allEntrypoints.map((p) =>
+      resolve(p)
+        .substring(config.SRC_DIR.length + 1)
+        .replace('.webs', ''),
+    ),
+  );
+  const glob = new Bun.Glob('**/*.js');
+
+  for await (const file of glob.scan(config.TMP_SERVER_DIR)) {
+    const fullPath = resolve(config.TMP_SERVER_DIR, file);
+    const componentName = fullPath
+      .substring(config.TMP_SERVER_DIR.length + 1)
+      .replace('.js', '');
+    if (componentNames.has(componentName)) {
+      componentLoaders.push(
+        `['${componentName}', () => import('${join(config.TMP_SERVER_DIR, file)}')]`,
+      );
+    }
+  }
+
+  for await (const file of glob.scan(config.TMP_WRAPPERS_DIR)) {
+    const componentName = `layout/${file.replace('.js', '')}`;
+    componentLoaders.push(
+      `['${componentName}', () => import('${join(config.TMP_WRAPPERS_DIR, file)}')]`,
+    );
+  }
+
+  const dbConfigForClient = {
+    version: currentDbConfig.version,
+    clientTables: currentDbConfig.clientTables,
+  };
+
+  const entrypointContent = `import { hydrate } from '@conradklek/webs';
+import '${config.TMP_APP_CSS}';
+const dbConfig = ${JSON.stringify(dbConfigForClient)};
+const componentLoaders = new Map([${componentLoaders.join(',\n  ')}]);
+hydrate(componentLoaders, dbConfig);`;
+  await Bun.write(config.TMP_APP_JS, entrypointContent);
+}
+
+async function findLayoutsForPage(pagePath) {
+  const layouts = [];
+  let currentDir = dirname(pagePath);
+  while (currentDir.startsWith(config.APP_DIR)) {
+    const layoutPath = join(currentDir, 'layout.webs');
+    if (await exists(layoutPath)) {
+      layouts.push(layoutPath);
+    }
+    if (currentDir === config.APP_DIR) break;
+    currentDir = dirname(currentDir);
+  }
+  return layouts.reverse();
+}
+
+async function generateRoutesFromFileSystem(pageEntrypoints) {
+  if (!(await exists(config.TMP_SERVER_DIR))) return {};
+
+  await ensureDir(config.TMP_WRAPPERS_DIR);
+
+  const pageFiles = new Set(
+    pageEntrypoints.map((p) => p.substring(config.SRC_DIR.length + 1)),
+  );
+
+  const glob = new Bun.Glob('**/*.js');
+  const routeDefinitions = [];
+
+  const compiledPageModules = new Map();
+  for await (const file of glob.scan(config.TMP_SERVER_DIR)) {
+    const fullPath = resolve(config.TMP_SERVER_DIR, file);
+    const relativePath = fullPath.substring(config.TMP_SERVER_DIR.length + 1);
+    if (pageFiles.has(relativePath.replace('.js', '.webs'))) {
+      const mod = await import(`${fullPath}?t=${Date.now()}`);
+      if (mod.default)
+        compiledPageModules.set(relativePath.replace('.js', ''), mod);
+    }
+  }
+
+  for (const [componentName, mod] of compiledPageModules.entries()) {
+    if (basename(componentName) === 'layout') continue;
+
+    const layouts = await findLayoutsForPage(
+      join(config.SRC_DIR, `${componentName}.webs`),
+    );
+    let finalComponent = mod.default;
+    let finalComponentName = componentName;
+
+    if (layouts.length > 0) {
+      finalComponentName = `layout/${componentName.replace(/\//g, '_')}`;
+      const wrapperPath = join(
+        config.TMP_WRAPPERS_DIR,
+        `${finalComponentName.split('/')[1]}.js`,
+      );
+      const layoutImports = layouts
+        .map(
+          (p, i) =>
+            `import Layout${i} from '${resolve(config.TMP_SERVER_DIR, p.substring(config.SRC_DIR.length + 1).replace('.webs', '.js'))}';`,
+        )
+        .join('\n');
+
+      const wrapperContent = `import { h } from '@conradklek/webs';
+${layoutImports}
+import PageComponent from '${resolve(config.TMP_SERVER_DIR, `${componentName}.js`)}';
+
+export default {
+  name: '${finalComponentName}',
+  props: { params: Object, initialState: Object, user: Object },
+  render() {
+    const pageNode = h(PageComponent, { ...this.$props });
+    return ${layouts.reduce((acc, _, i) => `h(Layout${i}, { ...this.$props }, { default: () => ${acc} })`, 'pageNode')};
+  }
+};`;
+      await writeFile(wrapperPath, wrapperContent);
+      finalComponent = (await import(`${wrapperPath}?t=${Date.now()}`)).default;
+    }
+
+    let urlPath =
+      '/' +
+      componentName
+        .substring('app/'.length)
+        .replace(/index$/, '')
+        .replace(/\[\.\.\.(\w+)\]/g, ':$1*')
+        .replace(/\[(\w+)\]/g, ':$1');
+    if (urlPath.length > 1 && urlPath.endsWith('/'))
+      urlPath = urlPath.slice(0, -1);
+
+    routeDefinitions.push({
+      path: urlPath,
+      definition: {
+        component: finalComponent,
+        actions: mod.default.actions || {},
+        componentName: finalComponentName,
+        websocket: mod.default.websocket || null,
+      },
+    });
+  }
+
+  routeDefinitions.sort(
+    (a, b) =>
+      b.path.split('/').length - a.path.split('/').length ||
+      (a.path.match(/:/g) || []).length - (b.path.match(/:/g) || []).length,
+  );
+  return Object.fromEntries(
+    routeDefinitions.map((r) => [r.path, r.definition]),
+  );
+}
+
+async function main() {
+  await ensureDir(config.TMPDIR);
+  await ensureDir(config.USER_FILES_ROOT);
+  await ensureDir(config.TMP_WRAPPERS_DIR);
+
+  const { success, entrypoints, pageEntrypoints } =
+    await buildServerComponents();
+  if (!success) {
+    console.error('Halting build due to component compilation errors.');
+    if (config.IS_PROD) process.exit(1);
+    return;
+  }
+
+  const dbConfig = await discoverAndBuildDbConfig();
+  const db = await createDatabaseAndActions(
+    Database,
+    dbConfig,
+    config.CWD,
+    writeFile,
+    config,
+  );
+
+  if (!config.IS_PROD) {
+    const { hashPassword } = await import('./server-me.js');
+    const anonUser = {
+      email: 'anon@webs.site',
+      username: 'anon',
+      password: 'password',
+    };
+    let existingUser = db
+      .query('SELECT id FROM users WHERE username = ?')
+      .get(anonUser.username);
+    if (!existingUser) {
+      const hashedPassword = await hashPassword(anonUser.password);
+      db.prepare(
+        'INSERT INTO users (email, username, password) VALUES (?, ?, ?)',
+      ).run(anonUser.email, anonUser.username, hashedPassword);
+    }
+  }
+
+  appRoutes = await generateRoutesFromFileSystem(pageEntrypoints);
+  const manifest = await buildClientAndNotify(entrypoints, dbConfig);
+  if (!manifest && config.IS_PROD) process.exit(1);
+
+  const server = await startServer({
+    db,
+    dbConfig,
+    manifest,
+    appRoutes,
+    outdir: config.OUTDIR,
+    isProd: config.IS_PROD,
+    port: config.PORT,
+    SYNC_TOPIC,
+    actionsPath: config.TMP_GENERATED_ACTIONS,
+  });
+
+  if (!config.IS_PROD) {
+    const handler = () => {
+      server.stop();
+      process.exit(0);
+    };
+    process.on('SIGINT', handler);
+    process.on('SIGTERM', handler);
+  }
+}
+
+main().catch((e) => {
+  console.error('An unexpected error occurred:', e);
+  process.exit(1);
+});

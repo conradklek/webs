@@ -1,5 +1,5 @@
 <script>
-  import { resource, state, onReady, watch, session } from '@conradklek/webs';
+  import { useTable, state, onReady, watch, session } from '@conradklek/webs';
 
   export default {
     actions: {
@@ -23,7 +23,7 @@
       const formattedChannelName = `#${ctx.params.channel.toLowerCase()}`;
       const initialState = props.initialState || {};
 
-      const messages = resource('chat_messages');
+      const messages = useTable('chat_messages');
       const currentMessage = state('');
       const messageListEl = state(null);
 

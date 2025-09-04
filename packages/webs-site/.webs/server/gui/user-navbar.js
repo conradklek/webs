@@ -1,17 +1,30 @@
 // @bun
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/user-navbar.webs
-import { session } from "@conradklek/webs";
+import { session, route } from "@conradklek/webs";
 var user_navbar_default = {
+  name: "user-navbar",
   template: `
   <div class="flex-1">
     <div class="w-full flex flex-row items-center justify-end gap-4">
-      <nav w-if="!user" class="contents">
-        <a href="/login" class="link">Login</a>
+      <nav class="contents" w-if="!session.isLoggedIn">
+        <a
+          :href="'/login'"
+          class="link data-[open=true]:no-underline"
+          :data-open="route.path === '/login'"
+          >Login</a
+        >
         <span>|</span>
-        <a href="/signup" class="link">Signup</a>
+        <a
+          :href="'/signup'"
+          class="link data-[open=true]:no-underline"
+          :data-open="route.path === '/signup'"
+          >Signup</a
+        >
       </nav>
-      <nav w-else class="contents">
-        <a :href="'/' + user.username" class="link">@{{ user.username }}</a>
+      <nav class="contents" w-if="session.isLoggedIn">
+        <a :href="'/' + session.user.username" class="link"
+          >@{{ session.user.username }}</a
+        >
         <span>|</span>
         <button type="button" @click="handleLogout" class="link">Logout</button>
       </nav>
@@ -19,16 +32,12 @@ var user_navbar_default = {
   </div>
 `,
   style: ``,
-  name: "user-navbar",
-  props: {
-    user: Object
-  },
-  setup(props) {
+  setup() {
     function handleLogout() {
       session.logout();
       window.location.href = "/";
     }
-    return { ...props, session, handleLogout };
+    return { session, route, handleLogout };
   }
 };
 export {

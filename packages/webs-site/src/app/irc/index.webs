@@ -1,6 +1,4 @@
 <script>
-  import { resource } from '@conradklek/webs';
-
   export default {
     name: 'irc-index',
     actions: {
@@ -41,7 +39,7 @@
       </div>
     </div>
     <div
-      w-else
+      w-if="!channels.length"
       class="text-gray-500 text-center p-8 border border-dashed rounded-lg"
     >
       No active channels. Start one by navigating to /irc/your-channel-name.

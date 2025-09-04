@@ -1,94 +1,28 @@
-# webs.js
+# Webs.js
 
-A Javascript Framework
-
-```
-build.js
-
-This file is a build script that orchestrates the entire development process, including compiling components, preparing CSS, handling client-side assets, and starting the development server.
-
-server.js
-
-This file defines the core server-side logic, including request handling, authentication, and server-side rendering of .webs components.
-
-runtime.js
-
-This file provides the core runtime functionality for the client-side, including hydration of server-rendered HTML and client-side navigation.
-
-cache.js
-
-This file contains logic for a service worker that caches assets and full-page navigations.
-
-compiler.js
-
-This file contains the compiler logic that transforms the HTML-like template syntax of .webs components into a JavaScript render function.
-
-plugin.js
-
-This file defines a file system router, WebSocket handlers for chat and sync, and a session management system for the webs framework.
-
-parser.js
-
-This file contains the parser and tokenizer for both JavaScript expressions and HTML, which are used by the compiler.
-
-renderer.js
-
-This file defines the core rendering functions, including creating virtual nodes (VNode), patching the DOM, and handling component lifecycle hooks.
-
-index.js
-
-This file provides an API for client-side actions, local IndexedDB management, and a WebSocket-based data synchronization engine.
-
-reactivity.js
-
-This file defines the core reactivity system, including state, watch, and computed, which are used to manage and track changes in component data.
-```
+An Internet Framework.
 
 ## Core Concepts
 
-### 1. File-Based Routing
+### 1. Components (`.webs` files)
 
-Routing in Webs is simple and intuitive. The framework automatically maps files in the `src/app` directory to URL routes. These files are your "page" components.
+Components are the building blocks of a Webs application. They live in `.webs` files and use a simple structure of `<script>`, `<template>`, and `<style>` blocks.
 
-- `src/app/index.webs` → `/`
-- `src/app/about.webs` → `/about`
-- `src/app/blog/index.webs` → `/blog`
-
-**Dynamic Routes**
-
-To create a dynamic route, use square brackets in the filename. The value of the dynamic segment will be available in your component's `params` prop.
-
-- `src/app/profile/[username].webs` → `/profile/:username`
-- `src/app/posts/[slug].webs` → `/posts/:slug`
-
-To navigate between pages, use standard `<a>` tags. The Webs router intercepts these clicks to provide a fast, single-page application experience without full page reloads.
-
-### 2. Components
-
-Components are the heart of a Webs application. They are defined in `.webs` files using a familiar structure of three blocks: `<script>`, `<template>`, and `<style>`. This approach, inspired by frameworks like Svelte, co-locates all the logic, markup, and styling for a component in a single, easy-to-manage file.
-
-At build time, Webs uses a powerful Bun plugin to compile these `.webs` files into highly optimized, vanilla JavaScript modules.
-
-#### Basic Definition
-
-A component is defined by exporting a default object from the `<script>` block.
+The `<script>` block exports a default object that defines the component's logic. The `setup` function is the entry point for the component's composition API.
 
 ```html
+<!-- src/gui/counter.webs -->
 <script>
-  import { useState, onMounted } from "@conradklek/webs";
+  import { state } from "@conradklek/webs";
 
   export default {
     name: "Counter",
-    setup(props, context) {
-      const count = useState(0);
+    setup() {
+      const count = state(0);
 
       function increment() {
-        count++;
+        count.value++; // Access .value for refs
       }
-
-      onMounted(() => {
-        console.log("Counter component has been mounted!");
-      });
 
       return {
         count,
@@ -112,184 +46,165 @@ A component is defined by exporting a default object from the `<script>` block.
 </style>
 ```
 
-#### Props
-
-Props allow you to pass data from a parent component to a child. You define them in the `props` object within your script's default export. They are passed as the first argument to the `setup` function.
+To use a component inside another, import it and register it in the `components` object.
 
 ```html
+<!-- src/app/index.webs -->
+<script>
+  import Counter from "../gui/counter.webs";
+  export default {
+    components: {
+      "my-counter": Counter,
+    },
+  };
+</script>
+
+<template>
+  <my-counter />
+</template>
+```
+
+### 2. File-Based Routing
+
+Webs uses the file system to define routes. Any `.webs` file inside `src/app` becomes a page.
+
+- `src/app/index.webs` → `/`
+- `src/app/about.webs` → `/about`
+- `src/app/users/[id].webs` → `/users/:id`
+
+To navigate, just use standard `<a>` tags. The Webs router automatically intercepts clicks to provide a fast, SPA-like experience.
+
+### 3. Layouts
+
+To create a shared layout (e.g., with a header and footer), create a `layout.webs` file in a directory. It will automatically wrap all page components in that directory and its subdirectories. The page content is injected via the `<slot>` element.
+
+```html
+<!-- src/app/layout.webs -->
+<template>
+  <div class="app-container">
+    <header>My App</header>
+    <main>
+      <slot></slot>
+    </main>
+    <footer>Copyright 2025</footer>
+  </div>
+</template>
+```
+
+## Data & Backend
+
+Webs' most powerful feature is its integrated, offline-first data layer.
+
+### 1. Defining Data Schemas
+
+You can define your database table schemas directly inside the components that use them. Webs reads these definitions at build time, creates the necessary tables in SQLite, and sets up real-time synchronization.
+
+A table with `sync: true` will be automatically synchronized between the server and all connected clients.
+
+```html
+<!-- src/gui/todo-list.webs -->
 <script>
   export default {
-    name: "Greeting",
-    props: {
-      name: {
-        type: String,
-        default: "World",
+    tables: {
+      todos: {
+        sync: true, // This enables real-time, offline-first sync!
+        keyPath: "id",
+        fields: {
+          id: { type: "text", primaryKey: true },
+          user_id: { type: "integer", notNull: true, references: "users(id)" },
+          content: { type: "text", notNull: true },
+          completed: { type: "boolean", default: 0 },
+          created_at: { type: "timestamp", default: "CURRENT_TIMESTAMP" },
+        },
       },
     },
-    setup(props) {
-      console.log(`Hello, ${props.name}`);
-    },
+    // ... component logic
   };
 </script>
-
-<template>
-  <p>Hello, {{ name }}!</p>
-</template>
 ```
 
-#### Registering Child Components
+### 2. The `useTable` Hook
 
-To use a component within another, you must import it and register it in the `components` object. This makes the child component's tag available in the parent's template.
-
-```html
-<script>
-  import Greeting from "../components/Greeting.webs";
-
-  export default {
-    name: "HomePage",
-    components: {
-      Greeting,
-    },
-  };
-</script>
-
-<template>
-  <div>
-    <Greeting name="Alice" />
-    <Greeting />
-  </div>
-</template>
-```
-
-#### Slots & Content Projection
-
-To pass content _into_ a component, use the `<slot>` tag. Any child elements you place inside your custom component tag in the parent will be rendered where the `<slot>` tag is.
-
-````html
-<template>
-  <div class="wrapper">
-    <slot></slot>
-  </div>
-</template>
-
-```html
-<script>
-  import Wrapper from "../components/Wrapper.webs";
-
-  export default {
-    name: "HomePage",
-    components: { Wrapper },
-  };
-</script>
-
-<template>
-  <Wrapper>
-    <p>This content will be placed inside the wrapper.</p>
-  </Wrapper>
-</template>
-````
-
-## Backend & Data
-
-### 3. Database
-
-Webs includes out-of-the-box support for an SQLite database, managed via Bun's native `bun:sqlite` driver. The framework provides a simple migration system to manage your database schema over time.
-
-### 4. Server Actions
-
-Server Actions are a key feature of Webs. They allow you to define functions inside your components that **only run on the server**. This makes it incredibly easy to perform secure operations like database queries without building a separate API.
-
-When you call a Server Action from the client, Webs handles the secure communication. These actions receive a `context` object with access to the `db` instance and the authenticated `user`.
+To interact with a synced table, use the `useTable` hook. It provides a reactive state object and methods to optimistically update the UI. Changes are automatically queued and synced with the server when online.
 
 ```javascript
+import { state, useTable, session } from "@conradklek/webs";
+
 export default {
-  name: "Dashboard",
+  // ...
+  setup(props) {
+    const newTodoContent = state("");
+    const todos = useTable("todos", props.initialState?.initialTodos || []);
+
+    function addTodo() {
+      const newTodoItem = {
+        id: crypto.randomUUID(),
+        content: newTodoContent.value,
+        user_id: session.user.id,
+        // ... other fields
+      };
+      // Optimistically updates UI and queues for server sync
+      todos.put(newTodoItem);
+      newTodoContent.value = "";
+    }
+
+    return { todos: todos.state, addTodo };
+  },
+};
+```
+
+### 3. Server Actions & Data Fetching
+
+To run secure code on the server, define functions in the `actions` object of a page component. The special `ssrFetch` action is used to fetch data during server-side rendering, which is then passed as the `initialState` prop.
+
+```javascript
+// src/app/todos.webs
+export default {
   actions: {
-    async fetch_user_posts(context) {
-      const { db, user } = context;
-      if (!user) throw new Error("Unauthorized");
-      return db.query("SELECT * FROM posts WHERE user_id = ?").all(user.id);
+    async ssrFetch({ db, user }) {
+      if (!user) return { initialTodos: [] };
+      const todos = db
+        .query("SELECT * FROM todos WHERE user_id = ?")
+        .all(user.id);
+      return { initialTodos: todos };
     },
   },
   // ...
 };
 ```
 
-### 5. Authentication & Middleware
-
-Webs comes with a complete, cookie-based authentication system and automatically provides secure API endpoints for user registration (`/api/auth/register`), login (`/api/auth/login`), and logout (`/api/auth/logout`).
-
-To protect routes or run code before a page is rendered, you use **middleware**. A middleware is a function that intercepts a navigation request. You can use it to check if a user is logged in and redirect them if they aren't.
-
-To apply middleware, you export a named `middleware` array from a page component file.
+To call other actions from the client, use the `action` hook.
 
 ```javascript
-// src/app/profile/[username].js
+// In a component's setup function
+const { call: myAction, state: actionState } = action("someOtherAction");
 
-export const middleware = [
-  (to, from, next) => {
-    console.log(`Navigating from ${from.path} to ${to.path}`);
-    next();
-  },
-  (to, from, next) => {
-    if (!to.user) {
-      return next("/login");
-    }
-    next();
-  },
-];
-
-export default {
-  name: "Profile",
-  // ... component definition
-};
+myAction("some-argument");
 ```
 
----
+### 4. Authentication
 
-## Frontend
+Webs provides built-in API endpoints for auth:
 
-### 6. Template Syntax
+- `/api/auth/register`
+- `/api/auth/login`
+- `/api/auth/logout`
 
-Webs templates are standard HTML supercharged with a simple syntax for data binding and event handling.
+On the client, use the globally available `session` store to manage authentication state and call these endpoints.
 
-- **Text Interpolation**: Use mustaches `{{ }}` to display reactive state.
-  ```html
-  <p>Welcome, {{ username }}!</p>
-  ```
-- **Event Handling**: Use the `@` symbol to listen for DOM events.
-  ```html
-  <button type="button" @click="increment">Click me</button>
-  ```
-- **Attribute Binding**: Use the `:` shorthand to bind state to attributes.
-  ```html
-  <img :src="user_image" />
-  ```
+```javascript
+import { session } from "@conradklek/webs";
 
-**Attribute Fallthrough**
-(This section remains the same)
+// Check if user is logged in
+if (session.isLoggedIn) {
+  console.log(session.user);
+}
 
-### 7. Styling with Tailwind CSS
+// Log a user in
+await session.login("user@example.com", "password");
 
-Webs has a deep, native integration with the **Tailwind CSS v4 engine**. You can write component-scoped styles directly in the `<style>` block of your `.webs` files. This block gives you access to the full power of Tailwind, including `@theme` for defining design tokens and `@apply` for creating reusable component classes.
-
-Of course, you can also use standard Tailwind utility classes directly in your template for rapid development.
-
-```html
-<template>
-  <button type="button" class="btn-brand">Click Me</button>
-</template>
-
-<style>
-  @theme {
-    --color-brand: oklch(0.84 0.18 117.33);
-  }
-  @layer components {
-    .btn-brand {
-      @apply bg-brand text-white font-bold py-2 px-4 rounded;
-    }
-  }
-</style>
+// Log out
+await session.logout();
 ```
 
 ---

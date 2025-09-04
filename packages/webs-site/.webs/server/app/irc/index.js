@@ -1,7 +1,7 @@
 // @bun
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/app/irc/index.webs
-import { resource } from "@conradklek/webs";
 var irc_default = {
+  name: "index",
   template: `
   <div class="w-full max-w-lg mx-auto">
     <h1 class="text-2xl font-bold mb-4">IRC Channels</h1>
@@ -19,7 +19,7 @@ var irc_default = {
       </div>
     </div>
     <div
-      w-else
+      w-if="!channels.length"
       class="text-gray-500 text-center p-8 border border-dashed rounded-lg"
     >
       No active channels. Start one by navigating to /irc/your-channel-name.

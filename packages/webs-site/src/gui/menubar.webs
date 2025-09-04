@@ -214,7 +214,7 @@
     template(html) {
       return html`
         <div
-          class="flex h-10 items-center space-x-1 border border-border rounded-md bg-background p-1"
+          class="flex h-10 items-center space-x-1 border border-border rounded-md bg-popover p-1"
         >
           <slot></slot>
         </div>

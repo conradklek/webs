@@ -32,7 +32,7 @@ var TabsTrigger = {
         <button
           type="button"
           @click="handleClick"
-          class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+          class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-popover data-[state=active]:text-foreground data-[state=active]:shadow-sm"
           :data-state="isActive ? 'active' : 'inactive'"
         >
           <slot></slot>
@@ -51,8 +51,6 @@ var TabsList = {
   }
 };
 var tabs_default = {
-  template: ``,
-  style: ``,
   name: "tabs",
   components: {
     "tabs-list": TabsList,
@@ -74,6 +72,7 @@ var tabs_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/tabs-demo.webs
 var tabs_demo_default = {
+  name: "tabs-demo",
   template: `
   <tabs defaultValue="account">
     <tabs-list>
@@ -89,7 +88,6 @@ var tabs_demo_default = {
   </tabs>
 `,
   style: ``,
-  name: "tabs-demo",
   components: {
     tabs: tabs_default,
     ...tabs_default.components

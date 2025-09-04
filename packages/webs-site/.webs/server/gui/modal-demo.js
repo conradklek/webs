@@ -76,8 +76,6 @@ var ModalDescription = {
   }
 };
 var modal_default = {
-  template: ``,
-  style: ``,
   name: "modal",
   components: {
     "modal-trigger": ModalTrigger,
@@ -108,6 +106,7 @@ var modal_default = {
 
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/gui/modal-demo.webs
 var modal_demo_default = {
+  name: "modal-demo",
   template: `
   <modal>
     <modal-trigger>
@@ -143,7 +142,6 @@ var modal_demo_default = {
   </modal>
 `,
   style: ``,
-  name: "modal-demo",
   components: {
     modal: modal_default,
     ...modal_default.components

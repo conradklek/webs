@@ -2,12 +2,12 @@
 // webs-sfc:/Users/conradklek/webs/packages/webs-site/src/app/signup.webs
 import { session, state, router } from "@conradklek/webs";
 var signup_default = {
+  name: "signup",
   template: `
   <form
     @submit.prevent="handleSignup"
-    class="flex-1 max-w-xs flex flex-col items-start justify-start gap-2"
+    class="flex-1 max-w-xs mx-auto mt-8 flex flex-col items-start justify-start gap-2"
   >
-    <h1 class="text-xl font-primary-serif mb-4">Create Account</h1>
     <input
       bind:value="email"
       type="email"
@@ -30,14 +30,13 @@ var signup_default = {
       minlength="8"
       class="input"
     />
-    <button type="submit" class="btn btn-default btn-size-lg mt-4">
+    <button type="submit" class="btn btn-default btn-size-lg w-full mt-4">
       Sign Up
     </button>
     <p w-if="error" class="text-red-500 mt-2">{{ error }}</p>
   </form>
 `,
   style: ``,
-  name: "signup",
   setup() {
     const email = state("");
     const username = state("");

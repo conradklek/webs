@@ -1,6 +1,6 @@
-import { watch, isRef } from './reactivity';
-import { voidElements } from './parser';
-import { compile } from './compiler';
+import { watch, isRef } from './webs-engine';
+import { voidElements } from './webs-parser';
+import { compile } from './webs-compiler';
 
 const LOG_PREFIX = '[Renderer]';
 const log = (...args) => console.log(LOG_PREFIX, ...args);
@@ -423,14 +423,28 @@ export function createRenderer(options) {
           } else {
             patch(null, subTree, container, anchor, instance);
           }
+
           vnode.el = subTree.el;
           if (subTree.type === Fragment) {
-            const firstChild = (
+            const children = (
               Array.isArray(subTree.children)
                 ? subTree.children
                 : [subTree.children]
-            ).flat()[0];
-            vnode.el = firstChild?.el;
+            ).flat();
+            for (let i = children.length - 1; i >= 0; i--) {
+              if (children[i] && children[i].el) {
+                instance.lastEl = children[i].el;
+                break;
+              }
+            }
+            for (let i = 0; i < children.length; i++) {
+              if (children[i] && children[i].el) {
+                vnode.el = children[i].el;
+                break;
+              }
+            }
+          } else {
+            instance.lastEl = subTree.el;
           }
 
           instance.isMounted = true;
@@ -603,8 +617,7 @@ export function createRenderer(options) {
       currentNode &&
       ((currentNode.nodeType === 8 &&
         currentNode.data !== '[' &&
-        currentNode.data !== ']' &&
-        currentNode.data !== 'w-if') ||
+        currentNode.data !== ']') ||
         (currentNode.nodeType === 3 && currentNode.textContent.trim() === ''))
     ) {
       log(`Skipping non-essential node: ${getNodeDescription(currentNode)}`);
@@ -683,7 +696,9 @@ export function createRenderer(options) {
               currentDomNode.data !== '['
             ) {
               throw new Error(
-                `[Hydration Mismatch] Could not find opening comment marker for dynamic text. Found: ${getNodeDescription(currentDomNode)}`,
+                `[Hydration Mismatch] Could not find opening comment marker for dynamic text. Found: ${getNodeDescription(
+                  currentDomNode,
+                )}`,
               );
             }
 
@@ -695,7 +710,9 @@ export function createRenderer(options) {
               closingComment.data !== ']'
             ) {
               throw new Error(
-                `[Hydration Mismatch] Expected a closing comment '<!--]-->' but found: ${getNodeDescription(closingComment)}`,
+                `[Hydration Mismatch] Expected a closing comment '<!--]-->' but found: ${getNodeDescription(
+                  closingComment,
+                )}`,
               );
             }
             log('Successfully hydrated dynamic text content.');
@@ -704,7 +721,9 @@ export function createRenderer(options) {
           } else {
             if (!currentDomNode || currentDomNode.nodeType !== 3) {
               throw new Error(
-                `[Hydration Mismatch] Expected a text node, but found: ${getNodeDescription(currentDomNode)}`,
+                `[Hydration Mismatch] Expected a text node, but found: ${getNodeDescription(
+                  currentDomNode,
+                )}`,
               );
             }
             log('Successfully hydrated static text node.');
@@ -713,7 +732,9 @@ export function createRenderer(options) {
         case Comment:
           if (!currentDomNode || currentDomNode.nodeType !== 8) {
             throw new Error(
-              `[Hydration Mismatch] Expected a comment node, but found: ${getNodeDescription(currentDomNode)}`,
+              `[Hydration Mismatch] Expected a comment node, but found: ${getNodeDescription(
+                currentDomNode,
+              )}`,
             );
           }
           log('Successfully hydrated comment node.');
@@ -748,7 +769,8 @@ export function createRenderer(options) {
             }
             log('Mounting component in hydration mode...');
             mountComponent(vnode, null, null, parentComponent, true);
-            return vnode.el ? vnode.el.nextSibling : null;
+            const lastNode = vnode.component.lastEl;
+            return lastNode ? lastNode.nextSibling : null;
           } else if (isString(type)) {
             if (
               !currentDomNode ||
@@ -756,7 +778,9 @@ export function createRenderer(options) {
               currentDomNode.tagName.toLowerCase() !== type.toLowerCase()
             ) {
               throw new Error(
-                `[Hydration Mismatch] Expected element <${type}>, but found: ${getNodeDescription(currentDomNode)}`,
+                `[Hydration Mismatch] Expected element <${type}>, but found: ${getNodeDescription(
+                  currentDomNode,
+                )}`,
               );
             }
             log(
@@ -835,6 +859,7 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
       ? parent.provides
       : Object.create(appContext.provides || null),
     hooks: {},
+    lastEl: null,
   };
 
   const { props: propsOptions, setup } = instance.type;
@@ -1134,7 +1159,9 @@ export async function renderToString(vnode) {
       throw e;
     }
     console.error(`[SSR Error] ${e.message}\n${e.stack}`);
-    const html = `<div style="color:red; background:lightyellow; border: 1px solid red; padding: 1rem;">SSR Error: ${escapeHtml(e.message)}</div>`;
+    const html = `<div style="color:red; background:lightyellow; border: 1px solid red; padding: 1rem;">SSR Error: ${escapeHtml(
+      e.message,
+    )}</div>`;
     return { html, componentState: {} };
   }
 }
@@ -1178,7 +1205,7 @@ async function renderVnode(vnode, parentComponent, context) {
         const instance = createComponent(vnode, parentComponent, true);
 
         if (parentComponent) {
-          // noop
+          /* noop */
         }
 
         let subTree = instance.render.call(instance.ctx, instance.ctx);
