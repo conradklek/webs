@@ -1,0 +1,52 @@
+<script>
+  import { fs, state, watch } from '@conradklek/webs';
+
+  export default {
+    props: {
+      filePath: String,
+      initialContent: String,
+    },
+    setup(props) {
+      const file = fs(props.filePath).use(props.initialContent);
+
+      const localContent = state(props.initialContent || '');
+
+      watch(
+        () => file.data,
+        (newData) => {
+          if (newData !== null && newData !== localContent.value) {
+            localContent.value = newData;
+          }
+        },
+      );
+
+      let saveTimeout;
+      function onInput(event) {
+        localContent.value = event.target.value;
+        clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(() => {
+          file.write(localContent.value);
+        }, 300);
+      }
+
+      return { file, localContent, onInput };
+    },
+  };
+</script>
+
+<template>
+  <div class="w-full relative">
+    {#if file.isLoading && file.data === null}
+    <div class="text-muted-foreground animate-pulse p-4">Loading file...</div>
+    {/if} {#if file.error}
+    <div class="text-red-500 font-medium p-4">Sync Error: {{ file.error }}</div>
+    {/if}
+
+    <textarea
+      :value="localContent"
+      @input="onInput"
+      class="w-full h-96 p-4 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow font-mono"
+      placeholder="Start typing..."
+    ></textarea>
+  </div>
+</template>

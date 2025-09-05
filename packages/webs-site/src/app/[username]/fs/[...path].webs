@@ -1,0 +1,199 @@
+<script>
+  import { computed, state, action } from '@conradklek/webs';
+
+  export default {
+    actions: {
+      async prefetch({ fs, user, params }) {
+        if (!user || user.username !== params.username) {
+          return { error: 'Permission denied.' };
+        }
+        const path = params.path || '';
+        try {
+          const items = await fs.ls(path);
+          return { items, path, error: null };
+        } catch (error) {
+          console.error(`[Prefetch Error] for path "/${path}":`, error);
+          return { items: [], path, error: 'Could not load directory.' };
+        }
+      },
+
+      async create({ fs, params }, name) {
+        if (!name || name.includes('..') || name.includes('\\')) {
+          throw new Error('Invalid name');
+        }
+
+        const isDir = name.endsWith('/');
+        const cleanName = isDir ? name.slice(0, -1) : name;
+        if (!cleanName) throw new Error('Name cannot be empty.');
+
+        const basePath = params.path || '';
+        const newPath = `${basePath ? basePath + '/' : ''}${cleanName}`;
+
+        const access = 'private';
+
+        if (isDir) {
+          await fs.mkdir(newPath, { access });
+        } else {
+          await fs.write(newPath, '', { access });
+        }
+
+        return { success: true, path: newPath };
+      },
+    },
+
+    props: {
+      initialState: Object,
+      params: Object,
+    },
+
+    setup(props) {
+      const items = state(props.initialState?.items || []);
+      const currentPath = computed(() => props.params.path || '');
+      const uploadStatus = state('');
+      const newItemName = state('');
+
+      const createAction = action('create');
+
+      const breadcrumbs = computed(() => {
+        const path = props.params.path || '';
+        const segments = path.split('/').filter(Boolean);
+        const crumbs = [{ name: 'fs', path: `/${props.params.username}/fs` }];
+        let pathAccumulator = `/${props.params.username}/fs`;
+        for (const segment of segments) {
+          pathAccumulator += `/${segment}`;
+          crumbs.push({ name: segment, path: pathAccumulator });
+        }
+        return crumbs;
+      });
+
+      async function handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        uploadStatus.value = `Uploading ${file.name}...`;
+        const targetPath = `${currentPath.value ? currentPath.value + '/' : ''}${file.name}`;
+
+        try {
+          const response = await fetch(
+            `/api/fs/${encodeURIComponent(targetPath)}`,
+            {
+              method: 'PUT',
+              body: file,
+              headers: { 'Content-Type': file.type },
+            },
+          );
+
+          if (!response.ok) {
+            throw new Error(`Upload failed: ${await response.text()}`);
+          }
+
+          uploadStatus.value = `Successfully uploaded ${file.name}!`;
+        } catch (error) {
+          console.error(error);
+          uploadStatus.value = `Error: ${error.message}`;
+        }
+        event.target.value = '';
+      }
+
+      async function handleCreateItem() {
+        const name = newItemName.value.trim();
+        if (!name) return;
+
+        await createAction.call(name);
+        newItemName.value = '';
+      }
+
+      return {
+        items,
+        currentPath,
+        breadcrumbs,
+        params: props.params,
+        handleFileUpload,
+        uploadStatus,
+        newItemName,
+        handleCreateItem,
+        error: props.initialState?.error,
+      };
+    },
+  };
+</script>
+
+<template>
+  <div class="flex flex-col gap-4">
+    <breadcrumb>
+      <breadcrumb-list>
+        {#each breadcrumbs as (crumb, index) (crumb.path)}
+        <breadcrumb-item>
+          {#if index < breadcrumbs.length - 1}
+          <breadcrumb-link :href="crumb.path">{{ crumb.name }}</breadcrumb-link>
+          {:else}
+          <breadcrumb-active>{{ crumb.name }}</breadcrumb-active>
+          {/if}
+        </breadcrumb-item>
+        {#if index < breadcrumbs.length - 1}
+        <breadcrumb-separator />
+        {/if} {/each}
+      </breadcrumb-list>
+    </breadcrumb>
+
+    {#if error}
+    <div class="p-4 bg-red-100 text-red-700 rounded-lg">
+      <strong>Error:</strong> {{ error }}
+    </div>
+    {:else}
+    <div class="mt-4">
+      <div class="mb-4 space-y-4">
+        <form @submit.prevent="handleCreateItem" class="flex gap-2">
+          <input
+            bind:value="newItemName"
+            type="text"
+            placeholder="new-directory/ or new-file.txt"
+            class="input"
+          />
+          <button type="submit" class="btn btn-size-lg btn-default">
+            Create
+          </button>
+        </form>
+        <div>
+          <label
+            for="file-upload"
+            class="btn btn-size-lg btn-default cursor-pointer"
+          >
+            Upload File
+          </label>
+          <input
+            id="file-upload"
+            type="file"
+            class="hidden"
+            @change="handleFileUpload"
+          />
+          {#if uploadStatus}
+          <p class="text-sm text-muted-foreground mt-2">{{ uploadStatus }}</p>
+          {/if}
+        </div>
+      </div>
+      <ul class="space-y-2">
+        {#if items && items.length > 0} {#each items as item (item.name)}
+        <li class="font-mono">
+          {#if item.isDirectory}
+          <a
+            :href="'/' + params.username + '/fs/' + (currentPath ? currentPath + '/' : '') + item.name"
+            class="link"
+            >{{ item.name }}/</a
+          >
+          {:else}
+          <a
+            :href="'/' + params.username + '/editor/' + (currentPath ? currentPath + '/' : '') + item.name"
+            class="link"
+            >{{ item.name }}</a
+          >
+          {/if}
+        </li>
+        {/each} {:else}
+        <li class="text-muted-foreground">This directory is empty.</li>
+        {/if}
+      </ul>
+    </div>
+    {/if}
+  </div>
+</template>

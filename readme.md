@@ -1,4 +1,4 @@
-# Webs.js
+# Webs
 
 An Internet Framework.
 
@@ -6,9 +6,7 @@ An Internet Framework.
 
 ### 1. Components (`.webs` files)
 
-Components are the building blocks of a Webs application. They live in `.webs` files and use a simple structure of `<script>`, `<template>`, and `<style>` blocks.
-
-The `<script>` block exports a default object that defines the component's logic. The `setup` function is the entry point for the component's composition API.
+Components are the building blocks of a Webs application. They are single files that contain their own logic, markup, and styles, making them highly portable and easy to understand.
 
 ```html
 <!-- src/gui/counter.webs -->
@@ -16,18 +14,12 @@ The `<script>` block exports a default object that defines the component's logic
   import { state } from "@conradklek/webs";
 
   export default {
-    name: "Counter",
     setup() {
       const count = state(0);
-
       function increment() {
-        count.value++; // Access .value for refs
+        count.value++;
       }
-
-      return {
-        count,
-        increment,
-      };
+      return { count, increment };
     },
   };
 </script>
@@ -64,42 +56,33 @@ To use a component inside another, import it and register it in the `components`
 </template>
 ```
 
-### 2. File-Based Routing
+### 2. File-Based Routing & Layouts
 
-Webs uses the file system to define routes. Any `.webs` file inside `src/app` becomes a page.
+Webs uses the file system to define routes. Any `.webs` file inside `src/app` becomes a page, with support for dynamic segments and catch-all routes.
 
 - `src/app/index.webs` → `/`
-- `src/app/about.webs` → `/about`
-- `src/app/users/[id].webs` → `/users/:id`
+- `src/app/users/[username].webs` → `/users/:username`
+- `src/app/files/[...path].webs` → `/files/*` (catch-all)
 
-To navigate, just use standard `<a>` tags. The Webs router automatically intercepts clicks to provide a fast, SPA-like experience.
+Shared layouts are created with a `layout.webs` file, which automatically wraps all pages in its directory and subdirectories. Page content is rendered inside the `<slot>` element.
 
-### 3. Layouts
+### 3. Template Syntax
 
-To create a shared layout (e.g., with a header and footer), create a `layout.webs` file in a directory. It will automatically wrap all page components in that directory and its subdirectories. The page content is injected via the `<slot>` element.
+Webs uses a Svelte-inspired template syntax for its simplicity and power.
 
-```html
-<!-- src/app/layout.webs -->
-<template>
-  <div class="app-container">
-    <header>My App</header>
-    <main>
-      <slot></slot>
-    </main>
-    <footer>Copyright 2025</footer>
-  </div>
-</template>
-```
+- **Interpolation**: `{{ expression }}`
+- **Attribute Binding**: `:href="expression"` or `:href="{ `...` }"` for complex expressions.
+- **Event Handling**: `@click="handler"`
+- **Conditionals**: `{#if ...}`, `{:else if ...}`, `{:else}`
+- **Lists**: `{#each items as item (item.id)}` with a unique key for efficient updates.
 
-## Data & Backend
+## Local-First Data & Sync
 
-Webs' most powerful feature is its integrated, offline-first data layer.
+Webs is designed from the ground up for building local-first, offline-capable applications.
 
-### 1. Defining Data Schemas
+### 1. Data Schemas in Components
 
-You can define your database table schemas directly inside the components that use them. Webs reads these definitions at build time, creates the necessary tables in SQLite, and sets up real-time synchronization.
-
-A table with `sync: true` will be automatically synchronized between the server and all connected clients.
+Define your database schemas directly within the components that use them. Tables marked with `sync: true` are automatically kept in sync between the server (SQLite), the client (IndexedDB), and all connected peers in real-time.
 
 ```html
 <!-- src/gui/todo-list.webs -->
@@ -107,108 +90,147 @@ A table with `sync: true` will be automatically synchronized between the server 
   export default {
     tables: {
       todos: {
-        sync: true, // This enables real-time, offline-first sync!
+        sync: true, // This is the magic!
         keyPath: "id",
         fields: {
           id: { type: "text", primaryKey: true },
           user_id: { type: "integer", notNull: true, references: "users(id)" },
           content: { type: "text", notNull: true },
           completed: { type: "boolean", default: 0 },
-          created_at: { type: "timestamp", default: "CURRENT_TIMESTAMP" },
         },
       },
     },
-    // ... component logic
+    // ...
   };
 </script>
 ```
 
-### 2. The `useTable` Hook
+### 2. The `table` Hook
 
-To interact with a synced table, use the `useTable` hook. It provides a reactive state object and methods to optimistically update the UI. Changes are automatically queued and synced with the server when online.
+The `table` hook is your primary tool for interacting with local data on the client. It provides a reactive state object that is automatically updated when the underlying data changes, whether from a local modification or a sync event from the server.
 
 ```javascript
-import { state, useTable, session } from "@conradklek/webs";
+import { table } from "@conradklek/webs";
 
 export default {
-  // ...
   setup(props) {
-    const newTodoContent = state("");
-    const todos = useTable("todos", props.initialState?.initialTodos || []);
+    // Initializes with server-prefetched data and subscribes to real-time updates.
+    const todos = table("todos", props.initialState?.initialTodos);
 
-    function addTodo() {
-      const newTodoItem = {
-        id: crypto.randomUUID(),
-        content: newTodoContent.value,
-        user_id: session.user.id,
-        // ... other fields
-      };
-      // Optimistically updates UI and queues for server sync
-      todos.put(newTodoItem);
-      newTodoContent.value = "";
-    }
-
-    return { todos: todos.state, addTodo };
+    return { todos: todos.state };
   },
 };
 ```
 
-### 3. Server Actions & Data Fetching
+### 3. Local-First Filesystem
 
-To run secure code on the server, define functions in the `actions` object of a page component. The special `ssrFetch` action is used to fetch data during server-side rendering, which is then passed as the `initialState` prop.
+Webs includes a built-in filesystem abstraction for handling user files with the same local-first principles. The `fs` utility provides a simple API for reading, writing, and listing files, which are automatically synced.
+
+```javascript
+import { fs, onReady, watch } from "@conradklek/webs";
+
+export default {
+  setup(props) {
+    // `use` subscribes to a file's content, keeping it reactive.
+    const file = fs(props.filePath).use(props.initialContent);
+
+    // Save changes after a brief delay.
+    let saveTimeout;
+    function onInput(event) {
+      clearTimeout(saveTimeout);
+      saveTimeout = setTimeout(() => {
+        file.write(event.target.value); // Writes to local DB, queues for sync.
+      }, 300);
+    }
+
+    return { file, onInput };
+  },
+};
+```
+
+## Server Interaction & Data Fetching
+
+### 1. Resilient Actions with `request`
+
+For operations that need to be resilient to network failures, Webs provides a powerful `request` utility. It wraps any `async` function and allows you to chain combinators like `.retry()` to define its execution strategy.
+
+```javascript
+import { request } from "@conradklek/webs";
+
+export default {
+  actions: {
+    // This action will be retried up to 2 times if it fails.
+    prefetch: request(async ({ db, user }) => {
+      // ... fetch data
+    }).retry(2),
+
+    // Another resilient action.
+    create: request(async ({ fs }, name) => {
+      // ... create a file
+    }).retry(3),
+  },
+  //...
+};
+```
+
+### 2. The `prefetch` Action
+
+The `prefetch` action is a special, reserved name. It's used to fetch the essential data a page needs before it's rendered. It runs on the server for the initial page load and on the client during client-side navigation, ensuring your components always have the data they need.
 
 ```javascript
 // src/app/todos.webs
+import { request } from "@conradklek/webs";
+
 export default {
   actions: {
-    async ssrFetch({ db, user }) {
-      if (!user) return { initialTodos: [] };
+    prefetch: request(async ({ db, user }) => {
+      if (!user) throw new Error("Permission Denied");
       const todos = db
         .query("SELECT * FROM todos WHERE user_id = ?")
         .all(user.id);
       return { initialTodos: todos };
-    },
+    }).retry(2),
   },
   // ...
 };
 ```
 
-To call other actions from the client, use the `action` hook.
+### 3. Client-Side Actions
+
+To call a server action from your component, use the `action` helper. It provides a `call` function and a reactive `state` object (`{ data, error, isLoading }`) to easily manage UI feedback.
 
 ```javascript
 // In a component's setup function
-const { call: myAction, state: actionState } = action("someOtherAction");
+import { action } from "@conradklek/webs";
 
-myAction("some-argument");
+const createItem = action("create");
+
+async function handleCreate() {
+  await createItem.call("new-file.txt");
+  if (createItem.state.error) {
+    // Handle error
+  }
+}
 ```
 
-### 4. Authentication
+### 4. File Uploads
 
-Webs provides built-in API endpoints for auth:
+The framework includes a dedicated, streaming endpoint for file uploads at `/api/fs/*`. Files are written directly to the user's filesystem space and the changes are broadcast to all clients in real-time.
 
-- `/api/auth/register`
-- `/api/auth/login`
-- `/api/auth/logout`
-
-On the client, use the globally available `session` store to manage authentication state and call these endpoints.
+```html
+<input type="file" @change="handleFileUpload" />
+```
 
 ```javascript
-import { session } from "@conradklek/webs";
+async function handleFileUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
 
-// Check if user is logged in
-if (session.isLoggedIn) {
-  console.log(session.user);
+  // Stream the file to the server.
+  const response = await fetch(`/api/fs/path/to/${file.name}`, {
+    method: "PUT",
+    body: file,
+  });
+  // The UI will update automatically via the sync engine.
 }
-
-// Log a user in
-await session.login("user@example.com", "password");
-
-// Log out
-await session.logout();
 ```
-
----
-
-## License
-
-MIT

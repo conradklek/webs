@@ -3,7 +3,7 @@
 
   export default {
     actions: {
-      async ssrFetch(context) {
+      async prefetch(context) {
         const { db, params } = context;
         const channel = `#${params.channel.toLowerCase()}`;
         try {
@@ -80,11 +80,8 @@
       {{ formattedChannelName }}
     </h2>
     <div class="message-list">
-      <div
-        w-for="msg in messages.state.data"
-        :key="msg.id"
-        class="message-item"
-      >
+      {#each messages.state.data as msg}
+      <div class="message-item">
         <div class="py-1 px-2 flex">
           <span class="font-bold mr-2 text-left flex-shrink-0"
             >&lt;{{ msg.username }}&gt;</span
@@ -92,6 +89,7 @@
           <span class="break-words min-w-0">{{ msg.message }}</span>
         </div>
       </div>
+      {/each}
     </div>
     <div class="chat-input-area">
       <form @submit.prevent="handleSend" class="w-full">

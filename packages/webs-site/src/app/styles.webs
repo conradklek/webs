@@ -31,9 +31,9 @@
     --color-input: oklch(0.922 0 0);
     --color-ring: oklch(0.708 0 0);
 
-    --font-primary-serif: 'Georgia', Times, 'Times New Roman', serif;
-    --font-primary-sans: 'Verdana', Geneva, sans-serif;
-    --font-primary-mono: 'Courier New', 'Courier', monospace;
+    --font-sans: 'Arial', 'Helvetica', sans-serif;
+    --font-serif: 'Georgia', Times, 'Times New Roman', serif;
+    --font-mono: 'Courier New', 'Courier', monospace;
   }
 
   @layer base {
@@ -41,7 +41,7 @@
       @apply min-h-full;
     }
     body {
-      @apply w-dvw min-h-dvh overflow-x-hidden overflow-y-auto;
+      @apply w-dvw min-h-dvh overflow-x-hidden overflow-y-auto bg-background text-foreground;
     }
     a {
       @apply underline cursor-pointer active:opacity-50 whitespace-nowrap text-hyperlink;

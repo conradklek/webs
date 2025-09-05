@@ -1,12 +1,7 @@
 <script>
-  import TodoList from '../../gui/todo-list.webs';
-
   export default {
-    components: {
-      'todo-list': TodoList,
-    },
     actions: {
-      async ssrFetch({ db, params, user }) {
+      async prefetch({ db, params, user }) {
         if (!user || user.username !== params.username) {
           return { initialTodos: [] };
         }

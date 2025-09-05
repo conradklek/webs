@@ -1,14 +1,16 @@
-import { state } from './webs-engine';
-import { onUnmounted, createRenderer, createVnode } from './webs-renderer';
-import { db, syncEngine } from './client-db';
-import { fs } from './client-fs';
-import { session } from './client-me';
+import { onUnmounted, createRenderer, createVnode } from './renderer.js';
+import { db, fs, syncEngine } from './sync.js';
+import { state } from './engine.js';
+import { session } from './session.js';
+
+const LOG_PREFIX = '[Runtime]';
+const log = (...args) => console.log(LOG_PREFIX, ...args);
 
 export { session, db, fs, syncEngine };
 
-export * from './webs-engine';
-export * from './webs-renderer';
-export * from './webs-compiler';
+export * from './engine';
+export * from './compiler';
+export * from './renderer';
 
 let appInstance = null;
 let componentManifestInstance = null;
@@ -34,16 +36,14 @@ async function performNavigation(url, { isPopState = false } = {}) {
       data = deserializeState(await response.json());
     }
 
-    if (route) route.path = url.pathname;
-    window.__WEBS_STATE__ = { componentName: data.componentName };
-    session.setUser(data.user);
-
     const componentLoader = componentManifestInstance.get(data.componentName);
+    if (!componentLoader) {
+      console.error(`Component loader not found for: ${data.componentName}`);
+      window.location.assign(url.href);
+      return;
+    }
     const componentModule = await componentLoader();
     const newComponentDef = componentModule.default;
-
-    if (!isPopState) window.history.pushState({}, '', url.href);
-    document.title = data.title;
 
     const oldVnode = appInstance._vnode;
     const newProps = {
@@ -56,6 +56,14 @@ async function performNavigation(url, { isPopState = false } = {}) {
     newVnode.appContext = appInstance._context;
     appInstance._context.patch(oldVnode, newVnode, appInstance._container);
     appInstance._vnode = newVnode;
+
+    if (!isPopState) {
+      window.history.pushState({}, '', url.href);
+    }
+    document.title = data.title;
+    if (route) route.path = url.pathname;
+    window.__WEBS_STATE__ = { componentName: data.componentName };
+    session.setUser(data.user);
   } catch (err) {
     console.error('[Router] Client-side navigation failed:', err);
     window.location.assign(url.href);
@@ -107,8 +115,15 @@ export const createApp = (() => {
       if (parent) parent.removeChild(child);
     },
     patchProp: (el, key, prevVal, nextVal) => {
+      log(`patchProp on <${el.tagName.toLowerCase()}>`, {
+        key,
+        prevVal,
+        nextVal,
+      });
+
       if (/^on[A-Z]/.test(key)) {
         const eventName = key.slice(2).toLowerCase();
+        log(`Attaching event listener: '${eventName}' to`, el);
         if (prevVal) el.removeEventListener(eventName, prevVal);
         if (nextVal) el.addEventListener(eventName, nextVal);
       } else if (key === 'class') {
@@ -230,6 +245,8 @@ function installNavigationHandler(app, componentManifest) {
   });
 
   window.addEventListener('click', (e) => {
+    log('Global click listener fired for:', e.target);
+
     const link = e.target.closest('a');
     if (
       !link ||
@@ -241,6 +258,8 @@ function installNavigationHandler(app, componentManifest) {
       return;
     const href = link.getAttribute('href');
     if (!href || href.startsWith('#')) return;
+
+    log('Intercepting navigation for href:', href);
     e.preventDefault();
     router.push(href);
   });

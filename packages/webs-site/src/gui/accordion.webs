@@ -12,13 +12,11 @@
     setup(props) {
       provide('itemValue', props.value);
     },
-    template(html) {
-      return html`
+    template: `
         <div class="w-full flex flex-col gap-1.5">
           <slot></slot>
         </div>
-      `;
-    },
+      `,
   };
 
   export const AccordionTrigger = {
@@ -31,8 +29,7 @@
         handleClick: () => toggle && value && toggle(value),
       };
     },
-    template(html) {
-      return html`
+    template: `
         <h3>
           <button
             type="button"
@@ -46,8 +43,7 @@
             </span>
           </button>
         </h3>
-      `;
-    },
+      `,
   };
 
   export const AccordionContent = {
@@ -59,13 +55,13 @@
       const isOpen = computed(() => openItems && openItems.has(value));
       return { isOpen };
     },
-    template(html) {
-      return html`
-        <div w-if="isOpen" class="pb-3 pt-1">
+    template: `
+        {#if isOpen}
+        <div class="pb-3 pt-1">
           <slot></slot>
         </div>
-      `;
-    },
+        {/if}
+      `,
   };
 
   export default {
@@ -89,21 +85,26 @@
       const openItems = state(new Set());
 
       function toggle(value) {
+        const newSet = new Set(openItems);
         if (props.type === 'single') {
-          if (openItems.has(value)) {
+          if (newSet.has(value)) {
             if (props.collapsible) {
-              openItems.delete(value);
+              newSet.delete(value);
             }
           } else {
-            openItems.clear();
-            openItems.add(value);
+            newSet.clear();
+            newSet.add(value);
           }
         } else if (props.type === 'multiple') {
-          if (openItems.has(value)) {
-            openItems.delete(value);
+          if (newSet.has(value)) {
+            newSet.delete(value);
           } else {
-            openItems.add(value);
+            newSet.add(value);
           }
+        }
+        openItems.clear();
+        for (const item of newSet) {
+          openItems.add(item);
         }
       }
 
@@ -112,12 +113,10 @@
         toggle,
       });
     },
-    template(html) {
-      return html`
+    template: `
         <div class="w-full flex flex-col items-start justify-start gap-3">
           <slot></slot>
         </div>
-      `;
-    },
+      `,
   };
 </script>

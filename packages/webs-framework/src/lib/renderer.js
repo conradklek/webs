@@ -1,6 +1,6 @@
-import { watch, isRef } from './webs-engine';
-import { voidElements } from './webs-parser';
-import { compile } from './webs-compiler';
+import { watch, isRef } from './engine.js';
+import { voidElements } from './parser.js';
+import { compile } from './compiler.js';
 
 const LOG_PREFIX = '[Renderer]';
 const log = (...args) => console.log(LOG_PREFIX, ...args);
@@ -41,19 +41,6 @@ function normalizeClass(value) {
   let res = '';
   if (isString(value)) {
     res = value;
-  } else if (Array.isArray(value)) {
-    for (let i = 0; i < value.length; i++) {
-      const normalized = normalizeClass(value[i]);
-      if (normalized) {
-        res += normalized + ' ';
-      }
-    }
-  } else if (isObjectAndNotArray(value)) {
-    for (const name in value) {
-      if (value[name]) {
-        res += name + ' ';
-      }
-    }
   }
   return res.trim();
 }
@@ -174,7 +161,7 @@ export function createRenderer(options) {
         if (target) {
           patchChildren(n1, n2, target, parentComponent);
         } else {
-          console.warn(`Teleport target "${n2.props.to}" not found.`);
+          warn(`Teleport target "${n2.props.to}" not found.`);
         }
         break;
       default:
@@ -197,6 +184,8 @@ export function createRenderer(options) {
     const el = (n2.el = n1 ? n1.el : hostCreateElement(n2.type));
     const oldProps = n1?.props || {};
     const newProps = n2.props || {};
+
+    log(`Patching props for <${n2.type}>`, { oldProps, newProps });
 
     if ('class' in newProps || 'class' in oldProps) {
       const newClass = normalizeClass(newProps.class);
@@ -468,7 +457,7 @@ export function createRenderer(options) {
 
           if (prevTree.type === Fragment && prevTree.children) {
             const children = Array.isArray(prevTree.children)
-              ? prev.children
+              ? prevTree.children
               : [prevTree.children];
             if (children.length > 0 && children[0]) {
               anchorNodeForParent = children[0].el;
@@ -999,7 +988,7 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
   } else if (instance.type.template) {
     instance.render = compile(instance.type);
   } else {
-    console.warn(
+    warn(
       `Component "${instance.type.name}" is missing a template or render function.`,
     );
     instance.render = () => createVnode(Comment, null, 'no template');
@@ -1153,7 +1142,7 @@ export async function renderToString(vnode) {
     return { html, componentState: unwrappedState };
   } catch (e) {
     if (e instanceof TypeError && e.message.includes('null is not an object')) {
-      console.warn(
+      warn(
         'SSR Warning: Null user object encountered. This is normal for unauthenticated requests.',
       );
       throw e;

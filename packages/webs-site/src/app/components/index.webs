@@ -19,9 +19,11 @@
 <template>
   <div class="w-full flex flex-col items-start justify-start gap-4">
     <ul class="list-disc pl-8 space-y-1">
-      <li w-for="component in components" :key="component.name">
+      {#each components as component (component.name)}
+      <li>
         <a :href="component.url" class="link">{{ component.name }}</a>
       </li>
+      {/each}
     </ul>
   </div>
 </template>

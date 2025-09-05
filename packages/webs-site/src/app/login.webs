@@ -45,6 +45,8 @@
     <button type="submit" class="btn btn-default btn-size-lg w-full mt-4">
       Enter
     </button>
-    <p w-if="error" class="text-red-500 mt-2">{{ error }}</p>
+    {#if error}
+    <p class="text-red-500 mt-2">{{ error }}</p>
+    {/if}
   </form>
 </template>

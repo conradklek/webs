@@ -33,30 +33,32 @@ self.addEventListener('activate', (event) => {
             }),
         );
 
-        const currentCachePromise = caches.open(CACHE_NAME).then((cache) => {
-          const urlsToKeep = new Set(
-            assetManifest.map(
-              (entry) => new URL(entry.url, self.location.origin).href,
-            ),
-          );
-
-          return cache.keys().then((requests) => {
-            const requestsToDelete = requests.filter(
-              (request) => !urlsToKeep.has(request.url),
+        const currentCachePromise = caches
+          .open(CACHE_NAME)
+          .then(async (cache) => {
+            const urlsToKeep = new Set(
+              assetManifest.map(
+                (entry) => new URL(entry.url, self.location.origin).href,
+              ),
             );
 
-            if (requestsToDelete.length > 0) {
-              console.log(
-                'Service Worker: Deleting outdated assets:',
-                requestsToDelete.map((r) => r.url),
+            return cache.keys().then((requests) => {
+              const requestsToDelete = requests.filter(
+                (request) => !urlsToKeep.has(request.url),
               );
-            }
 
-            return Promise.all(
-              requestsToDelete.map((request) => cache.delete(request)),
-            );
+              if (requestsToDelete.length > 0) {
+                console.log(
+                  'Service Worker: Deleting outdated assets:',
+                  requestsToDelete.map((r) => r.url),
+                );
+              }
+
+              return Promise.all(
+                requestsToDelete.map((request) => cache.delete(request)),
+              );
+            });
           });
-        });
 
         return Promise.all([oldCachesPromise, currentCachePromise]);
       })

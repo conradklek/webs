@@ -1,5 +1,9 @@
-import { parseHtml, parseJs, tokenizeJs } from './webs-parser';
-import * as Webs from './webs-renderer';
+import { parseHtml, parseJs, tokenizeJs } from './parser.js';
+import * as Webs from './renderer.js';
+
+const LOG_PREFIX = '[Compiler]';
+const log = (...args) => console.log(LOG_PREFIX, ...args);
+const warn = (...args) => console.warn(LOG_PREFIX, ...args);
 
 export const NODE_TYPES = {
   ROOT: 0,
@@ -19,9 +23,6 @@ export const ATTR_TYPES = {
   DIRECTIVE: 11,
   EVENT_HANDLER: 12,
 };
-
-const DIR_IF = 'w-if';
-const DIR_FOR = 'w-for';
 
 const cacheStringFunction = (fn) => {
   const cache = Object.create(null);
@@ -45,6 +46,18 @@ export function generateRenderFn(ast) {
           return this.scope.has(expr.name) ? expr.name : `_ctx.${expr.name}`;
         case 'Literal':
           return JSON.stringify(expr.value);
+        case 'TemplateLiteral': {
+          let code = '`';
+          let i = 0;
+          for (const quasi of expr.quasis) {
+            code += quasi.value.raw.replace(/`/g, '\\`');
+            if (!quasi.tail) {
+              code += `\${${this.genExpr(expr.expressions[i++])}}`;
+            }
+          }
+          code += '`';
+          return code;
+        }
         case 'ObjectExpression': {
           const props = expr.properties
             .map((p) => {
@@ -106,19 +119,14 @@ export function generateRenderFn(ast) {
           if (p.expression && p.expression.type === 'Identifier') {
             handlerBody = `${exprCode}($event)`;
           }
-          if (p.modifiers && p.modifiers.size > 0) {
-            const statements = [];
-            if (p.modifiers.has('prevent')) {
-              statements.push('$event.preventDefault();');
-            }
-            if (p.modifiers.has('stop')) {
-              statements.push('$event.stopPropagation();');
-            }
-            statements.push(handlerBody);
-            return `'${p.name}': ($event) => { ${statements.join(' ')} }`;
-          } else {
-            return `'${p.name}': ($event) => (${handlerBody})`;
+          if (p.modifiers && p.modifiers.has('prevent')) {
+            handlerBody = `$event.preventDefault(); ${handlerBody}`;
           }
+          if (p.modifiers && p.modifiers.has('stop')) {
+            handlerBody = `$event.stopPropagation(); ${handlerBody}`;
+          }
+
+          return `'${p.name}': ($event) => { ${handlerBody} }`;
         }
       };
       return `{${props
@@ -133,7 +141,8 @@ export function generateRenderFn(ast) {
       return `{ ${slotEntries.join(', ')} }`;
     },
     genChildren(children) {
-      const childNodes = children
+      if (!children) return '[]';
+      const childNodes = (Array.isArray(children) ? children : [children])
         .map((c) => this.genNode(c))
         .filter((c) => c && c !== 'null');
       return `[${childNodes.join(',')}]`;
@@ -166,10 +175,19 @@ export function generateRenderFn(ast) {
             node.properties,
           )}, ${slots})`;
         }
-        case NODE_TYPES.ELEMENT:
-          return `_h('${node.tagName}', ${this.genProps(
-            node.properties,
-          )}, ${this.genChildren(node.children)})`;
+        case NODE_TYPES.ELEMENT: {
+          let props = this.genProps(node.properties);
+          if (node.key) {
+            const propsObj = JSON.parse(props.slice(1, -1));
+            propsObj.key = this.genExpr(node.key);
+            props = `{${Object.entries(propsObj)
+              .map(([k, v]) => `'${k}':${v}`)
+              .join(',')}}`;
+          }
+          return `_h('${node.tagName}', ${props}, ${this.genChildren(
+            node.children,
+          )})`;
+        }
         case NODE_TYPES.TEXT:
           return `_h(_Text, null, ${JSON.stringify(node.value)})`;
         case NODE_TYPES.INTERPOLATION:
@@ -184,20 +202,39 @@ export function generateRenderFn(ast) {
           return `_h(_Fragment, null, _ctx.$slots.${slotName} ? _ctx.$slots.${slotName}() : ${fallbackContent})`;
         }
         case NODE_TYPES.IF: {
-          const branch = node.branches[0];
-          return `(${this.genExpr(branch.condition)}) ? ${this.genNode(branch.node)} : null`;
+          const genBranch = (branch, index) => {
+            if (!branch) return 'null';
+            const nextBranch = node.branches[index + 1];
+            const alternate = nextBranch
+              ? genBranch(nextBranch, index + 1)
+              : 'null';
+            return `(${this.genExpr(
+              branch.condition,
+            )}) ? ${this.genNode(branch.node)} : ${alternate}`;
+          };
+          return genBranch(node.branches[0], 0);
         }
         case NODE_TYPES.FOR: {
-          const { source, value, key } = node;
+          const { source, value, key, keyName } = node;
           const params = key ? `(${value}, ${key})` : value;
           this.scope.add(value);
           if (key) this.scope.add(key);
-          const childCode = this.genNode(node.children[0]);
+
+          const childNodes = this.genChildren(node.children);
+          const childCode = `(() => {
+            const child = ${childNodes}[0];
+            if (child && !child.props) child.props = {};
+            if (child && child.props) child.props.key = ${this.genExpr(
+              keyName,
+            )};
+            return child;
+          })()`;
+
           this.scope.delete(value);
           if (key) this.scope.delete(key);
           return `_h(_Fragment, null, (${this.genExpr(
             source,
-          )} || []).map(${params} => (${childCode})))`;
+          )} || []).map(${params} => ${childCode}))`;
         }
       }
       return 'null';
@@ -213,6 +250,7 @@ return ${generatedCode || 'null'};
     return { fn, source: functionBody };
   } catch (e) {
     console.error('Error compiling render function:', e);
+    console.error('Generated code:', functionBody);
     const errorFn = () =>
       Webs.h(Webs.Comment, null, 'Render function compile error');
     return {
@@ -249,17 +287,24 @@ export class Compiler {
   }
 
   compile() {
+    log('Starting compilation for component...');
     const rawAst = this.parseHtml(this.definition.template);
     const transformedAst = this._transformNode(rawAst);
-    return generateRenderFn(transformedAst).fn;
+    log('Transformed AST:', transformedAst);
+    const { fn, source } = generateRenderFn(transformedAst);
+    log('Generated Render Function Source:', source);
+    return fn;
   }
+
   _parseExpr(str) {
-    if (!str) return null;
-    const cleanStr = str.replace(/\n/g, ' ').trim();
+    if (str === null || str === undefined) return null;
+    const cleanStr = String(str).replace(/\n/g, ' ').trim();
+    if (!cleanStr) return null;
+
     try {
       return parseJs(tokenizeJs(cleanStr));
     } catch (e) {
-      console.warn(`Expression parse error: "${str}"`, e);
+      warn(`Expression parse error: "${str}"`, e);
       return null;
     }
   }
@@ -304,39 +349,16 @@ export class Compiler {
         return this._transformText(node);
       case 'comment':
         return { type: NODE_TYPES.COMMENT, value: node.content };
+      case 'ifBlock':
+      case 'eachBlock':
+        return this._transformBlock(node);
       default:
         return null;
     }
   }
-  _transformText(node) {
-    if (node.content.trim() === '') {
-      return null;
-    }
 
-    const unescape = (str) => {
-      return str.replace(
-        /&amp;|&lt;|&gt;|&quot;|&#039;|&larr;|&rarr;|&uarr;|&darr;|&harr;|&crarr;|&nbsp;|&copy;/g,
-        (tag) => {
-          const replacements = {
-            '&amp;': '&',
-            '&lt;': '<',
-            '&gt;': '>',
-            '&quot;': '"',
-            '&#039;': "'",
-            '&larr;': '←',
-            '&rarr;': '→',
-            '&uarr;': '↑',
-            '&darr;': '↓',
-            '&harr;': '↔',
-            '&crarr;': '↵',
-            '&nbsp;': ' ',
-            '&copy;': '©',
-          };
-          return replacements[tag] || tag;
-        },
-      );
-    };
-    const text = unescape(node.content);
+  _transformText(node) {
+    const text = node.content;
     if (!text.includes('{{')) {
       return { type: NODE_TYPES.TEXT, value: text };
     }
@@ -344,13 +366,12 @@ export class Compiler {
     const tokens = [];
     let lastIndex = 0;
     let match;
-    mustacheRegex.lastIndex = 0;
     while ((match = mustacheRegex.exec(text))) {
       if (match.index > lastIndex) {
-        const textContent = text.substring(lastIndex, match.index);
-        if (textContent) {
-          tokens.push({ type: NODE_TYPES.TEXT, value: textContent });
-        }
+        tokens.push({
+          type: NODE_TYPES.TEXT,
+          value: text.substring(lastIndex, match.index),
+        });
       }
       tokens.push({
         type: NODE_TYPES.INTERPOLATION,
@@ -359,44 +380,61 @@ export class Compiler {
       lastIndex = match.index + match[0].length;
     }
     if (lastIndex < text.length) {
-      const textContent = text.substring(lastIndex);
-      if (textContent) {
-        tokens.push({ type: NODE_TYPES.TEXT, value: textContent });
-      }
+      tokens.push({
+        type: NODE_TYPES.TEXT,
+        value: text.substring(lastIndex),
+      });
     }
-    if (tokens.length === 0) return null;
-    return tokens.length === 1
-      ? tokens[0]
-      : { type: NODE_TYPES.FRAGMENT, children: tokens };
+
+    if (tokens.length === 0) return { type: NODE_TYPES.TEXT, value: text };
+    if (tokens.length === 1) return tokens[0];
+    return { type: NODE_TYPES.FRAGMENT, children: tokens };
   }
 
   _transformChildren(children) {
     const transformed = [];
-    for (let i = 0; i < children.length; i++) {
+    let i = 0;
+    while (i < children.length) {
       const child = children[i];
-      if (child.type === 'element') {
-        const forAttr = child.attributes.find((a) => a.name === DIR_FOR);
-        if (forAttr) {
-          transformed.push(this._transformElement(child));
-          continue;
-        }
+      if (child.type === 'ifBlock') {
+        const branches = [];
+        let current = child;
+        let nextIndex = i + 1;
+        while (current) {
+          if (current.type === 'ifBlock' || current.type === 'elseIfBlock') {
+            branches.push({
+              condition: this._parseExpr(current.test),
+              node: {
+                type: NODE_TYPES.FRAGMENT,
+                children: this._transformChildren(current.children),
+              },
+            });
+          } else if (current.type === 'elseBlock') {
+            branches.push({
+              condition: this._parseExpr('true'),
+              node: {
+                type: NODE_TYPES.FRAGMENT,
+                children: this._transformChildren(current.children),
+              },
+            });
+          }
 
-        const ifAttr = child.attributes.find((a) => a.name === DIR_IF);
-        if (ifAttr) {
-          const branches = [];
-          const ifNodeClone = {
-            ...child,
-            attributes: child.attributes.filter((a) => a.name !== DIR_IF),
-          };
-          branches.push({
-            condition: this._parseExpr(ifAttr.value),
-            node: this._transformNode(ifNodeClone),
-          });
-
-          transformed.push({ type: NODE_TYPES.IF, branches });
-          continue;
+          const next = children[nextIndex];
+          if (
+            next &&
+            (next.type === 'elseIfBlock' || next.type === 'elseBlock')
+          ) {
+            current = next;
+            nextIndex++;
+          } else {
+            current = null;
+          }
         }
+        transformed.push({ type: NODE_TYPES.IF, branches });
+        i = nextIndex;
+        continue;
       }
+
       const transformedNode = this._transformNode(child);
       if (transformedNode) {
         if (Array.isArray(transformedNode)) {
@@ -405,32 +443,34 @@ export class Compiler {
           transformed.push(transformedNode);
         }
       }
+      i++;
     }
     return transformed;
   }
-  _transformElement(el) {
-    const forAttr = el.attributes.find((a) => a.name === DIR_FOR);
-    if (forAttr) {
-      const match = String(forAttr.value).match(
-        /^\s*(?:(\w+)|(?:\((\w+)\s*,\s*(\w+)\)))\s+in\s+(.+)$/,
+
+  _transformBlock(block) {
+    if (block.type === 'eachBlock') {
+      const match = String(block.item).match(
+        /^\s*(?:(\w+)|(?:\((\w+)\s*,\s*(\w+)\)))\s*$/,
       );
       if (!match) {
-        console.warn(`Invalid w-for expression: ${forAttr.value}`);
-        return this._transformNativeElement(el);
+        warn(`Invalid #each item definition: ${block.item}`);
+        return null;
       }
-      const forNodeChild = {
-        ...el,
-        attributes: el.attributes.filter((a) => a.name !== DIR_FOR),
-      };
+
       return {
         type: NODE_TYPES.FOR,
-        source: this._parseExpr(match[4]),
+        source: this._parseExpr(block.expression),
         value: match[1] || match[2],
         key: match[3],
-        children: [this._transformNode(forNodeChild)],
+        keyName: this._parseExpr(block.key),
+        children: this._transformChildren(block.children),
       };
     }
+    return null;
+  }
 
+  _transformElement(el) {
     if (el.tagName === 'slot') {
       const nameAttr = el.attributes.find((a) => a.name === 'name');
       return {
@@ -484,31 +524,48 @@ export class Compiler {
 
   _processAttributes(attrs) {
     const properties = [];
+    const consumedIndices = new Set();
 
-    for (const attr of attrs) {
-      const name = attr.name;
+    for (let i = 0; i < attrs.length; i++) {
+      if (consumedIndices.has(i)) continue;
+
+      const attr = attrs[i];
+      let name = attr.name;
+      let value = attr.value;
+
+      log(`Processing attribute: ${name}="${value}"`);
+
+      if (name.startsWith('@') && attrs[i + 1]) {
+        const nextAttr = attrs[i + 1];
+        if (nextAttr.name === 'prevent' || nextAttr.name === 'stop') {
+          warn(
+            `Reconstructing malformed event handler: ${name} + ${nextAttr.name}`,
+          );
+          name = `${name}.${nextAttr.name}`;
+          value = nextAttr.value;
+          consumedIndices.add(i + 1);
+        }
+      }
 
       if (name.startsWith('bind:')) {
         const propToBind = name.split(':')[1];
         if (!propToBind) {
-          console.warn(`[Compiler] Invalid bind directive: ${name}`);
+          warn(`Invalid bind directive: ${name}`);
           continue;
         }
-
-        const eventName = propToBind === 'checked' ? 'onChange' : 'onInput';
-        const valueAccessor = propToBind === 'checked' ? 'checked' : 'value';
+        const eventName = 'onInput';
+        const valueAccessor = 'value';
 
         properties.push({
           type: ATTR_TYPES.DIRECTIVE,
           name: propToBind,
-          expression: this._parseExpr(attr.value),
+          expression: this._parseExpr(value),
         });
-
         properties.push({
           type: ATTR_TYPES.EVENT_HANDLER,
           name: eventName,
           expression: this._parseExpr(
-            `${attr.value} = $event.target.${valueAccessor}`,
+            `${value}.value = $event.target.${valueAccessor}`,
           ),
         });
         continue;
@@ -518,21 +575,23 @@ export class Compiler {
         const [eventName, ...modifiers] = name.slice(1).split('.');
         const pascalEventName =
           eventName.charAt(0).toUpperCase() + eventName.slice(1);
-        properties.push({
+        const prop = {
           type: ATTR_TYPES.EVENT_HANDLER,
           name: `on${pascalEventName}`,
-          expression: this._parseExpr(attr.value),
+          expression: this._parseExpr(value),
           modifiers: new Set(modifiers),
-        });
+        };
+        properties.push(prop);
+        log('Parsed event handler:', prop);
       } else if (name.startsWith(':')) {
         const propName = name.substring(1);
         properties.push({
           type: ATTR_TYPES.DIRECTIVE,
           name: propName.includes('-') ? propName : camelize(propName),
-          expression: this._parseExpr(attr.value),
+          expression: this._parseExpr(value),
         });
       } else if (!name.startsWith('w-') && !name.startsWith('#')) {
-        properties.push({ type: ATTR_TYPES.STATIC, name, value: attr.value });
+        properties.push({ type: ATTR_TYPES.STATIC, name, value });
       }
     }
     return properties;
@@ -567,7 +626,7 @@ export function compile(componentDef) {
   }
 
   if (typeof templateContent !== 'string') {
-    console.warn('Component is missing a valid template option.');
+    warn('Component is missing a valid template option.');
     return () => Webs.h(Webs.Comment, null, 'Component missing template');
   }
 

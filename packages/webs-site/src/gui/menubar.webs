@@ -1,11 +1,5 @@
 <script type="module">
-  import {
-    provide,
-    inject,
-    state,
-    onMounted,
-    onUnmounted,
-  } from '@conradklek/webs';
+  import { provide, inject, state } from '@conradklek/webs';
 
   export const MenubarMenu = {
     name: 'menubar-menu',
@@ -48,12 +42,13 @@
     },
     template(html) {
       return html`
+        {#if menubar && menubar.is_open(menuValue)}
         <div
-          w-if="menubar && menubar.is_open(menuValue)"
           class="absolute z-50 min-w-[12rem] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md top-full translate-y-2 origin-top"
         >
           <slot></slot>
         </div>
+        {/if}
       `;
     },
   };
@@ -132,12 +127,13 @@
     },
     template(html) {
       return html`
+        {#if submenu && submenu.is_open()}
         <div
-          w-if="submenu && submenu.is_open()"
           class="absolute z-50 min-w-[8rem] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md left-full -top-2"
         >
           <slot></slot>
         </div>
+        {/if}
       `;
     },
   };
@@ -192,9 +188,6 @@
     },
     setup() {
       const activeMenu = state(null);
-
-      onMounted(() => console.log('Menubar Mounted!'));
-      onUnmounted(() => console.log('Menubar Dismounted!'));
 
       function openMenu(value) {
         activeMenu.value = value;

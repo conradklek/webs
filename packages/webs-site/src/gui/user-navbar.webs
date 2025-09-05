@@ -2,13 +2,16 @@
   import { session, route } from '@conradklek/webs';
 
   export default {
-    setup() {
+    props: {
+      params: Object,
+    },
+    setup(props) {
       function handleLogout() {
         session.logout();
         window.location.href = '/';
       }
 
-      return { session, route, handleLogout };
+      return { session, route, handleLogout, params: props.params };
     },
   };
 </script>
@@ -16,7 +19,8 @@
 <template>
   <div class="flex-1">
     <div class="w-full flex flex-row items-center justify-end gap-4">
-      <nav class="contents" w-if="!session.isLoggedIn">
+      {#if !session.isLoggedIn}
+      <nav class="contents">
         <a
           :href="'/login'"
           class="link data-[open=true]:no-underline"
@@ -31,13 +35,15 @@
           >Signup</a
         >
       </nav>
-      <nav class="contents" w-if="session.isLoggedIn">
-        <a :href="'/' + session.user.username" class="link"
-          >@{{ session.user.username }}</a
+      {:else}
+      <nav class="contents">
+        <a :href="'/' + (params.username || session.user.username)" class="link"
+          >@{{ params.username || session.user.username }}</a
         >
         <span>|</span>
         <button type="button" @click="handleLogout" class="link">Logout</button>
       </nav>
+      {/if}
     </div>
   </div>
 </template>

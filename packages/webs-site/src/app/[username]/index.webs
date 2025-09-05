@@ -2,10 +2,10 @@
   <div class="flex-1 flex flex-col items-start justify-start gap-4">
     <ul class="list-disc pl-8 space-y-1">
       <li>
-        <a :href="'/' + user.username + '/editor'" class="link">Editor</a>
+        <a :href="`/${params.username}/todos`" class="link">Todo</a>
       </li>
       <li>
-        <a :href="'/' + user.username + '/todos'" class="link">Todos</a>
+        <a :href="`/${params.username}/fs`" class="link">File System</a>
       </li>
     </ul>
   </div>

@@ -5,10 +5,10 @@ import { join, resolve, dirname, basename } from 'path';
 import { Database } from 'bun:sqlite';
 import { createHash } from 'crypto';
 
-import websPlugin from './webs-plugin';
+import websPlugin from './plugin';
 import tailwind from 'bun-plugin-tailwind';
-import { createDatabaseAndActions } from './server-db';
-import { startServer } from './server';
+import { createDatabaseAndActions } from '../lib/db.js';
+import { startServer } from './server.js';
 
 const userProjectDir = process.argv[2]
   ? resolve(process.argv[2])
@@ -55,6 +55,7 @@ const frameworkSchema = {
         access: { type: 'text', notNull: true, default: 'private' },
         size: { type: 'integer', notNull: true, default: 0 },
         last_modified: { type: 'timestamp', default: 'CURRENT_TIMESTAMP' },
+        updated_at: { type: 'timestamp', default: 'CURRENT_TIMESTAMP' },
       },
       indexes: [{ name: 'by-user', keyPath: 'user_id' }],
     },
@@ -69,10 +70,12 @@ const config = {
   OUTDIR: resolve(userProjectDir, 'dist'),
   TMPDIR: resolve(userProjectDir, '.webs'),
   TMP_SERVER_DIR: resolve(userProjectDir, '.webs/server'),
+  TMP_PREBUILD_DIR: resolve(userProjectDir, '.webs/prebuild'),
   TMP_WRAPPERS_DIR: resolve(userProjectDir, '.webs/layout'),
   TMP_GENERATED_ACTIONS: resolve(userProjectDir, '.webs/actions.js'),
   TMP_APP_CSS: resolve(userProjectDir, '.webs/app.css'),
   TMP_APP_JS: resolve(userProjectDir, '.webs/app.js'),
+  TMP_COMPONENT_REGISTRY: resolve(userProjectDir, '.webs/registry.js'),
   SRC_DIR: resolve(userProjectDir, 'src'),
   APP_DIR: resolve(userProjectDir, 'src/app'),
   GUI_DIR: resolve(userProjectDir, 'src/gui'),
@@ -104,7 +107,13 @@ async function buildServerComponents() {
     entrypoints,
     outdir: config.TMP_SERVER_DIR,
     target: 'bun',
-    plugins: [websPlugin({ root: config.SRC_DIR }), tailwind],
+    plugins: [
+      websPlugin({
+        root: config.SRC_DIR,
+        registryPath: config.TMP_COMPONENT_REGISTRY,
+      }),
+      tailwind,
+    ],
     external: ['@conradklek/webs', 'bun-plugin-tailwind'],
     naming: '[dir]/[name].[ext]',
     root: config.SRC_DIR,
@@ -126,7 +135,7 @@ async function ensureDir(dirPath) {
   }
 }
 
-async function discoverAndBuildDbConfig() {
+async function discoverAndBuildDbConfig(scanDir) {
   const userTables = {};
 
   const clientTables = Object.entries(frameworkSchema.tables)
@@ -139,15 +148,15 @@ async function discoverAndBuildDbConfig() {
     }));
 
   const glob = new Bun.Glob('**/*.js');
-  if (!(await exists(config.TMP_SERVER_DIR))) {
+  if (!(await exists(scanDir))) {
     console.warn(
-      'Temp server directory not found, skipping user schema discovery.',
+      'Scan directory for schema discovery not found. Skipping user schema discovery.',
     );
     return { ...frameworkSchema, clientTables };
   }
 
-  for await (const file of glob.scan(config.TMP_SERVER_DIR)) {
-    const fullPath = resolve(config.TMP_SERVER_DIR, file);
+  for await (const file of glob.scan(scanDir)) {
+    const fullPath = resolve(scanDir, file);
     try {
       const mod = await import(`${fullPath}?t=${Date.now()}`);
       const componentTables = mod.default?.tables;
@@ -215,9 +224,9 @@ async function discoverAndBuildDbConfig() {
 }
 
 async function buildServiceWorker(clientOutputs) {
-  const swEntryPath = (await exists(resolve(config.CWD, 'client-sw.js')))
-    ? resolve(config.CWD, 'client-sw.js')
-    : resolve(FRAMEWORK_DIR, 'client-sw.js');
+  const swEntryPath = (await exists(resolve(config.CWD, '../client/cache.js')))
+    ? resolve(config.CWD, '../client/cache.js')
+    : resolve(FRAMEWORK_DIR, '../client/cache.js');
   if (!(await exists(swEntryPath))) return null;
 
   const swBuildResult = await Bun.build({
@@ -263,7 +272,13 @@ async function buildClientAndNotify(entrypoints, currentDbConfig) {
     splitting: true,
     minify: config.IS_PROD,
     naming: config.IS_PROD ? '[name]-[hash].[ext]' : '[name].[ext]',
-    plugins: [websPlugin({ root: config.SRC_DIR }), tailwind],
+    plugins: [
+      websPlugin({
+        root: config.SRC_DIR,
+        registryPath: config.TMP_COMPONENT_REGISTRY,
+      }),
+      tailwind,
+    ],
     sourcemap: config.IS_PROD ? 'none' : 'inline',
   });
   if (!clientBuildResult.success) {
@@ -439,20 +454,105 @@ export default {
     });
   }
 
-  routeDefinitions.sort(
-    (a, b) =>
-      b.path.split('/').length - a.path.split('/').length ||
-      (a.path.match(/:/g) || []).length - (b.path.match(/:/g) || []).length,
-  );
+  routeDefinitions.sort((a, b) => {
+    const aParts = a.path.split('/');
+    const bParts = b.path.split('/');
+    const len = Math.min(aParts.length, bParts.length);
+    for (let i = 0; i < len; i++) {
+      const aPart = aParts[i];
+      const bPart = bParts[i];
+
+      if (aPart === bPart) continue;
+
+      const aIsDynamic = aPart.startsWith(':');
+      const bIsDynamic = bPart.startsWith(':');
+
+      if (aIsDynamic && !bIsDynamic) return 1;
+      if (!aIsDynamic && bIsDynamic) return -1;
+
+      if (aIsDynamic && bIsDynamic) {
+        const aIsCatchAll = aPart.endsWith('*');
+        const bIsCatchAll = bPart.endsWith('*');
+        if (aIsCatchAll && !bIsCatchAll) return 1;
+        if (!aIsCatchAll && bIsCatchAll) return -1;
+      }
+    }
+    return aParts.length - bParts.length;
+  });
+
   return Object.fromEntries(
     routeDefinitions.map((r) => [r.path, r.definition]),
   );
+}
+
+async function prebuildAndGenerateRegistry(prebuildDir, registryPath) {
+  const glob = new Bun.Glob('**/*.webs');
+  const allEntrypoints = [];
+  if (await exists(config.SRC_DIR)) {
+    for await (const file of glob.scan(config.SRC_DIR)) {
+      allEntrypoints.push(join(config.SRC_DIR, file));
+    }
+  }
+
+  const prebuildResult = await Bun.build({
+    entrypoints: allEntrypoints,
+    outdir: prebuildDir,
+    target: 'bun',
+    plugins: [websPlugin({ root: config.SRC_DIR, skipRegistry: true })],
+    external: ['@conradklek/webs', 'bun-plugin-tailwind'],
+    naming: '[dir]/[name].[ext]',
+    root: config.SRC_DIR,
+  });
+
+  if (!prebuildResult.success) {
+    console.error('Pre-build for registry/schema generation failed.');
+    return false;
+  }
+
+  const jsGlob = new Bun.Glob('**/*.js');
+  const imports = [];
+  const exports = [];
+  const guiPrebuildDir = join(prebuildDir, 'gui');
+
+  if (await exists(guiPrebuildDir)) {
+    for await (const file of jsGlob.scan(guiPrebuildDir)) {
+      const componentName = basename(file, '.js');
+      const importName = componentName.replace(/-/g, '_');
+      const absoluteComponentPath = resolve(guiPrebuildDir, file);
+
+      imports.push(`import ${importName} from '${absoluteComponentPath}';`);
+      exports.push(`  '${componentName}': ${importName},`);
+    }
+  }
+
+  const content = `${imports.join('\n')}
+export default {
+${exports.join('\n')}
+};`;
+
+  await writeFile(registryPath, content);
+  console.log('[Build] Global component registry generated.');
+  return true;
 }
 
 async function main() {
   await ensureDir(config.TMPDIR);
   await ensureDir(config.USER_FILES_ROOT);
   await ensureDir(config.TMP_WRAPPERS_DIR);
+  await ensureDir(config.TMP_SERVER_DIR);
+  await ensureDir(config.TMP_PREBUILD_DIR);
+
+  const prebuildSuccess = await prebuildAndGenerateRegistry(
+    config.TMP_PREBUILD_DIR,
+    config.TMP_COMPONENT_REGISTRY,
+  );
+  if (!prebuildSuccess) {
+    console.error('Halting build due to pre-build errors.');
+    if (config.IS_PROD) process.exit(1);
+    return;
+  }
+
+  const dbConfig = await discoverAndBuildDbConfig(config.TMP_PREBUILD_DIR);
 
   const { success, entrypoints, pageEntrypoints } =
     await buildServerComponents();
@@ -462,7 +562,6 @@ async function main() {
     return;
   }
 
-  const dbConfig = await discoverAndBuildDbConfig();
   const db = await createDatabaseAndActions(
     Database,
     dbConfig,
@@ -472,7 +571,7 @@ async function main() {
   );
 
   if (!config.IS_PROD) {
-    const { hashPassword } = await import('./server-me.js');
+    const { hashPassword } = await import('../lib/auth.js');
     const anonUser = {
       email: 'anon@webs.site',
       username: 'anon',
@@ -481,11 +580,69 @@ async function main() {
     let existingUser = db
       .query('SELECT id FROM users WHERE username = ?')
       .get(anonUser.username);
-    if (!existingUser) {
+
+    let anonUserId;
+    if (existingUser) {
+      anonUserId = existingUser.id;
+    } else {
       const hashedPassword = await hashPassword(anonUser.password);
-      db.prepare(
-        'INSERT INTO users (email, username, password) VALUES (?, ?, ?)',
-      ).run(anonUser.email, anonUser.username, hashedPassword);
+      const result = db
+        .prepare(
+          'INSERT INTO users (email, username, password) VALUES (?, ?, ?)',
+        )
+        .run(anonUser.email, anonUser.username, hashedPassword);
+      anonUserId = result.lastInsertRowid;
+    }
+
+    if (anonUserId) {
+      const todoCountResult = db
+        .query('SELECT COUNT(*) as count FROM todos WHERE user_id = ?')
+        .get(anonUserId);
+      const todoCount = todoCountResult ? todoCountResult.count : 0;
+
+      if (todoCount === 0) {
+        console.log('[Build] Seeding initial todos for anon user.');
+        const seedTodos = [
+          {
+            id: crypto.randomUUID(),
+            content: 'Explore the Webs framework',
+            completed: 1,
+            user_id: anonUserId,
+          },
+          {
+            id: crypto.randomUUID(),
+            content: 'Build something awesome',
+            completed: 0,
+            user_id: anonUserId,
+          },
+          {
+            id: crypto.randomUUID(),
+            content: 'Check out the file system API',
+            completed: 0,
+            user_id: anonUserId,
+          },
+        ];
+
+        const insert = db.prepare(
+          'INSERT INTO todos (id, content, completed, user_id, created_at, updated_at) VALUES ($id, $content, $completed, $user_id, $created_at, $updated_at)',
+        );
+
+        const insertTodos = db.transaction((todos) => {
+          for (const todo of todos) {
+            const now = new Date().toISOString();
+            insert.run({
+              $id: todo.id,
+              $content: todo.content,
+              $completed: todo.completed,
+              $user_id: todo.user_id,
+              $created_at: now,
+              $updated_at: now,
+            });
+          }
+        });
+
+        insertTodos(seedTodos);
+      }
     }
   }
 

@@ -1,8 +1,7 @@
 import { hydrate } from '@conradklek/webs';
 import '/Users/conradklek/webs/packages/webs-site/.webs/app.css';
-const dbConfig = {"version":2,"clientTables":[{"name":"users","keyPath":"id","indexes":[],"sync":false},{"name":"sessions","keyPath":"id","indexes":[],"sync":false},{"name":"files","keyPath":"path","indexes":[{"name":"by-user","keyPath":"user_id"}],"sync":true},{"name":"todos","keyPath":"id","indexes":[{"name":"by_completed","keyPath":"completed"}],"sync":true}]};
+const dbConfig = {"version":1,"clientTables":[{"name":"users","keyPath":"id","indexes":[],"sync":false},{"name":"sessions","keyPath":"id","indexes":[],"sync":false},{"name":"files","keyPath":"path","indexes":[{"name":"by-user","keyPath":"user_id"}],"sync":true},{"name":"todos","keyPath":"id","indexes":[{"name":"by_completed","keyPath":"completed"}],"sync":true}]};
 const componentLoaders = new Map([['gui/card-demo', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/gui/card-demo.js')],
-  ['gui/simple-editor', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/gui/simple-editor.js')],
   ['gui/menubar-demo', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/gui/menubar-demo.js')],
   ['gui/tabs-demo', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/gui/tabs-demo.js')],
   ['gui/breadcrumb', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/gui/breadcrumb.js')],
@@ -19,6 +18,7 @@ const componentLoaders = new Map([['gui/card-demo', () => import('/Users/conradk
   ['gui/modal', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/gui/modal.js')],
   ['gui/checkbox-demo', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/gui/checkbox-demo.js')],
   ['gui/radio-group', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/gui/radio-group.js')],
+  ['gui/text-editor', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/gui/text-editor.js')],
   ['gui/accordion', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/gui/accordion.js')],
   ['app/layout', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/layout.js')],
   ['app/index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/index.js')],
@@ -27,7 +27,8 @@ const componentLoaders = new Map([['gui/card-demo', () => import('/Users/conradk
   ['app/styles', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/styles.js')],
   ['app/[username]/todos', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/[username]/todos.js')],
   ['app/[username]/index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/[username]/index.js')],
-  ['app/[username]/editor', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/[username]/editor.js')],
+  ['app/[username]/editor/[...path]', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/[username]/editor/[...path].js')],
+  ['app/[username]/fs/[...path]', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/[username]/fs/[...path].js')],
   ['app/components/[component]', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/components/[component].js')],
   ['app/components/index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/components/index.js')],
   ['app/irc/layout', () => import('/Users/conradklek/webs/packages/webs-site/.webs/server/app/irc/layout.js')],
@@ -36,12 +37,13 @@ const componentLoaders = new Map([['gui/card-demo', () => import('/Users/conradk
   ['layout/app_components_[component]', () => import('/Users/conradklek/webs/packages/webs-site/.webs/layout/app_components_[component].js')],
   ['layout/app_styles', () => import('/Users/conradklek/webs/packages/webs-site/.webs/layout/app_styles.js')],
   ['layout/app_index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/layout/app_index.js')],
+  ['layout/app_[username]_editor_[...path]', () => import('/Users/conradklek/webs/packages/webs-site/.webs/layout/app_[username]_editor_[...path].js')],
   ['layout/app_signup', () => import('/Users/conradklek/webs/packages/webs-site/.webs/layout/app_signup.js')],
   ['layout/app_[username]_index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/layout/app_[username]_index.js')],
   ['layout/app_login', () => import('/Users/conradklek/webs/packages/webs-site/.webs/layout/app_login.js')],
   ['layout/app_irc_index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/layout/app_irc_index.js')],
   ['layout/app_[username]_todos', () => import('/Users/conradklek/webs/packages/webs-site/.webs/layout/app_[username]_todos.js')],
   ['layout/app_irc_[channel]', () => import('/Users/conradklek/webs/packages/webs-site/.webs/layout/app_irc_[channel].js')],
-  ['layout/app_components_index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/layout/app_components_index.js')],
-  ['layout/app_[username]_editor', () => import('/Users/conradklek/webs/packages/webs-site/.webs/layout/app_[username]_editor.js')]]);
+  ['layout/app_[username]_fs_[...path]', () => import('/Users/conradklek/webs/packages/webs-site/.webs/layout/app_[username]_fs_[...path].js')],
+  ['layout/app_components_index', () => import('/Users/conradklek/webs/packages/webs-site/.webs/layout/app_components_index.js')]]);
 hydrate(componentLoaders, dbConfig);

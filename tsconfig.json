@@ -10,6 +10,6 @@
       "@conradklek/webs": ["./packages/webs-framework"]
     }
   },
-  "include": ["packages/**/*"]
+  "include": ["packages/**/*", "../Documents/pub"]
 }
 

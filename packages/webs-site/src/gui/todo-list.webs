@@ -41,7 +41,7 @@
         ),
       );
 
-      function addTodo() {
+      function createTodo() {
         const content = newTodoContent.value.trim();
         if (!content || !session.user?.id) return;
 
@@ -72,18 +72,19 @@
         newTodoContent,
         todos,
         sortedTodos,
-        addTodo,
+        createTodo,
         toggleTodo,
         deleteTodo: todos.destroy,
       };
     },
   };
 </script>
+
 <template>
   <div
     class="w-full max-w-lg mx-auto flex-1 flex flex-col items-start justify-start gap-4"
   >
-    <form @submit.prevent="addTodo" class="w-full mb-2 flex gap-2">
+    <form @submit.prevent="createTodo" class="w-full mb-2 flex gap-2">
       <input
         bind:value="newTodoContent"
         type="text"
@@ -94,9 +95,8 @@
     </form>
     <div class="w-full">
       <ul class="w-full space-y-2">
+        {#each sortedTodos as todo (todo.id)}
         <li
-          w-for="todo in sortedTodos"
-          :key="todo.id"
           class="w-full flex items-center gap-3 p-2 rounded-md hover:bg-gray-100"
         >
           <input
@@ -108,8 +108,8 @@
           />
           <label
             :for="'todo-' + todo.id"
-            :class="{ 'line-through text-muted-foreground': todo.completed }"
-            class="flex-grow"
+            :data-completed="todo.completed"
+            class="flex-grow data-[completed=true]:line-through data-[completed=true]:text-muted-foreground"
           >
             {{ todo.content }}
           </label>
@@ -121,6 +121,7 @@
             Remove
           </button>
         </li>
+        {/each}
       </ul>
     </div>
   </div>

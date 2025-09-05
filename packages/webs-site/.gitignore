@@ -7,10 +7,10 @@ bun.lock
 
 # Demo app build output and database
 # We can ignore it here globally for simplicity
-packages/demo/dist
-packages/demo/*.db
-packages/demo/*.db-shm
-packages/demo/*.db-wal
+/dist
+*.db
+*.db-shm
+*.db-wal
 
 # Log files
 *.log
@@ -19,7 +19,6 @@ yarn-debug.log*
 yarn-error.log*
 
 # Temporary Files
-/.tmp
 /.webs
 
 # OS-generated files

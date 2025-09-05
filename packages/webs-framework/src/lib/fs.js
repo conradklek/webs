@@ -11,10 +11,7 @@ import {
 const USER_FILES_ROOT = resolve(process.cwd(), '.webs/files');
 
 export function createFileSystemForUser(userId) {
-  if (!userId) {
-    throw new Error('A valid userId is required to create a file system.');
-  }
-
+  if (!userId) throw new Error('A valid userId is required.');
   const userRootPath = join(USER_FILES_ROOT, String(userId));
   const publicPath = join(userRootPath, 'public');
   const privatePath = join(userRootPath, 'private');
@@ -36,11 +33,8 @@ export function createFileSystemForUser(userId) {
     await ensureUserRootExists();
     const basePath = access === 'private' ? privatePath : publicPath;
     const absolutePath = resolve(basePath, userPath);
-
     if (!absolutePath.startsWith(basePath)) {
-      throw new Error(
-        'Permission denied: Cannot access files outside your directory.',
-      );
+      throw new Error('Permission denied.');
     }
     return absolutePath;
   };
@@ -50,28 +44,26 @@ export function createFileSystemForUser(userId) {
     try {
       await fsStat(dir);
     } catch (e) {
-      if (e.code === 'ENOENT') {
-        await fsMkdir(dir, { recursive: true });
-      } else {
-        throw e;
-      }
+      if (e.code === 'ENOENT') await fsMkdir(dir, { recursive: true });
+      else throw e;
     }
   };
 
   return {
     exists: async (path, { access = 'public' } = {}) => {
       try {
-        const resolvedPath = await secureResolvePath(path, access);
-        return await Bun.file(resolvedPath).exists();
+        return await Bun.file(await secureResolvePath(path, access)).exists();
       } catch (error) {
-        if (error.code === 'ENOENT') return false;
-        if (error.message.startsWith('Permission denied')) return false;
+        if (
+          error.code === 'ENOENT' ||
+          error.message.startsWith('Permission denied')
+        )
+          return false;
         throw error;
       }
     },
     stat: async (path, { access = 'public' } = {}) => {
-      const resolvedPath = await secureResolvePath(path, access);
-      const stats = await fsStat(resolvedPath);
+      const stats = await fsStat(await secureResolvePath(path, access));
       return {
         isFile: stats.isFile(),
         isDirectory: stats.isDirectory(),
@@ -83,45 +75,48 @@ export function createFileSystemForUser(userId) {
     cat: async (path, { access = 'public' } = {}) => {
       const resolvedPath = await secureResolvePath(path, access);
       const file = Bun.file(resolvedPath);
-      if (!(await file.exists())) {
-        throw new Error(`File not found at: ${path}`);
-      }
+      if (!(await file.exists())) throw new Error(`File not found at: ${path}`);
       return file;
     },
     ls: async (path = '.', { access = 'public' } = {}) => {
-      const resolvedPath = await secureResolvePath(path, access);
       try {
-        return await readdir(resolvedPath);
+        const entries = await readdir(await secureResolvePath(path, access), {
+          withFileTypes: true,
+        });
+        return entries.map((entry) => ({
+          name: entry.name,
+          isDirectory: entry.isDirectory(),
+        }));
       } catch (e) {
         if (e.code === 'ENOENT') return [];
         throw e;
       }
     },
-    mkdir: async (path, { access = 'public' } = {}) => {
-      const resolvedPath = await secureResolvePath(path, access);
-      return await fsMkdir(resolvedPath, { recursive: true });
-    },
+    mkdir: (path, { access = 'public' } = {}) =>
+      secureResolvePath(path, access).then((p) =>
+        fsMkdir(p, { recursive: true }),
+      ),
     write: async (path, data, { access = 'public' } = {}) => {
       const resolvedPath = await secureResolvePath(path, access);
       await ensureDirectoryExists(resolvedPath);
-      return await Bun.write(resolvedPath, data);
+      return Bun.write(resolvedPath, data);
     },
     mv: async (from, to, { access = 'public' } = {}) => {
       const fromPath = await secureResolvePath(from, access);
       const toPath = await secureResolvePath(to, access);
       await ensureDirectoryExists(toPath);
-      return await rename(fromPath, toPath);
+      return rename(fromPath, toPath);
     },
-    rm: async (path, { access = 'public' } = {}) => {
-      const resolvedPath = await secureResolvePath(path, access);
-      return await fsRm(resolvedPath, { recursive: true, force: true });
-    },
+    rm: (path, { access = 'public' } = {}) =>
+      secureResolvePath(path, access).then((p) =>
+        fsRm(p, { recursive: true, force: true }),
+      ),
     cp: async (from, to, { access = 'public' } = {}) => {
       const fromPath = await secureResolvePath(from, access);
       const toPath = await secureResolvePath(to, access);
       await ensureDirectoryExists(toPath);
       const stats = await fsStat(fromPath);
-      return await copy(fromPath, toPath, { recursive: stats.isDirectory() });
+      return copy(fromPath, toPath, { recursive: stats.isDirectory() });
     },
   };
 }

@@ -1,20 +1,25 @@
-import { h, renderToString } from './webs-renderer.js';
+import { h, renderToString } from '../lib/renderer.js';
 import { basename, join } from 'path';
-import { createFileSystemForUser } from './server-fs';
-import { exists } from 'fs/promises';
-import { stat } from 'fs/promises';
+import { createFileSystemForUser } from '../lib/fs.js';
+import { stat, exists } from 'fs/promises';
 import {
   getUserFromSession,
   registerUser,
   loginUser,
   logoutUser,
   createSession,
-} from './server-me';
+} from '../lib/auth.js';
+
+const LOG_PREFIX = '[Serve] Server:';
+const log = (...args) => console.log(LOG_PREFIX, ...args);
+const warn = (...args) => console.warn(LOG_PREFIX, ...args);
+const error = (...args) => console.error(LOG_PREFIX, ...args);
 
 function renderHtmlShell({ appHtml, websState, manifest, title }) {
   const cssPath = manifest.css ? `/${basename(manifest.css)}` : '';
   const jsPath = manifest.js ? `/${basename(manifest.js)}` : '';
 
+  log('Rendering HTML shell for', title);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -31,18 +36,39 @@ function renderHtmlShell({ appHtml, websState, manifest, title }) {
 </html>`;
 }
 
+async function executePrefetch(routeDefinition, context) {
+  log(
+    `Executing prefetch action for component '${routeDefinition.componentName}'...`,
+  );
+  if (!routeDefinition.actions?.prefetch) {
+    warn('No prefetch action found.');
+    return {};
+  }
+  try {
+    const result = await routeDefinition.actions.prefetch(context);
+    log('Prefetch action completed successfully.');
+    return result;
+  } catch (error) {
+    error(
+      `Prefetch Error for component "${routeDefinition.componentName}":`,
+      error,
+    );
+    return { error: 'Failed to load data on the server.' };
+  }
+}
+
 async function handleDataRequest(req, routeDefinition) {
+  log(`Handling data request for route '${req.url}'`);
   const { db, user, params } = req;
   const fs = user ? createFileSystemForUser(user.id) : null;
-  let componentState = {};
-  if (routeDefinition.component?.actions?.ssrFetch) {
-    componentState = await routeDefinition.component.actions.ssrFetch({
-      db,
-      user,
-      params,
-      fs,
-    });
-  }
+
+  const componentState = await executePrefetch(routeDefinition, {
+    db,
+    user,
+    params,
+    fs,
+  });
+
   const websState = {
     user,
     params,
@@ -50,30 +76,30 @@ async function handleDataRequest(req, routeDefinition) {
     componentName: routeDefinition.componentName,
     title: routeDefinition.component.name || 'Webs App',
   };
+  log('Sending JSON response for data request.');
   return new Response(JSON.stringify(websState), {
     headers: { 'Content-Type': 'application/json;charset=utf-8' },
   });
 }
 
 async function handlePageRequest(req, routeDefinition, context) {
+  log(`Handling page request for route '${req.url}'`);
   const { manifest } = context;
   const { db, user, params } = req;
-  let initialState = {};
   const fs = user ? createFileSystemForUser(user.id) : null;
 
-  if (routeDefinition.component?.actions?.ssrFetch) {
-    initialState = await routeDefinition.component.actions.ssrFetch({
-      db,
-      user,
-      params,
-      fs,
-    });
-  }
+  const initialState = await executePrefetch(routeDefinition, {
+    db,
+    user,
+    params,
+    fs,
+  });
 
   const props = { user, params, initialState };
   const { html: appHtml, componentState } = await renderToString(
     h(routeDefinition.component, props),
   );
+  log('Component rendered to string on server.');
 
   const websState = {
     user,
@@ -88,6 +114,7 @@ async function handlePageRequest(req, routeDefinition, context) {
     manifest,
     title: routeDefinition.component.name || 'Webs App',
   });
+  log('Sending full HTML page response.');
   return new Response(fullHtml, {
     headers: { 'Content-Type': 'text/html;charset=utf-8' },
   });
@@ -134,39 +161,106 @@ export async function startServer(serverContext) {
   const attachContext = authMiddleware(db, isProd);
   const sortedAppRoutePaths = Object.keys(appRoutes);
 
+  log('Starting Webs server...');
   const server = Bun.serve({
     port,
-    development: !isProd,
+    development: {
+      hmr: false,
+      console: true,
+    },
     async fetch(req, server) {
       const url = new URL(req.url);
       const { pathname } = url;
+      log(`Received request for: ${pathname}`);
 
-      if (pathname.includes('..'))
+      if (pathname.includes('..')) {
+        warn('Path traversal attempt detected.');
         return new Response('Forbidden', { status: 403 });
+      }
 
       const potentialFilePath = join(outdir, pathname.substring(1));
-
       if (await exists(potentialFilePath)) {
         const stats = await stat(potentialFilePath);
         if (stats.isFile()) {
+          log(`Serving static file: ${potentialFilePath}`);
           return new Response(Bun.file(potentialFilePath));
         }
       }
 
       attachContext(req);
 
+      if (pathname.startsWith('/api/fs/') && req.method === 'PUT') {
+        if (!req.user) {
+          warn('Unauthorized FS write attempt.');
+          return new Response('Unauthorized', { status: 401 });
+        }
+
+        const filePath = decodeURIComponent(
+          pathname.substring('/api/fs/'.length),
+        );
+        if (!filePath) {
+          warn('Missing file path for FS write.');
+          return new Response('File path is required', { status: 400 });
+        }
+
+        const fs = createFileSystemForUser(req.user.id);
+        const access = url.searchParams.get('access') || 'private';
+
+        try {
+          await fs.write(filePath, req.body, { access });
+
+          const fileBlob = await fs.cat(filePath, { access });
+          const fileContent = await fileBlob.arrayBuffer();
+          const stats = await fs.stat(filePath, { access });
+
+          const record = {
+            path: filePath,
+            user_id: req.user.id,
+            content: fileContent,
+            access: access,
+            size: stats.size,
+            last_modified: new Date().toISOString(),
+          };
+
+          const result = syncActions.upsertFiles({ user: req.user }, record);
+
+          if (result?.broadcast) {
+            server.publish(
+              SYNC_TOPIC,
+              JSON.stringify({ type: 'sync', data: result.broadcast }),
+            );
+          }
+          log('FS write successful, broadcasting sync message.');
+          return new Response(
+            JSON.stringify({ success: true, path: filePath }),
+            { status: 201 },
+          );
+        } catch (error) {
+          error('[Upload Error]', error);
+          return new Response(`Upload failed: ${error.message}`, {
+            status: 500,
+          });
+        }
+      }
+
       if (req.headers.get('upgrade') === 'websocket') {
         if (pathname === '/api/sync') {
-          return req.user &&
-            server.upgrade(req, {
+          if (req.user) {
+            log('Upgrading request to WebSocket for sync channel.');
+            return server.upgrade(req, {
               data: { isSyncChannel: true, user: req.user },
             })
-            ? undefined
-            : new Response('Unauthorized', { status: 401 });
+              ? undefined
+              : new Response('Unauthorized', { status: 401 });
+          } else {
+            warn('WebSocket upgrade denied: User not authenticated.');
+            return new Response('Unauthorized', { status: 401 });
+          }
         }
       }
 
       if (pathname.startsWith('/api/auth/')) {
+        log(`Handling auth request for: ${pathname}`);
         if (pathname.endsWith('/register')) return registerUser(req, db);
         if (pathname.endsWith('/login')) return loginUser(req, db);
         if (pathname.endsWith('/logout')) return logoutUser(req, db);
@@ -174,14 +268,25 @@ export async function startServer(serverContext) {
 
       const actionMatch = pathname.match(/^\/__actions__\/(.+?)\/(.+?)$/);
       if (actionMatch) {
-        if (!req.user) return new Response('Unauthorized', { status: 401 });
+        log(`Handling client-side action call: ${pathname}`);
+        if (!req.user) {
+          warn('Unauthorized action call.');
+          return new Response('Unauthorized', { status: 401 });
+        }
         const [, componentName, actionName] = actionMatch;
+
         const routeDef = Object.values(appRoutes).find(
-          (r) => r.componentName === componentName,
+          (r) =>
+            r.componentName === componentName ||
+            r.component.name === componentName,
         );
-        const action = routeDef?.actions?.[actionName];
-        if (typeof action !== 'function')
+
+        const action = routeDef?.component?.actions?.[actionName];
+
+        if (typeof action !== 'function') {
+          warn(`Action not found: ${actionName} on component ${componentName}`);
           return new Response('Action not found', { status: 404 });
+        }
         try {
           const args = await req.json();
           const result = await action(
@@ -193,8 +298,10 @@ export async function startServer(serverContext) {
             },
             ...args,
           );
+          log('Action executed successfully, sending JSON response.');
           return result instanceof Response ? result : Response.json(result);
         } catch (e) {
+          error('Error executing action:', e);
           return new Response('Internal Server Error', { status: 500 });
         }
       }
@@ -202,17 +309,19 @@ export async function startServer(serverContext) {
       for (const path of sortedAppRoutePaths) {
         const routeDefinition = appRoutes[path];
         const paramNames = [];
+        const processedPath = path.replace(/\/(:\w+\*)$/, '(?:/$1)?');
         const regex = new RegExp(
-          `^${path.replace(/:(\w+)(\*?)/g, (_, name) => {
+          `^${processedPath.replace(/:(\w+)(\*?)/g, (_, name, isCatchAll) => {
             paramNames.push(name);
-            return name.endsWith('*') ? '(.+)' : '([^/]+)';
+            return isCatchAll === '*' ? '(.*)' : '([^/]+)';
           })}$`,
         );
         const match = pathname.match(regex);
 
         if (match) {
+          log(`Matched request to route: '${path}'`);
           req.params = paramNames.reduce(
-            (acc, name, i) => ({ ...acc, [name]: match[i + 1] }),
+            (acc, name, i) => ({ ...acc, [name]: match[i + 1] || '' }),
             {},
           );
           const response = req.headers.get('X-Webs-Navigate')
@@ -229,17 +338,22 @@ export async function startServer(serverContext) {
           return response;
         }
       }
+      log('No route matched, returning 404.');
       return new Response('Not Found', { status: 404 });
     },
     websocket: {
       open(ws) {
-        if (ws.data?.isSyncChannel) ws.subscribe(SYNC_TOPIC);
+        if (ws.data?.isSyncChannel) {
+          log('WebSocket client connected and subscribed to sync topic.');
+          ws.subscribe(SYNC_TOPIC);
+        }
       },
       async message(ws, message) {
         if (!ws.data?.isSyncChannel) return;
         let payload;
         try {
           payload = JSON.parse(message);
+          log('Received WebSocket message from client:', payload);
           const { opId, type } = payload;
           const user = ws.data.user;
 
@@ -272,11 +386,13 @@ export async function startServer(serverContext) {
             }
 
             ws.send(JSON.stringify({ type: 'ack', opId }));
-            if (broadcastPayload)
+            if (broadcastPayload) {
+              log(`Broadcasting FS change for op '${opId}'.`);
               server.publish(
                 SYNC_TOPIC,
                 JSON.stringify({ type: 'sync', data: broadcastPayload }),
               );
+            }
           } else {
             const { tableName, data: recordData, id } = payload;
             if (
@@ -299,16 +415,18 @@ export async function startServer(serverContext) {
               { user },
               type === 'put' ? recordData : id,
             );
-            if (result?.broadcast)
+            if (result?.broadcast) {
+              log(`Broadcasting database change for op '${opId}'.`);
               server.publish(
                 SYNC_TOPIC,
                 JSON.stringify({ type: 'sync', data: result.broadcast }),
               );
-
+            }
             ws.send(JSON.stringify({ type: 'ack', opId }));
+            log(`Sent acknowledgment for op '${opId}'.`);
           }
         } catch (e) {
-          console.error('[Sync Error]', e.message);
+          error('[Sync Error]', e.message);
           ws.send(
             JSON.stringify({
               type: 'sync-error',
@@ -319,11 +437,14 @@ export async function startServer(serverContext) {
         }
       },
       close(ws) {
-        if (ws.data?.isSyncChannel) ws.unsubscribe(SYNC_TOPIC);
+        if (ws.data?.isSyncChannel) {
+          log('WebSocket client disconnected.');
+          ws.unsubscribe(SYNC_TOPIC);
+        }
       },
     },
     error: (error) => {
-      console.error(error);
+      error('Internal server error occurred:', error);
       return new Response('Internal Server Error', { status: 500 });
     },
   });

@@ -48,6 +48,53 @@ export function tokenizeJs(expression) {
       continue;
     }
 
+    if (char === '`') {
+      i++;
+      tokens.push({ type: 'BACKTICK', value: '`' });
+      let currentQuasi = '';
+      while (i < expression.length && expression[i] !== '`') {
+        if (expression[i] === '$' && expression[i + 1] === '{') {
+          if (currentQuasi) {
+            tokens.push({ type: 'TEMPLATE_STRING', value: currentQuasi });
+            currentQuasi = '';
+          }
+          i += 2;
+          tokens.push({ type: 'TEMPLATE_EXPR_START', value: '${' });
+          let braceCount = 1;
+          const exprStart = i;
+          while (i < expression.length && braceCount > 0) {
+            const c = expression[i];
+            if (c === '{') braceCount++;
+            else if (c === '}') braceCount--;
+            if (braceCount > 0) i++;
+          }
+          if (braceCount !== 0)
+            throw new Error('Unmatched braces in template literal');
+          const innerExpression = expression.substring(exprStart, i);
+          tokens.push(...tokenizeJs(innerExpression));
+          tokens.push({ type: 'RBRACE', value: '}' });
+          i++;
+        } else {
+          if (expression[i] === '\\') {
+            currentQuasi += expression[i + 1] ? `\\${expression[i + 1]}` : `\\`;
+            i += 2;
+          } else {
+            currentQuasi += expression[i];
+            i++;
+          }
+        }
+      }
+      if (currentQuasi) {
+        tokens.push({ type: 'TEMPLATE_STRING', value: currentQuasi });
+      }
+      if (i >= expression.length || expression[i] !== '`') {
+        throw new Error('Unterminated template literal');
+      }
+      tokens.push({ type: 'BACKTICK', value: '`' });
+      i++;
+      continue;
+    }
+
     if (isIdentStart(char)) {
       let ident = char;
       while (++i < expression.length && isIdentPart(expression[i])) {
@@ -157,6 +204,41 @@ export function parseJs(tokens) {
 
   let parseAssignment;
 
+  const parseTemplateLiteral = () => {
+    consume();
+    const quasis = [];
+    const expressions = [];
+
+    while (peek() && peek().type !== 'BACKTICK') {
+      if (peek().type === 'TEMPLATE_STRING') {
+        quasis.push({
+          type: 'TemplateElement',
+          value: { raw: consume().value },
+          tail: false,
+        });
+      }
+      if (peek() && peek().type === 'TEMPLATE_EXPR_START') {
+        consume();
+        expressions.push(parseAssignment());
+        if (peek()?.type !== 'RBRACE')
+          throw new Error("Expected '}' after template expression");
+        consume();
+      }
+    }
+
+    if (quasis.length === expressions.length) {
+      quasis.push({ type: 'TemplateElement', value: { raw: '' }, tail: true });
+    } else if (quasis.length > 0) {
+      quasis[quasis.length - 1].tail = true;
+    }
+
+    if (!peek() || peek().type !== 'BACKTICK')
+      throw new Error('Unterminated template literal');
+    consume();
+
+    return { type: 'TemplateLiteral', quasis, expressions };
+  };
+
   const parsePrimary = () => {
     const token = peek();
     if (!token) throw new Error('Unexpected end of expression.');
@@ -187,6 +269,8 @@ export function parseJs(tokens) {
         return parseObjectLiteral();
       case 'LBRACKET':
         return parseArrayLiteral();
+      case 'BACKTICK':
+        return parseTemplateLiteral();
       default:
         throw new Error(`Parser Error: Unexpected token ${token.type}`);
     }
@@ -313,9 +397,10 @@ export function parseJs(tokens) {
   ]);
   const parseLogicalAnd = buildBinaryParser(parseEquality, ['&&']);
   const parseLogicalOr = buildBinaryParser(parseLogicalAnd, ['||']);
+  const parseNullishCoalescing = buildBinaryParser(parseLogicalOr, ['??']);
 
   const parseConditional = () => {
-    const test = parseLogicalOr();
+    const test = parseNullishCoalescing();
     if (peek()?.value === '?') {
       consume();
       const consequent = parseAssignment();
@@ -378,169 +463,104 @@ export function parseJs(tokens) {
 
 export const htmlAstCache = new Map();
 
-const HTML_TOKENIZER_STATE = {
-  DATA: 1,
-  TAG_OPEN: 2,
-  TAG_NAME: 3,
-  BEFORE_ATTRIBUTE_NAME: 4,
-  ATTRIBUTE_NAME: 5,
-  BEFORE_ATTRIBUTE_VALUE: 6,
-  ATTRIBUTE_VALUE_DOUBLE_QUOTED: 7,
-  ATTRIBUTE_VALUE_SINGLE_QUOTED: 8,
-  ATTRIBUTE_VALUE_UNQUOTED: 9,
-  COMMENT: 10,
-  SELF_CLOSING_START_TAG: 11,
-};
-
-const htmlIsWhitespace = (c) =>
-  c === ' ' || c === '\n' || c === '\t' || c === '\r';
+const directiveRegex =
+  /{#if\s+(.+?)}|{#each\s+(.+?)\s+as\s+(.+?)(?:\s*\((.+?)\))?}|{:else if\s+(.+?)}|{:else}|{\/if}|{\/each}/g;
 
 function tokenizeHtml(html) {
-  let state = HTML_TOKENIZER_STATE.DATA;
-  let i = 0;
   const tokens = [];
-  let buffer = '';
-  let tagToken = null;
+  let lastIndex = 0;
 
-  while (i < html.length) {
-    const char = html[i];
-    switch (state) {
-      case HTML_TOKENIZER_STATE.DATA:
-        if (char === '<') {
-          if (buffer) tokens.push({ type: 'text', content: buffer });
-          buffer = '';
-          state = HTML_TOKENIZER_STATE.TAG_OPEN;
-        } else {
-          buffer += char;
-        }
-        break;
+  html.replace(
+    directiveRegex,
+    (match, ifExpr, eachExpr, eachItem, eachKey, elseIfExpr, offset) => {
+      if (offset > lastIndex) {
+        tokens.push({
+          type: 'text',
+          content: html.substring(lastIndex, offset),
+        });
+      }
 
-      case HTML_TOKENIZER_STATE.TAG_OPEN:
-        if (char === '!') {
-          if (html.substring(i, i + 3) === '!--') {
-            state = HTML_TOKENIZER_STATE.COMMENT;
-            i += 2;
-          }
-        } else if (char === '/') {
-          tagToken = { type: 'tagEnd', tagName: '' };
-          state = HTML_TOKENIZER_STATE.TAG_NAME;
-        } else if (/[a-zA-Z]/.test(char)) {
-          tagToken = {
-            type: 'tagStart',
-            tagName: char,
-            attributes: [],
-            selfClosing: false,
-          };
-          state = HTML_TOKENIZER_STATE.TAG_NAME;
-        }
-        break;
+      if (ifExpr) {
+        tokens.push({ type: 'ifStart', expression: ifExpr.trim() });
+      } else if (eachExpr) {
+        tokens.push({
+          type: 'eachStart',
+          expression: eachExpr.trim(),
+          item: eachItem.trim(),
+          key: eachKey ? eachKey.trim() : null,
+        });
+      } else if (elseIfExpr) {
+        tokens.push({ type: 'elseIf', expression: elseIfExpr.trim() });
+      } else if (match === '{:else}') {
+        tokens.push({ type: 'else' });
+      } else if (match === '{/if}') {
+        tokens.push({ type: 'ifEnd' });
+      } else if (match === '{/each}') {
+        tokens.push({ type: 'eachEnd' });
+      }
 
-      case HTML_TOKENIZER_STATE.TAG_NAME:
-        if (htmlIsWhitespace(char)) {
-          state = HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME;
-        } else if (char === '/') {
-          tagToken.selfClosing = true;
-          state = HTML_TOKENIZER_STATE.SELF_CLOSING_START_TAG;
-        } else if (char === '>') {
-          tokens.push(tagToken);
-          state = HTML_TOKENIZER_STATE.DATA;
-        } else {
-          tagToken.tagName += char;
-        }
-        break;
+      lastIndex = offset + match.length;
+      return match;
+    },
+  );
 
-      case HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME:
-        if (!htmlIsWhitespace(char)) {
-          if (char === '>') {
-            tokens.push(tagToken);
-            state = HTML_TOKENIZER_STATE.DATA;
-          } else if (char === '/') {
-            tagToken.selfClosing = true;
-            state = HTML_TOKENIZER_STATE.SELF_CLOSING_START_TAG;
-          } else if (char !== '=') {
-            buffer = char;
-            state = HTML_TOKENIZER_STATE.ATTRIBUTE_NAME;
-          }
-        }
-        break;
-
-      case HTML_TOKENIZER_STATE.ATTRIBUTE_NAME:
-        if (char === '=' || htmlIsWhitespace(char) || char === '>') {
-          tagToken.attributes.push({ name: buffer, value: true });
-          buffer = '';
-          if (char === '=') state = HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_VALUE;
-          else if (char === '>') {
-            tokens.push(tagToken);
-            state = HTML_TOKENIZER_STATE.DATA;
-          } else state = HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME;
-        } else {
-          buffer += char;
-        }
-        break;
-
-      case HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_VALUE:
-        if (char === '"')
-          state = HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_DOUBLE_QUOTED;
-        else if (char === "'")
-          state = HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_SINGLE_QUOTED;
-        else if (!htmlIsWhitespace(char)) {
-          buffer = char;
-          state = HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_UNQUOTED;
-        }
-        break;
-
-      case HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_DOUBLE_QUOTED:
-      case HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_SINGLE_QUOTED:
-        const quote =
-          state === HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_DOUBLE_QUOTED
-            ? '"'
-            : "'";
-        if (char === quote) {
-          tagToken.attributes[tagToken.attributes.length - 1].value = buffer;
-          buffer = '';
-          state = HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME;
-        } else {
-          buffer += char;
-        }
-        break;
-
-      case HTML_TOKENIZER_STATE.ATTRIBUTE_VALUE_UNQUOTED:
-        if (htmlIsWhitespace(char) || char === '>') {
-          tagToken.attributes[tagToken.attributes.length - 1].value = buffer;
-          buffer = '';
-          state =
-            char === '>'
-              ? HTML_TOKENIZER_STATE.DATA
-              : HTML_TOKENIZER_STATE.BEFORE_ATTRIBUTE_NAME;
-          if (char === '>') tokens.push(tagToken);
-        } else {
-          buffer += char;
-        }
-        break;
-
-      case HTML_TOKENIZER_STATE.COMMENT:
-        if (char === '-' && html.substring(i, i + 3) === '-->') {
-          tokens.push({ type: 'comment', content: buffer });
-          buffer = '';
-          i += 2;
-          state = HTML_TOKENIZER_STATE.DATA;
-        } else {
-          buffer += char;
-        }
-        break;
-
-      case HTML_TOKENIZER_STATE.SELF_CLOSING_START_TAG:
-        if (char === '>') {
-          tokens.push(tagToken);
-          state = HTML_TOKENIZER_STATE.DATA;
-        }
-        break;
-    }
-    i++;
+  if (lastIndex < html.length) {
+    tokens.push({ type: 'text', content: html.substring(lastIndex) });
   }
 
-  if (state === HTML_TOKENIZER_STATE.DATA && buffer) {
-    tokens.push({ type: 'text', content: buffer });
+  const finalTokens = [];
+  for (const token of tokens) {
+    if (token.type === 'text') {
+      finalTokens.push(...tokenizeHtmlContent(token.content));
+    } else {
+      finalTokens.push(token);
+    }
+  }
+
+  return finalTokens;
+}
+
+function tokenizeHtmlContent(html) {
+  const tokens = [];
+  const tagRegex = /<\/?([a-zA-Z0-9:-]+)\s*([^>]*)>|<!--([\s\S]*?)-->/g;
+  let lastIndex = 0;
+
+  html.replace(tagRegex, (match, tagName, attrs, comment, offset) => {
+    if (offset > lastIndex) {
+      tokens.push({
+        type: 'text',
+        content: html.substring(lastIndex, offset),
+      });
+    }
+
+    if (comment) {
+      tokens.push({ type: 'comment', content: comment });
+    } else if (match.startsWith('</')) {
+      tokens.push({ type: 'tagEnd', tagName });
+    } else {
+      const attributes = [];
+      const attrRegex =
+        /([:@]?[a-zA-Z0-9-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^>\s]+)))?/g;
+      let attrMatch;
+      while ((attrMatch = attrRegex.exec(attrs))) {
+        attributes.push({
+          name: attrMatch[1],
+          value: attrMatch[2] ?? attrMatch[3] ?? attrMatch[4] ?? true,
+        });
+      }
+      tokens.push({
+        type: 'tagStart',
+        tagName,
+        attributes,
+        selfClosing: match.endsWith('/>'),
+      });
+    }
+    lastIndex = offset + match.length;
+    return match;
+  });
+
+  if (lastIndex < html.length) {
+    tokens.push({ type: 'text', content: html.substring(lastIndex) });
   }
   return tokens;
 }
@@ -550,7 +570,47 @@ export function buildTree(tokens) {
   const stack = [root];
 
   for (const token of tokens) {
-    const parent = stack[stack.length - 1];
+    let parent = stack[stack.length - 1];
+
+    if (token.type === 'ifStart') {
+      const node = { type: 'ifBlock', test: token.expression, children: [] };
+      parent.children.push(node);
+      stack.push(node);
+      continue;
+    } else if (token.type === 'elseIf') {
+      stack.pop();
+      parent = stack[stack.length - 1];
+      const node = {
+        type: 'elseIfBlock',
+        test: token.expression,
+        children: [],
+      };
+      parent.children.push(node);
+      stack.push(node);
+      continue;
+    } else if (token.type === 'else') {
+      stack.pop();
+      parent = stack[stack.length - 1];
+      const node = { type: 'elseBlock', children: [] };
+      parent.children.push(node);
+      stack.push(node);
+      continue;
+    } else if (token.type === 'eachStart') {
+      const node = {
+        type: 'eachBlock',
+        expression: token.expression,
+        item: token.item,
+        key: token.key,
+        children: [],
+      };
+      parent.children.push(node);
+      stack.push(node);
+      continue;
+    } else if (token.type === 'ifEnd' || token.type === 'eachEnd') {
+      stack.pop();
+      continue;
+    }
+
     switch (token.type) {
       case 'tagStart': {
         const node = {
@@ -566,17 +626,16 @@ export function buildTree(tokens) {
         break;
       }
       case 'tagEnd': {
-        const tagNameLower = token.tagName.toLowerCase();
-        for (let i = stack.length - 1; i >= 0; i--) {
-          if (stack[i].tagName === tagNameLower) {
-            stack.length = i;
-            break;
-          }
+        if (
+          stack.length > 1 &&
+          stack[stack.length - 1].tagName === token.tagName.toLowerCase()
+        ) {
+          stack.pop();
         }
         break;
       }
       case 'text':
-        if (token.content.length > 0) {
+        if (token.content.trim().length > 0) {
           parent.children.push({ type: 'text', content: token.content });
         }
         break;
