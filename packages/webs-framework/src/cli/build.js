@@ -689,25 +689,50 @@ async function main() {
     }
 
     if (anonUserId) {
-      try {
-        const anonPrivateDir = join(
-          config.USER_FILES_ROOT,
-          String(anonUserId),
-          'private',
-        );
-        await ensureDir(anonPrivateDir);
-        const welcomeFilePath = join(anonPrivateDir, 'welcome.txt');
+      const anonPrivateDir = join(
+        config.USER_FILES_ROOT,
+        String(anonUserId),
+        'private',
+      );
+      await ensureDir(anonPrivateDir);
+      const welcomeFilePath = join(anonPrivateDir, 'welcome.txt');
+      const welcomeContent =
+        'Welcome to your new Webs file system!\n\nYou can edit this file, create new ones, and upload files from the file browser.\n\nAll changes are saved and synced in real-time.';
 
-        if (!(await exists(welcomeFilePath))) {
-          console.log(
-            "[Build] Dev mode: Seeding a 'welcome.txt' into anon user's file system...",
-          );
-          const welcomeContent =
-            'Welcome to your new Webs file system!\n\nYou can edit this file, create new ones, and upload files from the file browser.\n\nAll changes are saved and synced in real-time.';
-          await writeFile(welcomeFilePath, welcomeContent);
-        }
-      } catch (e) {
-        /* e */
+      if (!(await exists(welcomeFilePath))) {
+        console.log(
+          "[Build] Dev mode: Seeding 'welcome.txt' into anon user's file system...",
+        );
+        await writeFile(welcomeFilePath, welcomeContent);
+      }
+
+      const existingFile = db
+        .query('SELECT path FROM files WHERE path = ? AND user_id = ?')
+        .get('welcome.txt', anonUserId);
+      if (!existingFile) {
+        console.log("[Build] Dev mode: Seeding 'welcome.txt' into database...");
+        const now = new Date().toISOString();
+        const fileRecord = {
+          path: 'welcome.txt',
+          user_id: anonUserId,
+          access: 'private',
+          size: welcomeContent.length,
+          last_modified: now,
+          updated_at: now,
+          content: Buffer.from(welcomeContent),
+        };
+        const insertFileStmt = db.prepare(
+          'INSERT INTO files (path, user_id, access, size, last_modified, updated_at, content) VALUES ($path, $user_id, $access, $size, $last_modified, $updated_at, $content)',
+        );
+        insertFileStmt.run({
+          $path: fileRecord.path,
+          $user_id: fileRecord.user_id,
+          $access: fileRecord.access,
+          $size: fileRecord.size,
+          $last_modified: fileRecord.last_modified,
+          $updated_at: fileRecord.updated_at,
+          $content: fileRecord.content,
+        });
       }
 
       const todoCountResult = db

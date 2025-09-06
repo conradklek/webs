@@ -60,6 +60,27 @@ const coreFS = {
 };
 
 export function fs(path = '') {
+  if (typeof window === 'undefined') {
+    const use = (initialData = null) => {
+      const s = state({
+        data: initialData,
+        isLoading: false,
+        error: null,
+      });
+      s.hydrate = async () => {};
+      s.write = async () => {};
+      s.rm = async () => {};
+      return s;
+    };
+    return {
+      read: () => Promise.resolve(null),
+      ls: () => Promise.resolve([]),
+      write: () => Promise.resolve(),
+      rm: () => Promise.resolve(),
+      use,
+    };
+  }
+
   const isDirectory = path === '' || path.endsWith('/');
   const normalizedPath = path.endsWith('/') ? path.slice(0, -1) : path;
 

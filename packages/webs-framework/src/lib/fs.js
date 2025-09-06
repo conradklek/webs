@@ -2,7 +2,6 @@ import { join, resolve, dirname } from 'path';
 import {
   cp as copy,
   mkdir as fsMkdir,
-  readdir,
   rename,
   rm as fsRm,
   stat as fsStat,
@@ -10,7 +9,7 @@ import {
 
 const USER_FILES_ROOT = resolve(process.cwd(), '.webs/files');
 
-export function createFileSystemForUser(userId) {
+export function createFileSystemForUser(userId, db) {
   if (!userId) throw new Error('A valid userId is required.');
   const userRootPath = join(USER_FILES_ROOT, String(userId));
   const publicPath = join(userRootPath, 'public');
@@ -81,22 +80,45 @@ export function createFileSystemForUser(userId) {
       return file;
     },
     ls: async (path = '.', { access = 'public' } = {}) => {
+      if (!db) {
+        throw new Error(
+          'Database instance is required for the ls operation on the server.',
+        );
+      }
       try {
-        const resolvedPath = await secureResolvePath(path, access);
-        const entries = await readdir(resolvedPath, {
-          withFileTypes: true,
-        });
-        return entries.map((entry) => {
-          const entryPath = join(path, entry.name);
-          return {
-            name: entry.name,
-            isDirectory: entry.isDirectory(),
-            path: entryPath,
-          };
-        });
+        const normalizedPath = path === '.' || path === '' ? '' : path;
+        const prefix = normalizedPath ? `${normalizedPath}/` : '';
+
+        const query = 'SELECT path FROM files WHERE user_id = ? AND access = ?';
+        const allUserPaths = db
+          .query(query)
+          .all(userId, access)
+          .map((row) => row.path);
+
+        const directChildren = new Map();
+
+        for (const fullPath of allUserPaths) {
+          if (prefix && !fullPath.startsWith(prefix)) {
+            continue;
+          }
+
+          const relativePath = fullPath.substring(prefix.length);
+          const segments = relativePath.split('/');
+          const childName = segments[0];
+
+          if (!childName || directChildren.has(childName)) continue;
+
+          const isDirectory = segments.length > 1;
+          directChildren.set(childName, {
+            name: childName,
+            isDirectory,
+            path: isDirectory ? `${prefix}${childName}` : fullPath,
+          });
+        }
+        return Array.from(directChildren.values());
       } catch (e) {
-        if (e.code === 'ENOENT') return [];
-        throw e;
+        console.error('Error in server fs.ls:', e);
+        return [];
       }
     },
     mkdir: (path, { access = 'public' } = {}) =>

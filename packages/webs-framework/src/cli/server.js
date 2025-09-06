@@ -60,7 +60,7 @@ async function executePrefetch(routeDefinition, context) {
 async function handleDataRequest(req, routeDefinition) {
   log(`Handling data request for route '${req.url}'`);
   const { db, user, params } = req;
-  const fs = user ? createFileSystemForUser(user.id) : null;
+  const fs = user ? createFileSystemForUser(user.id, db) : null;
 
   const componentState = await executePrefetch(routeDefinition, {
     db,
@@ -86,7 +86,7 @@ async function handlePageRequest(req, routeDefinition, context) {
   log(`Handling page request for route '${req.url}'`);
   const { manifest } = context;
   const { db, user, params } = req;
-  const fs = user ? createFileSystemForUser(user.id) : null;
+  const fs = user ? createFileSystemForUser(user.id, db) : null;
 
   const initialState = await executePrefetch(routeDefinition, {
     db,
@@ -203,7 +203,7 @@ export async function startServer(serverContext) {
           return new Response('File path is required', { status: 400 });
         }
 
-        const fs = createFileSystemForUser(req.user.id);
+        const fs = createFileSystemForUser(req.user.id, db);
         const access = url.searchParams.get('access') || 'private';
 
         try {
@@ -293,7 +293,7 @@ export async function startServer(serverContext) {
             {
               req,
               db,
-              fs: createFileSystemForUser(req.user.id),
+              fs: createFileSystemForUser(req.user.id, db),
               user: req.user,
             },
             ...args,
@@ -358,7 +358,7 @@ export async function startServer(serverContext) {
           const user = ws.data.user;
 
           if (type && type.startsWith('fs:')) {
-            const fs = createFileSystemForUser(user.id);
+            const fs = createFileSystemForUser(user.id, db);
             const { path, data, options } = payload;
             let broadcastPayload;
 

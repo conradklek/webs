@@ -34,6 +34,15 @@ function normalizeClass(value) {
   let res = '';
   if (isString(value)) {
     res = value;
+  } else if (Array.isArray(value)) {
+    for (const item of value) {
+      const normalized = normalizeClass(item);
+      if (normalized) res += normalized + ' ';
+    }
+  } else if (isObjectAndNotArray(value)) {
+    for (const key in value) {
+      if (value[key]) res += key + ' ';
+    }
   }
   return res.trim();
 }
@@ -173,20 +182,11 @@ export function createRenderer(options) {
     const oldProps = n1?.props || {};
     const newProps = n2.props || {};
 
-    if ('class' in newProps || 'class' in oldProps) {
-      const newClass = normalizeClass(newProps.class);
-      if (newClass !== el.className) {
-        el.className = newClass;
-      }
-    }
-
     for (const key in newProps) {
-      if (key !== 'class' && newProps[key] !== oldProps[key]) {
-        hostPatchProp(el, key, oldProps[key], newProps[key]);
-      }
+      hostPatchProp(el, key, oldProps[key], newProps[key]);
     }
     for (const key in oldProps) {
-      if (key !== 'class' && !(key in newProps)) {
+      if (!(key in newProps)) {
         hostPatchProp(el, key, oldProps[key], null);
       }
     }
@@ -615,17 +615,16 @@ export function createRenderer(options) {
 
     switch (type) {
       case Text:
-        if (props && props['w-dynamic']) {
-          if (
-            !currentDomNode ||
-            currentDomNode.nodeType !== 8 ||
-            currentDomNode.data !== '['
-          ) {
-            throw new Error(
-              `[Hydration Mismatch] Could not find opening comment marker for dynamic text. Found: ${getNodeDescription(
-                currentDomNode,
-              )}`,
-            );
+        const isDynamic = props && props['w-dynamic'];
+        const isDynamicMarker =
+          currentDomNode &&
+          currentDomNode.nodeType === 8 &&
+          currentDomNode.data === '[';
+
+        if (isDynamic || isDynamicMarker) {
+          if (!isDynamicMarker) {
+            patch(null, vnode, parentDom, currentDomNode, parentComponent);
+            return vnode.el.nextSibling;
           }
 
           const textNode = currentDomNode.nextSibling;
@@ -1145,16 +1144,26 @@ async function renderChildren(children, parentComponent, context) {
 }
 
 function renderProps(props) {
+  if (!props) return '';
   let result = '';
   for (const key in props) {
     if (key === 'key' || key.startsWith('on') || key === 'w-dynamic') continue;
     const value = props[key];
-    if (value === true || value === '') {
-      result += ` ${key}`;
-    } else if (value != null && value !== false) {
-      const stringValue =
-        typeof value === 'object' ? JSON.stringify(value) : String(value);
-      result += ` ${key}='${escapeHtml(stringValue)}'`;
+    if (key === 'class') {
+      result += ` class="${escapeHtml(normalizeClass(value))}"`;
+    } else if (key === 'style') {
+      const styleString = isObjectAndNotArray(value)
+        ? Object.entries(value)
+            .map(
+              ([k, v]) => `${k.replace(/([A-Z])/g, '-$1').toLowerCase()}:${v}`,
+            )
+            .join(';')
+        : value;
+      result += ` style="${escapeHtml(styleString)}"`;
+    } else if (typeof value === 'boolean') {
+      if (value) result += ` ${key}`;
+    } else if (value != null) {
+      result += ` ${key}="${escapeHtml(String(value))}"`;
     }
   }
   return result;

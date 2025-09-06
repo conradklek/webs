@@ -155,14 +155,41 @@ export const createApp = (() => {
           invokers[eventName] = undefined;
         }
       } else if (key === 'class') {
-        el.className = normalizeClass(nextVal) || '';
-      } else if (key === 'transition-name') {
-        el.style.viewTransitionName = nextVal;
+        const newClassName = normalizeClass(nextVal) || '';
+        if (el.className !== newClassName) {
+          el.className = newClassName;
+        }
+      } else if (key === 'style') {
+        if (typeof nextVal === 'string') {
+          el.style.cssText = nextVal;
+        } else if (typeof nextVal === 'object') {
+          for (const styleKey in nextVal) {
+            el.style[styleKey] = nextVal[styleKey];
+          }
+          if (prevVal && typeof prevVal === 'object') {
+            for (const oldKey in prevVal) {
+              if (!nextVal || !(oldKey in nextVal)) {
+                el.style[oldKey] = '';
+              }
+            }
+          }
+        }
+      } else if (key in el && typeof el[key] === 'boolean') {
+        el[key] = !!nextVal;
       } else if (key in el) {
         if (el[key] !== nextVal) el[key] = nextVal;
       } else {
-        if (nextVal == null) el.removeAttribute(key);
-        else el.setAttribute(key, nextVal);
+        if (typeof nextVal === 'boolean' || nextVal === 0 || nextVal === 1) {
+          if (nextVal) {
+            el.setAttribute(key, '');
+          } else {
+            el.removeAttribute(key);
+          }
+        } else if (nextVal == null) {
+          el.removeAttribute(key);
+        } else {
+          el.setAttribute(key, String(nextVal));
+        }
       }
     },
     querySelector: (selector) => document?.querySelector(selector),

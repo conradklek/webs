@@ -23,12 +23,30 @@ export default (options = {}) => ({
         const moduleScriptMatch = /<script type="module">(.*?)<\/script>/s.exec(
           sourceCode,
         );
-        const scriptMatch =
-          moduleScriptMatch ||
-          /<script\b[^>]*>(.*?)<\/script>/s.exec(sourceCode);
-
+        // Use a negative lookahead to find a <script> tag that is NOT type="module"
+        const componentScriptMatch =
+          /<script\b(?! type="module")[^>]*>(.*?)<\/script>/s.exec(sourceCode);
         const templateMatch = /<template>(.*?)<\/template>/s.exec(sourceCode);
         const styleMatch = /<style>([\s\S]*?)<\/style>/s.exec(sourceCode);
+
+        // Case 1: Pure JavaScript/TypeScript module.
+        // This is for .webs files that only contain a module script for utility/logic,
+        // without any template or standard component script.
+        if (
+          moduleScriptMatch &&
+          !componentScriptMatch &&
+          !templateMatch &&
+          !styleMatch
+        ) {
+          return {
+            contents: moduleScriptMatch[1].trim(),
+            loader: 'js',
+          };
+        }
+
+        // Case 2: Standard component file.
+        // This file contains a template and/or a component script.
+        const scriptMatch = moduleScriptMatch || componentScriptMatch;
 
         let scriptContent = scriptMatch ? scriptMatch[1].trim() : '';
         const templateContent = templateMatch ? templateMatch[1].trim() : '';
