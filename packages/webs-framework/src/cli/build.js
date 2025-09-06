@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { rm, mkdir, exists, writeFile, cp, readdir } from 'fs/promises';
-import { join, resolve, dirname, basename } from 'path';
+import { join, resolve, dirname, basename, relative } from 'path';
 import { Database } from 'bun:sqlite';
 import { createHash } from 'crypto';
 
@@ -139,6 +139,8 @@ async function buildServerComponents() {
   });
 
   if (!result.success) {
+    console.error('[Build] Server component build failed.');
+    result.logs.forEach((log) => console.error(log));
     return { success: false, entrypoints: [], pageEntrypoints: [] };
   }
   const pageEntrypoints = entrypoints.filter((p) =>
@@ -168,7 +170,7 @@ async function discoverAndBuildDbConfig(scanDir) {
   const glob = new Bun.Glob('**/*.js');
   if (!(await exists(scanDir))) {
     console.warn(
-      'Scan directory for schema discovery not found. Skipping user schema discovery.',
+      '[Build] Scan directory for schema discovery not found. Skipping user schema discovery.',
     );
     return { ...frameworkSchema, clientTables };
   }
@@ -198,7 +200,7 @@ async function discoverAndBuildDbConfig(scanDir) {
         }
       }
     } catch (e) {
-      /* e */
+      console.error(`[Build] Error importing schema from ${fullPath}:`, e);
     }
   }
 
@@ -253,6 +255,7 @@ async function buildServiceWorker(clientOutputs) {
     sourcemap: 'none',
   });
   if (!swBuildResult.success) {
+    console.error('[Build] Service worker build failed.');
     return null;
   }
 
@@ -296,6 +299,8 @@ async function buildClientAndNotify(entrypoints, currentDbConfig) {
     sourcemap: config.IS_PROD ? 'none' : 'inline',
   });
   if (!clientBuildResult.success) {
+    console.error('[Build] Client build failed.');
+    clientBuildResult.logs.forEach((log) => console.error(log));
     return null;
   }
 
@@ -339,32 +344,47 @@ async function prepareClientEntrypoint(allEntrypoints, currentDbConfig) {
   );
   const glob = new Bun.Glob('**/*.js');
 
-  for await (const file of glob.scan(config.TMP_SERVER_DIR)) {
-    const fullPath = resolve(config.TMP_SERVER_DIR, file);
-    const componentName = fullPath
-      .substring(config.TMP_SERVER_DIR.length + 1)
-      .replace('.js', '');
-    if (componentNames.has(componentName)) {
-      componentLoaders.push(
-        `['${componentName}', () => import('${join(config.TMP_SERVER_DIR, file)}')]`,
-      );
-    }
-  }
+  const appJsDir = dirname(config.TMP_APP_JS);
 
-  for await (const file of glob.scan(config.TMP_WRAPPERS_DIR)) {
-    const componentName = `layout/${file.replace('.js', '')}`;
-    componentLoaders.push(
-      `['${componentName}', () => import('${join(config.TMP_WRAPPERS_DIR, file)}')]`,
-    );
-  }
+  const processDir = async (dir, prefix = '') => {
+    if (!(await exists(dir))) return;
+    for await (const file of glob.scan(dir)) {
+      const fullPath = resolve(dir, file);
+      const componentName =
+        prefix + fullPath.substring(dir.length + 1).replace('.js', '');
+
+      let relPath = relative(appJsDir, fullPath);
+      if (!relPath.startsWith('.')) {
+        relPath = './' + relPath;
+      }
+
+      if (prefix === '' && componentNames.has(componentName)) {
+        componentLoaders.push(
+          `['${componentName}', () => import('${relPath}')]`,
+        );
+      } else if (prefix !== '') {
+        componentLoaders.push(
+          `['${componentName}', () => import('${relPath}')]`,
+        );
+      }
+    }
+  };
+
+  await processDir(config.TMP_SERVER_DIR);
+  await processDir(config.TMP_WRAPPERS_DIR, 'layout/');
 
   const dbConfigForClient = {
     version: currentDbConfig.version,
     clientTables: currentDbConfig.clientTables,
   };
 
+  let relCssPath = relative(appJsDir, config.TMP_APP_CSS);
+  if (!relCssPath.startsWith('.')) {
+    relCssPath = './' + relCssPath;
+  }
+
   const entrypointContent = `import { hydrate } from '@conradklek/webs';
-import '${config.TMP_APP_CSS}';
+import '${relCssPath}';
 const dbConfig = ${JSON.stringify(dbConfigForClient)};
 const componentLoaders = new Map([${componentLoaders.join(',\n  ')}]);
 hydrate(componentLoaders, dbConfig);`;
@@ -402,9 +422,16 @@ async function generateRoutesFromFileSystem(pageEntrypoints) {
     const fullPath = resolve(config.TMP_SERVER_DIR, file);
     const relativePath = fullPath.substring(config.TMP_SERVER_DIR.length + 1);
     if (pageFiles.has(relativePath.replace('.js', '.webs'))) {
-      const mod = await import(`${fullPath}?t=${Date.now()}`);
-      if (mod.default)
-        compiledPageModules.set(relativePath.replace('.js', ''), mod);
+      try {
+        const mod = await import(`${fullPath}?t=${Date.now()}`);
+        if (mod.default)
+          compiledPageModules.set(relativePath.replace('.js', ''), mod);
+      } catch (e) {
+        console.error(
+          `[Build] Failed to import compiled page module ${fullPath}:`,
+          e,
+        );
+      }
     }
   }
 
@@ -423,27 +450,70 @@ async function generateRoutesFromFileSystem(pageEntrypoints) {
         config.TMP_WRAPPERS_DIR,
         `${finalComponentName.split('/')[1]}.js`,
       );
+      const wrapperDir = dirname(wrapperPath);
+
       const layoutImports = layouts
-        .map(
-          (p, i) =>
-            `import Layout${i} from '${resolve(config.TMP_SERVER_DIR, p.substring(config.SRC_DIR.length + 1).replace('.webs', '.js'))}';`,
-        )
+        .map((p, i) => {
+          const targetPath = resolve(
+            config.TMP_SERVER_DIR,
+            p.substring(config.SRC_DIR.length + 1).replace('.webs', '.js'),
+          );
+          let relativePath = relative(wrapperDir, targetPath).replace(
+            /\\/g,
+            '/',
+          );
+          if (!relativePath.startsWith('.')) {
+            relativePath = './' + relativePath;
+          }
+          return `import Layout${i} from '${relativePath}';`;
+        })
         .join('\n');
+
+      const pageComponentTargetPath = resolve(
+        config.TMP_SERVER_DIR,
+        `${componentName}.js`,
+      );
+      let pageComponentRelativePath = relative(
+        wrapperDir,
+        pageComponentTargetPath,
+      ).replace(/\\/g, '/');
+      if (!pageComponentRelativePath.startsWith('.')) {
+        pageComponentRelativePath = './' + pageComponentRelativePath;
+      }
+
+      const layoutComponentsList = layouts
+        .map((_, i) => `Layout${i}`)
+        .join(', ');
 
       const wrapperContent = `import { h } from '@conradklek/webs';
 ${layoutImports}
-import PageComponent from '${resolve(config.TMP_SERVER_DIR, `${componentName}.js`)}';
+import PageComponent from '${pageComponentRelativePath}';
 
 export default {
   name: '${finalComponentName}',
   props: { params: Object, initialState: Object, user: Object },
+  components: {
+    PageComponent,
+    ${layoutComponentsList}
+  },
   render() {
-    const pageNode = h(PageComponent, { ...this.$props });
-    return ${layouts.reduce((acc, _, i) => `h(Layout${i}, { ...this.$props }, { default: () => ${acc} })`, 'pageNode')};
+    const pageNode = h(this.PageComponent, { ...this.$props });
+    return ${layouts.reduceRight((acc, _, i) => `h(this.Layout${i}, { ...this.$props }, { default: () => ${acc} })`, 'pageNode')};
   }
 };`;
+
       await writeFile(wrapperPath, wrapperContent);
-      finalComponent = (await import(`${wrapperPath}?t=${Date.now()}`)).default;
+      try {
+        // Bust the import cache for the newly written file
+        const importedModule = await import(`${wrapperPath}?v=${Date.now()}`);
+        finalComponent = importedModule.default;
+      } catch (e) {
+        console.error(
+          `[Build] Failed to import layout wrapper for ${componentName}:`,
+          e,
+        );
+        finalComponent = mod.default;
+      }
     }
 
     let urlPath =
@@ -490,7 +560,7 @@ export default {
         if (!aIsCatchAll && bIsCatchAll) return -1;
       }
     }
-    return aParts.length - bParts.length;
+    return b.path.length - a.path.length;
   });
 
   return Object.fromEntries(
@@ -518,6 +588,7 @@ async function prebuildAndGenerateRegistry(prebuildDir, registryPath) {
   });
 
   if (!prebuildResult.success) {
+    console.error('[Build] Pre-build for registry generation failed.');
     return false;
   }
 
@@ -526,13 +597,23 @@ async function prebuildAndGenerateRegistry(prebuildDir, registryPath) {
   const exports = [];
   const guiPrebuildDir = join(prebuildDir, 'gui');
 
+  const registryDir = dirname(registryPath);
+
   if (await exists(guiPrebuildDir)) {
     for await (const file of jsGlob.scan(guiPrebuildDir)) {
       const componentName = basename(file, '.js');
       const importName = componentName.replace(/-/g, '_');
       const absoluteComponentPath = resolve(guiPrebuildDir, file);
 
-      imports.push(`import ${importName} from '${absoluteComponentPath}';`);
+      let relativeComponentPath = relative(
+        registryDir,
+        absoluteComponentPath,
+      ).replace(/\\/g, '/');
+      if (!relativeComponentPath.startsWith('.')) {
+        relativeComponentPath = './' + relativeComponentPath;
+      }
+
+      imports.push(`import ${importName} from '${relativeComponentPath}';`);
       exports.push(`  '${componentName}': ${importName},`);
     }
   }
@@ -813,5 +894,6 @@ async function main() {
 }
 
 main().catch((e) => {
+  console.error('[Build] Fatal error during build process:', e);
   process.exit(1);
 });
