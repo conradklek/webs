@@ -90,20 +90,18 @@
     <div class="w-full">
       <ul class="w-full space-y-2">
         {#each sortedTodos as todo (todo.id)}
-        <li
-          class="w-full flex items-center gap-3 p-2 rounded-md hover:bg-gray-100"
-        >
+        <li class="w-full flex items-center gap-1.5">
           <input
             :id="'todo-' + todo.id"
             type="checkbox"
             :checked="todo.completed"
             @change="toggleTodo(todo)"
-            class="block size-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            hidden
           />
           <label
             :for="'todo-' + todo.id"
             :data-completed="todo.completed"
-            class="flex-grow data-[completed=true]:line-through data-[completed=true]:text-muted-foreground"
+            class="flex-grow data-[completed]:line-through data-[completed]:text-muted-foreground"
           >
             {{ todo.content }}
           </label>

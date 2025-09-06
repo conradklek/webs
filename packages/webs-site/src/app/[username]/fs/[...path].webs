@@ -1,12 +1,5 @@
 <script>
-  import {
-    onReady,
-    onUnmounted,
-    computed,
-    state,
-    session,
-    fs,
-  } from '@conradklek/webs';
+  import { watch, computed, state, fs } from '@conradklek/webs';
 
   export default {
     actions: {
@@ -28,10 +21,15 @@
     },
 
     setup(props) {
-      const currentPath = computed(() => props.params.path || '');
-      const items = fs(currentPath.value).use(props.initialState?.items || []);
       const uploadStatus = state('');
       const newItemName = state('');
+      const creationError = state(null);
+
+      const itemsController = fs(props.params.path || '').use(
+        props.initialState?.items || [],
+      );
+
+      const currentPath = computed(() => props.params.path || '');
 
       const breadcrumbs = computed(() => {
         const path = props.params.path || '';
@@ -46,18 +44,21 @@
       });
 
       const parentDirectoryLink = computed(() => {
-        const path = props.params.path || '';
+        const path = (props.params.path || '').replace(/\/$/, '');
         if (!path) return null;
 
         const segments = path.split('/');
         segments.pop();
         const parentPath = segments.join('/');
 
-        return `/${props.params.username}/fs/${parentPath}`;
+        return parentPath
+          ? `/${props.params.username}/fs/${parentPath}`
+          : `/${props.params.username}/fs`;
       });
 
       const sortedItems = computed(() => {
-        return [...(items.data || [])].sort((a, b) => {
+        const data = itemsController.data || [];
+        return [...data].sort((a, b) => {
           if (a.isDirectory && !b.isDirectory) return -1;
           if (!a.isDirectory && b.isDirectory) return 1;
           return a.name.localeCompare(b.name);
@@ -69,6 +70,7 @@
         if (!file) return;
 
         uploadStatus.value = `Uploading ${file.name}...`;
+        creationError.value = null;
         const targetPath = `${currentPath.value ? currentPath.value + '/' : ''}${file.name}`;
 
         try {
@@ -86,6 +88,7 @@
           return;
         }
 
+        creationError.value = null;
         const isDir = name.endsWith('/');
         const cleanName = isDir ? name.slice(0, -1) : name;
         if (!cleanName) return;
@@ -103,7 +106,8 @@
           }
           newItemName.value = '';
         } catch (error) {
-          /* bug */
+          console.error('Error creating item:', error);
+          creationError.value = error.message;
         }
       }
 
@@ -111,12 +115,8 @@
         await fs(path).rm({ access: 'private' });
       }
 
-      onReady(() => {
-        items.hydrate(props.initialState?.items);
-      });
-
       return {
-        items,
+        items: itemsController,
         sortedItems,
         currentPath,
         breadcrumbs,
@@ -127,7 +127,10 @@
         handleCreateItem,
         parentDirectoryLink,
         handleDeleteItem,
-        error: props.initialState?.error,
+        creationError,
+        error: computed(
+          () => itemsController.error || props.initialState?.error,
+        ),
       };
     },
   };
@@ -173,6 +176,9 @@
             Create
           </button>
         </form>
+        {#if creationError}
+        <p class="text-sm text-red-500">{{ creationError }}</p>
+        {/if}
         <div>
           <label
             for="file-upload"
@@ -220,7 +226,7 @@
             Delete
           </button>
         </li>
-        {/each} {:else if !items.isLoading}
+        {/each} {:else if !items?.isLoading}
         <li class="text-muted-foreground">This directory is empty.</li>
         {/if}
       </ul>

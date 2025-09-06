@@ -61,11 +61,7 @@
       <strong>Error:</strong> {{ error }}
     </div>
     {:else}
-    <h1
-      class="text-xl font-mono mb-4 bg-gray-100 p-2 rounded-md overflow-x-auto"
-    >
-      {{ filePath }}
-    </h1>
+    <h1 class="font-mono mb-4 overflow-x-auto">{{ filePath }}</h1>
     <text-editor :filePath="filePath" :initialContent="fileContent" />
     {/if}
   </div>

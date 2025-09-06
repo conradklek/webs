@@ -1,0 +1,48 @@
+<script type="module">
+  export class CommandRegistry {
+    constructor(editor, fs, filePath) {
+      this.editor = editor;
+      this.fs = fs;
+      this.filePath = filePath;
+      this.commands = {};
+      this.registerBuiltinCommands();
+    }
+
+    register(name, handler) {
+      this.commands[name] = handler;
+    }
+
+    async execute(commandString) {
+      const [commandName, ...args] = commandString.split(' ');
+      const command = this.commands[commandName];
+      if (command) {
+        await command(args);
+      }
+      this.editor.actions.enterNormalMode();
+    }
+
+    registerBuiltinCommands() {
+      this.register('w', async (args) => {
+        const targetPath = args[0] || this.filePath;
+        if (!targetPath) {
+          this.editor.setState({ statusMessage: 'E32: No file name' });
+          return;
+        }
+        try {
+          const content = this.editor.state.text;
+          await this.fs(targetPath).write(content, { access: 'private' });
+          this.editor.actions.setDirty(false);
+          this.editor.setState({
+            statusMessage: `"${targetPath.split('/').pop()}" written`,
+          });
+        } catch (e) {
+          this.editor.setState({ statusMessage: `Write Error: ${e.message}` });
+        }
+      });
+
+      this.register('q', () => {
+        this.editor.setState({ statusMessage: '' });
+      });
+    }
+  }
+</script>
