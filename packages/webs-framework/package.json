@@ -1,7 +1,7 @@
 {
   "name": "@conradklek/webs",
   "author": "Conrad Klek",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "A web framework",
   "license": "MIT",

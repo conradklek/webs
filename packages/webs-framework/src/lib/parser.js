@@ -540,7 +540,7 @@ function tokenizeHtmlContent(html) {
     } else {
       const attributes = [];
       const attrRegex =
-        /([:@]?[a-zA-Z0-9-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^>\s]+)))?/g;
+        /([:@]?[a-zA-Z0-9:.-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^>\s]+)))?/g;
       let attrMatch;
       while ((attrMatch = attrRegex.exec(attrs))) {
         attributes.push({

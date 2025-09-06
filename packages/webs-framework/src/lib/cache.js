@@ -9,11 +9,9 @@ self.addEventListener('install', (event) => {
     caches
       .open(CACHE_NAME)
       .then((cache) => {
-        console.log('Service Worker: Caching assets on install.');
         return cache.addAll(assetManifest.map((entry) => entry.url));
       })
       .then(() => {
-        console.log('Service Worker: Installed successfully.');
         return self.skipWaiting();
       }),
   );
@@ -28,7 +26,6 @@ self.addEventListener('activate', (event) => {
           cacheNames
             .filter((name) => name !== CACHE_NAME)
             .map((name) => {
-              console.log('Service Worker: Deleting old cache:', name);
               return caches.delete(name);
             }),
         );
@@ -47,13 +44,6 @@ self.addEventListener('activate', (event) => {
                 (request) => !urlsToKeep.has(request.url),
               );
 
-              if (requestsToDelete.length > 0) {
-                console.log(
-                  'Service Worker: Deleting outdated assets:',
-                  requestsToDelete.map((r) => r.url),
-                );
-              }
-
               return Promise.all(
                 requestsToDelete.map((request) => cache.delete(request)),
               );
@@ -63,7 +53,6 @@ self.addEventListener('activate', (event) => {
         return Promise.all([oldCachesPromise, currentCachePromise]);
       })
       .then(() => {
-        console.log('Service Worker: Activated and caches cleaned.');
         return self.clients.claim();
       }),
   );
@@ -115,8 +104,7 @@ self.addEventListener('fetch', (event) => {
             }
             return networkResponse;
           })
-          .catch((error) => {
-            console.error('Fetching failed:', error);
+          .catch(() => {
             return new Response('Fetch failed', {
               status: 503,
               statusText: 'Service Unavailable',

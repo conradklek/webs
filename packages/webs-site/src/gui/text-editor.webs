@@ -1,5 +1,12 @@
 <script>
-  import { fs, state, watch } from '@conradklek/webs';
+  import {
+    fs,
+    state,
+    watch,
+    onUnmounted,
+    onMounted,
+    db,
+  } from '@conradklek/webs';
 
   export default {
     props: {
@@ -7,44 +14,45 @@
       initialContent: String,
     },
     setup(props) {
-      const file = fs(props.filePath).use(props.initialContent);
-
+      const file = fs(props.filePath);
       const localContent = state(props.initialContent || '');
+      const editorRef = state(null);
 
-      watch(
-        () => file.data,
-        (newData) => {
-          if (newData !== null && newData !== localContent.value) {
-            localContent.value = newData;
+      onMounted(() => {
+        const unsubscribe = db('files').subscribe(async () => {
+          const newContent = await file.read();
+          if (newContent !== null && newContent !== localContent.value) {
+            localContent.value = newContent;
           }
+        });
+        onUnmounted(unsubscribe);
+
+        editorRef.value?.focus();
+      });
+
+      let saveTimeout;
+      watch(
+        () => localContent.value,
+        (newValue) => {
+          if (typeof window === 'undefined') return;
+
+          clearTimeout(saveTimeout);
+          saveTimeout = setTimeout(() => {
+            file.write(newValue, { access: 'private' });
+          }, 300);
         },
       );
 
-      let saveTimeout;
-      function onInput(event) {
-        localContent.value = event.target.value;
-        clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => {
-          file.write(localContent.value);
-        }, 300);
-      }
-
-      return { file, localContent, onInput };
+      return { editorRef, localContent };
     },
   };
 </script>
 
 <template>
   <div class="w-full relative">
-    {#if file.isLoading && file.data === null}
-    <div class="text-muted-foreground animate-pulse p-4">Loading file...</div>
-    {/if} {#if file.error}
-    <div class="text-red-500 font-medium p-4">Sync Error: {{ file.error }}</div>
-    {/if}
-
     <textarea
-      :value="localContent"
-      @input="onInput"
+      @ref="editorRef"
+      bind:value="localContent"
       class="w-full h-96 p-4 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow font-mono"
       placeholder="Start typing..."
     ></textarea>

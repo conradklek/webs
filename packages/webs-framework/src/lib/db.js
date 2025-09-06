@@ -56,7 +56,9 @@ function createTableSql(tableName, table) {
   const constraintsSql =
     constraints.length > 0 ? `, ${constraints.join(', ')}` : '';
 
-  return `CREATE TABLE IF NOT EXISTS ${tableName} (${fields.join(', ')}${constraintsSql});`;
+  return `CREATE TABLE IF NOT EXISTS ${tableName} (${fields.join(
+    ', ',
+  )}${constraintsSql});`;
 }
 
 function createActionsFileContent(syncableTables) {
@@ -64,19 +66,23 @@ function createActionsFileContent(syncableTables) {
     .map(([tableName, table]) => {
       const upperCaseName =
         tableName.charAt(0).toUpperCase() + tableName.slice(1);
-      const fieldNames = Object.keys(table.fields).filter(
-        (f) => table.fields[f]?.type !== 'blob',
-      );
+      const fieldNames = Object.keys(table.fields);
+
       let updateSet = fieldNames
         .filter((f) => f !== table.keyPath && f !== 'created_at')
         .map((f) => `${f} = excluded.${f}`);
       if (table.fields.updated_at)
         updateSet.push(`updated_at = CURRENT_TIMESTAMP`);
 
-      const upsertSql =
-        `INSERT INTO ${tableName} (${fieldNames.join(', ')}) VALUES (${fieldNames.map((f) => `$${f}`).join(', ')}) ON CONFLICT(${table.keyPath}) DO UPDATE SET ${updateSet.join(', ')}`
-          .trim()
-          .replace(/\s+/g, ' ');
+      const upsertSql = `INSERT INTO ${tableName} (${fieldNames.join(
+        ', ',
+      )}) VALUES (${fieldNames
+        .map((f) => `$${f}`)
+        .join(
+          ', ',
+        )}) ON CONFLICT(${table.keyPath}) DO UPDATE SET ${updateSet.join(', ')}`
+        .trim()
+        .replace(/\s+/g, ' ');
       const deleteSql = `DELETE FROM ${tableName} WHERE ${table.keyPath} = $id AND user_id = $user_id;`;
 
       return `
@@ -130,7 +136,10 @@ export async function createDatabaseAndActions(
         Object.entries(tableDef.fields).forEach(([fieldName, fieldProps]) => {
           if (!existingColumns.includes(fieldName)) {
             db.exec(
-              `ALTER TABLE ${tableName} ADD COLUMN ${getColumnSql(fieldName, fieldProps)}`,
+              `ALTER TABLE ${tableName} ADD COLUMN ${getColumnSql(
+                fieldName,
+                fieldProps,
+              )}`,
             );
           }
         });

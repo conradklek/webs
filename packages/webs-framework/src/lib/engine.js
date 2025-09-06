@@ -218,11 +218,6 @@ export function store(options) {
       return Reflect.get(target, key, receiver);
     },
     set(target, key, value, receiver) {
-      console.warn(
-        `Attempted to directly set store property "${String(
-          key,
-        )}". Use an action to modify state.`,
-      );
       return Reflect.set(target, key, value, receiver);
     },
   });

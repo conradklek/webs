@@ -50,6 +50,8 @@ export function createFileSystemForUser(userId) {
   };
 
   return {
+    getPrivateRootPath: () => privatePath,
+
     exists: async (path, { access = 'public' } = {}) => {
       try {
         return await Bun.file(await secureResolvePath(path, access)).exists();
@@ -80,13 +82,18 @@ export function createFileSystemForUser(userId) {
     },
     ls: async (path = '.', { access = 'public' } = {}) => {
       try {
-        const entries = await readdir(await secureResolvePath(path, access), {
+        const resolvedPath = await secureResolvePath(path, access);
+        const entries = await readdir(resolvedPath, {
           withFileTypes: true,
         });
-        return entries.map((entry) => ({
-          name: entry.name,
-          isDirectory: entry.isDirectory(),
-        }));
+        return entries.map((entry) => {
+          const entryPath = join(path, entry.name);
+          return {
+            name: entry.name,
+            isDirectory: entry.isDirectory(),
+            path: entryPath,
+          };
+        });
       } catch (e) {
         if (e.code === 'ENOENT') return [];
         throw e;
@@ -96,11 +103,28 @@ export function createFileSystemForUser(userId) {
       secureResolvePath(path, access).then((p) =>
         fsMkdir(p, { recursive: true }),
       ),
+
     write: async (path, data, { access = 'public' } = {}) => {
       const resolvedPath = await secureResolvePath(path, access);
       await ensureDirectoryExists(resolvedPath);
-      return Bun.write(resolvedPath, data);
+
+      if (data instanceof ReadableStream) {
+        const writer = Bun.file(resolvedPath).writer();
+        const reader = data.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            writer.end();
+            break;
+          }
+          writer.write(value);
+        }
+        await writer.flush();
+      } else {
+        return Bun.write(resolvedPath, data);
+      }
     },
+
     mv: async (from, to, { access = 'public' } = {}) => {
       const fromPath = await secureResolvePath(from, access);
       const toPath = await secureResolvePath(to, access);

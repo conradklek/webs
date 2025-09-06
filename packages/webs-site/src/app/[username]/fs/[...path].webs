@@ -1,58 +1,37 @@
 <script>
-  import { computed, state, action } from '@conradklek/webs';
+  import {
+    onReady,
+    onUnmounted,
+    computed,
+    state,
+    session,
+    fs,
+  } from '@conradklek/webs';
 
   export default {
     actions: {
-      async prefetch({ fs, user, params }) {
-        if (!user || user.username !== params.username) {
-          return { error: 'Permission denied.' };
+      async prefetch({ fs, params, user }) {
+        if (!user) {
+          return { error: 'You must be logged in to view files.' };
         }
-        const path = params.path || '';
         try {
-          const items = await fs.ls(path);
-          return { items, path, error: null };
+          const items = await fs.ls(params.path || '.', { access: 'private' });
+          return { items: items || [] };
         } catch (error) {
-          console.error(`[Prefetch Error] for path "/${path}":`, error);
-          return { items: [], path, error: 'Could not load directory.' };
+          return { error: 'Could not load directory contents.' };
         }
-      },
-
-      async create({ fs, params }, name) {
-        if (!name || name.includes('..') || name.includes('\\')) {
-          throw new Error('Invalid name');
-        }
-
-        const isDir = name.endsWith('/');
-        const cleanName = isDir ? name.slice(0, -1) : name;
-        if (!cleanName) throw new Error('Name cannot be empty.');
-
-        const basePath = params.path || '';
-        const newPath = `${basePath ? basePath + '/' : ''}${cleanName}`;
-
-        const access = 'private';
-
-        if (isDir) {
-          await fs.mkdir(newPath, { access });
-        } else {
-          await fs.write(newPath, '', { access });
-        }
-
-        return { success: true, path: newPath };
       },
     },
-
     props: {
       initialState: Object,
       params: Object,
     },
 
     setup(props) {
-      const items = state(props.initialState?.items || []);
       const currentPath = computed(() => props.params.path || '');
+      const items = fs(currentPath.value).use(props.initialState?.items || []);
       const uploadStatus = state('');
       const newItemName = state('');
-
-      const createAction = action('create');
 
       const breadcrumbs = computed(() => {
         const path = props.params.path || '';
@@ -66,6 +45,25 @@
         return crumbs;
       });
 
+      const parentDirectoryLink = computed(() => {
+        const path = props.params.path || '';
+        if (!path) return null;
+
+        const segments = path.split('/');
+        segments.pop();
+        const parentPath = segments.join('/');
+
+        return `/${props.params.username}/fs/${parentPath}`;
+      });
+
+      const sortedItems = computed(() => {
+        return [...(items.data || [])].sort((a, b) => {
+          if (a.isDirectory && !b.isDirectory) return -1;
+          if (!a.isDirectory && b.isDirectory) return 1;
+          return a.name.localeCompare(b.name);
+        });
+      });
+
       async function handleFileUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -74,22 +72,9 @@
         const targetPath = `${currentPath.value ? currentPath.value + '/' : ''}${file.name}`;
 
         try {
-          const response = await fetch(
-            `/api/fs/${encodeURIComponent(targetPath)}`,
-            {
-              method: 'PUT',
-              body: file,
-              headers: { 'Content-Type': file.type },
-            },
-          );
-
-          if (!response.ok) {
-            throw new Error(`Upload failed: ${await response.text()}`);
-          }
-
+          await fs(targetPath).write(file, { access: 'private' });
           uploadStatus.value = `Successfully uploaded ${file.name}!`;
         } catch (error) {
-          console.error(error);
           uploadStatus.value = `Error: ${error.message}`;
         }
         event.target.value = '';
@@ -97,14 +82,42 @@
 
       async function handleCreateItem() {
         const name = newItemName.value.trim();
-        if (!name) return;
+        if (!name || name.includes('..') || name.includes('\\')) {
+          return;
+        }
 
-        await createAction.call(name);
-        newItemName.value = '';
+        const isDir = name.endsWith('/');
+        const cleanName = isDir ? name.slice(0, -1) : name;
+        if (!cleanName) return;
+
+        const basePath = currentPath.value || '';
+        const newPath = `${basePath ? basePath + '/' : ''}${cleanName}`;
+
+        try {
+          if (isDir) {
+            await fs(`${newPath}/.placeholder`).write('', {
+              access: 'private',
+            });
+          } else {
+            await fs(newPath).write('', { access: 'private' });
+          }
+          newItemName.value = '';
+        } catch (error) {
+          /* bug */
+        }
       }
+
+      async function handleDeleteItem(path) {
+        await fs(path).rm({ access: 'private' });
+      }
+
+      onReady(() => {
+        items.hydrate(props.initialState?.items);
+      });
 
       return {
         items,
+        sortedItems,
         currentPath,
         breadcrumbs,
         params: props.params,
@@ -112,6 +125,8 @@
         uploadStatus,
         newItemName,
         handleCreateItem,
+        parentDirectoryLink,
+        handleDeleteItem,
         error: props.initialState?.error,
       };
     },
@@ -150,7 +165,11 @@
             placeholder="new-directory/ or new-file.txt"
             class="input"
           />
-          <button type="submit" class="btn btn-size-lg btn-default">
+          <button
+            type="submit"
+            class="btn btn-size-lg btn-default"
+            :disabled="!newItemName.trim()"
+          >
             Create
           </button>
         </form>
@@ -173,23 +192,35 @@
         </div>
       </div>
       <ul class="space-y-2">
-        {#if items && items.length > 0} {#each items as item (item.name)}
+        {#if parentDirectoryLink}
         <li class="font-mono">
-          {#if item.isDirectory}
-          <a
-            :href="'/' + params.username + '/fs/' + (currentPath ? currentPath + '/' : '') + item.name"
-            class="link"
-            >{{ item.name }}/</a
-          >
-          {:else}
-          <a
-            :href="'/' + params.username + '/editor/' + (currentPath ? currentPath + '/' : '') + item.name"
-            class="link"
-            >{{ item.name }}</a
-          >
-          {/if}
+          <a :href="parentDirectoryLink" class="link">../</a>
         </li>
-        {/each} {:else}
+        {/if} {#if sortedItems && sortedItems.length > 0} {#each sortedItems as
+        item (item.path)}
+        <li class="font-mono flex justify-between items-center group">
+          <div class="flex-1">
+            {#if item.isDirectory}
+            <a :href="'/' + params.username + '/fs/' + item.path" class="link"
+              >{{ item.name }}/</a
+            >
+            {:else}
+            <a
+              :href="'/' + params.username + '/editor/' + item.path"
+              class="link"
+              >{{ item.name }}</a
+            >
+            {/if}
+          </div>
+          <button
+            @click="handleDeleteItem(item.path)"
+            class="link text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity"
+            aria-label="Delete item"
+          >
+            Delete
+          </button>
+        </li>
+        {/each} {:else if !items.isLoading}
         <li class="text-muted-foreground">This directory is empty.</li>
         {/if}
       </ul>

@@ -1,10 +1,6 @@
 import { parseHtml, parseJs, tokenizeJs } from './parser.js';
 import * as Webs from './renderer.js';
 
-const LOG_PREFIX = '[Compiler]';
-const log = (...args) => console.log(LOG_PREFIX, ...args);
-const warn = (...args) => console.warn(LOG_PREFIX, ...args);
-
 export const NODE_TYPES = {
   ROOT: 0,
   ELEMENT: 1,
@@ -249,8 +245,6 @@ return ${generatedCode || 'null'};
     const fn = new Function('Webs', '_ctx', functionBody).bind(null, Webs);
     return { fn, source: functionBody };
   } catch (e) {
-    console.error('Error compiling render function:', e);
-    console.error('Generated code:', functionBody);
     const errorFn = () =>
       Webs.h(Webs.Comment, null, 'Render function compile error');
     return {
@@ -259,6 +253,8 @@ return ${generatedCode || 'null'};
     };
   }
 }
+
+const parseExprCache = new Map();
 
 export class Compiler {
   constructor(componentDef, options = null) {
@@ -287,12 +283,9 @@ export class Compiler {
   }
 
   compile() {
-    log('Starting compilation for component...');
     const rawAst = this.parseHtml(this.definition.template);
     const transformedAst = this._transformNode(rawAst);
-    log('Transformed AST:', transformedAst);
-    const { fn, source } = generateRenderFn(transformedAst);
-    log('Generated Render Function Source:', source);
+    const { fn } = generateRenderFn(transformedAst);
     return fn;
   }
 
@@ -300,11 +293,15 @@ export class Compiler {
     if (str === null || str === undefined) return null;
     const cleanStr = String(str).replace(/\n/g, ' ').trim();
     if (!cleanStr) return null;
+    if (parseExprCache.has(cleanStr)) {
+      return parseExprCache.get(cleanStr);
+    }
 
     try {
-      return parseJs(tokenizeJs(cleanStr));
+      const ast = parseJs(tokenizeJs(cleanStr));
+      parseExprCache.set(cleanStr, ast);
+      return ast;
     } catch (e) {
-      warn(`Expression parse error: "${str}"`, e);
       return null;
     }
   }
@@ -454,7 +451,6 @@ export class Compiler {
         /^\s*(?:(\w+)|(?:\((\w+)\s*,\s*(\w+)\)))\s*$/,
       );
       if (!match) {
-        warn(`Invalid #each item definition: ${block.item}`);
         return null;
       }
 
@@ -525,6 +521,7 @@ export class Compiler {
   _processAttributes(attrs) {
     const properties = [];
     const consumedIndices = new Set();
+    const bindAttributes = new Map();
 
     for (let i = 0; i < attrs.length; i++) {
       if (consumedIndices.has(i)) continue;
@@ -533,39 +530,51 @@ export class Compiler {
       let name = attr.name;
       let value = attr.value;
 
-      log(`Processing attribute: ${name}="${value}"`);
+      if (name === '@ref') {
+        properties.push({
+          type: ATTR_TYPES.DIRECTIVE,
+          name: 'ref',
+          expression: this._parseExpr(value),
+        });
+        continue;
+      }
 
-      if (name.startsWith('@') && attrs[i + 1]) {
-        const nextAttr = attrs[i + 1];
-        if (nextAttr.name === 'prevent' || nextAttr.name === 'stop') {
-          warn(
-            `Reconstructing malformed event handler: ${name} + ${nextAttr.name}`,
-          );
-          name = `${name}.${nextAttr.name}`;
-          value = nextAttr.value;
-          consumedIndices.add(i + 1);
+      if (name.startsWith('@') && !name.includes('.')) {
+        let j = i + 1;
+        while (
+          j < attrs.length &&
+          (attrs[j].name === 'prevent' || attrs[j].name === 'stop')
+        ) {
+          name += `.${attrs[j].name}`;
+          if (attrs[j].value) {
+            value = attrs[j].value;
+          }
+          consumedIndices.add(j);
+          j++;
         }
       }
 
       if (name.startsWith('bind:')) {
         const propToBind = name.split(':')[1];
         if (!propToBind) {
-          warn(`Invalid bind directive: ${name}`);
           continue;
         }
-        const eventName = 'onInput';
-        const valueAccessor = 'value';
+        bindAttributes.set(propToBind, value);
 
         properties.push({
           type: ATTR_TYPES.DIRECTIVE,
-          name: propToBind,
+          name: propToBind.includes('-') ? propToBind : camelize(propToBind),
           expression: this._parseExpr(value),
         });
+
+        const eventName = propToBind === 'value' ? 'onInput' : 'onChange';
+        const valueAccessor = propToBind === 'value' ? 'value' : 'checked';
+
         properties.push({
           type: ATTR_TYPES.EVENT_HANDLER,
           name: eventName,
           expression: this._parseExpr(
-            `${value}.value = $event.target.${valueAccessor}`,
+            `${value} = $event.target.${valueAccessor}`,
           ),
         });
         continue;
@@ -582,7 +591,6 @@ export class Compiler {
           modifiers: new Set(modifiers),
         };
         properties.push(prop);
-        log('Parsed event handler:', prop);
       } else if (name.startsWith(':')) {
         const propName = name.substring(1);
         properties.push({
@@ -626,7 +634,6 @@ export function compile(componentDef) {
   }
 
   if (typeof templateContent !== 'string') {
-    warn('Component is missing a valid template option.');
     return () => Webs.h(Webs.Comment, null, 'Component missing template');
   }
 

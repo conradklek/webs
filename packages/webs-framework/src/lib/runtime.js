@@ -3,9 +3,6 @@ import { db, fs, syncEngine } from './sync.js';
 import { state } from './engine.js';
 import { session } from './session.js';
 
-const LOG_PREFIX = '[Runtime]';
-const log = (...args) => console.log(LOG_PREFIX, ...args);
-
 export { session, db, fs, syncEngine };
 
 export * from './engine';
@@ -38,7 +35,6 @@ async function performNavigation(url, { isPopState = false } = {}) {
 
     const componentLoader = componentManifestInstance.get(data.componentName);
     if (!componentLoader) {
-      console.error(`Component loader not found for: ${data.componentName}`);
       window.location.assign(url.href);
       return;
     }
@@ -65,7 +61,6 @@ async function performNavigation(url, { isPopState = false } = {}) {
     window.__WEBS_STATE__ = { componentName: data.componentName };
     session.setUser(data.user);
   } catch (err) {
-    console.error('[Router] Client-side navigation failed:', err);
     window.location.assign(url.href);
   }
 }
@@ -115,27 +110,56 @@ export const createApp = (() => {
       if (parent) parent.removeChild(child);
     },
     patchProp: (el, key, prevVal, nextVal) => {
-      log(`patchProp on <${el.tagName.toLowerCase()}>`, {
-        key,
-        prevVal,
-        nextVal,
-      });
+      if (key === 'ref') {
+        if (
+          prevVal &&
+          typeof prevVal === 'object' &&
+          prevVal !== null &&
+          'value' in prevVal
+        ) {
+          prevVal.value = null;
+        }
+        if (
+          nextVal &&
+          typeof nextVal === 'object' &&
+          nextVal !== null &&
+          'value' in nextVal
+        ) {
+          nextVal.value = el;
+        }
+        return;
+      }
 
       if (/^on[A-Z]/.test(key)) {
         const eventName = key.slice(2).toLowerCase();
-        log(`Attaching event listener: '${eventName}' to`, el);
-        if (prevVal) el.removeEventListener(eventName, prevVal);
-        if (nextVal) el.addEventListener(eventName, nextVal);
+        let invokers = el._vei || (el._vei = {});
+        let invoker = invokers[eventName];
+        if (nextVal) {
+          if (!invoker) {
+            invoker = el._vei[eventName] = (e) => {
+              if (e.timeStamp < invoker.attached) return;
+              if (Array.isArray(invoker.value)) {
+                invoker.value.forEach((fn) => fn(e));
+              } else {
+                invoker.value(e);
+              }
+            };
+            invoker.value = nextVal;
+            invoker.attached = performance.now();
+            el.addEventListener(eventName, invoker);
+          } else {
+            invoker.value = nextVal;
+          }
+        } else if (invoker) {
+          el.removeEventListener(eventName, invoker);
+          invokers[eventName] = undefined;
+        }
       } else if (key === 'class') {
         el.className = normalizeClass(nextVal) || '';
       } else if (key === 'transition-name') {
         el.style.viewTransitionName = nextVal;
       } else if (key in el) {
-        try {
-          if (el[key] !== nextVal) el[key] = nextVal;
-        } catch (e) {
-          /* empty */
-        }
+        if (el[key] !== nextVal) el[key] = nextVal;
       } else {
         if (nextVal == null) el.removeAttribute(key);
         else el.setAttribute(key, nextVal);
@@ -184,17 +208,13 @@ export async function hydrate(componentManifest, dbConfig = null) {
   }
 
   const root = document.getElementById('root');
-  if (!root) return console.error('[Hydration] #root element not found.');
+  if (!root) return;
 
   const { componentName, user = {}, params, componentState } = websState;
-  if (!componentName)
-    return console.error('[Hydration] No component name in state.');
+  if (!componentName) return;
 
   const componentLoader = componentManifest.get(componentName);
-  if (!componentLoader)
-    return console.error(
-      `[Hydration] Component loader not found: "${componentName}".`,
-    );
+  if (!componentLoader) return;
 
   const componentModule = await componentLoader();
   const rootComponent = componentModule.default;
@@ -213,22 +233,20 @@ function installNavigationHandler(app, componentManifest) {
 
   const prefetch = async (url) => {
     if (prefetchCache.has(url.href)) return;
-    try {
-      const res = await fetch(url.pathname + url.search, {
-        headers: { 'X-Webs-Navigate': 'true' },
-      });
-      if (
-        res.ok &&
-        res.headers.get('content-type')?.includes('application/json')
-      ) {
-        prefetchCache.set(url.href, deserializeState(await res.json()));
-      }
-    } catch (e) {
-      /* Prefetch errors are non-critical */
+    const res = await fetch(url.pathname + url.search, {
+      headers: { 'X-Webs-Navigate': 'true' },
+    });
+    if (
+      res.ok &&
+      res.headers.get('content-type')?.includes('application/json')
+    ) {
+      prefetchCache.set(url.href, deserializeState(await res.json()));
     }
   };
 
-  window.addEventListener('mouseover', (e) => {
+  const eventTarget = app._container;
+
+  eventTarget.addEventListener('mouseover', (e) => {
     const link = e.target.closest('a');
     if (
       !link ||
@@ -244,9 +262,7 @@ function installNavigationHandler(app, componentManifest) {
     if (url.origin === window.location.origin) prefetch(url);
   });
 
-  window.addEventListener('click', (e) => {
-    log('Global click listener fired for:', e.target);
-
+  eventTarget.addEventListener('click', (e) => {
     const link = e.target.closest('a');
     if (
       !link ||
@@ -259,7 +275,6 @@ function installNavigationHandler(app, componentManifest) {
     const href = link.getAttribute('href');
     if (!href || href.startsWith('#')) return;
 
-    log('Intercepting navigation for href:', href);
     e.preventDefault();
     router.push(href);
   });
@@ -312,7 +327,7 @@ export function action(actionName, componentName) {
   return { call, state: s };
 }
 
-export function useTable(tableName, initialData = []) {
+export function table(tableName, initialData = []) {
   const table = db(tableName);
   if (typeof window === 'undefined') {
     const mock = state({ data: initialData, isLoading: false, error: null });

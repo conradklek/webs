@@ -2,13 +2,6 @@ import { watch, isRef } from './engine.js';
 import { voidElements } from './parser.js';
 import { compile } from './compiler.js';
 
-const LOG_PREFIX = '[Renderer]';
-const log = (...args) => console.log(LOG_PREFIX, ...args);
-const warn = (...args) => console.warn(LOG_PREFIX, ...args);
-const error = (...args) => console.error(LOG_PREFIX, ...args);
-const group = (label) => console.group(label);
-const groupEnd = () => console.groupEnd();
-
 function getNodeDescription(node) {
   if (!node) return 'null';
   switch (node.nodeType) {
@@ -160,8 +153,6 @@ export function createRenderer(options) {
         const target = hostQuerySelector(n2.props.to);
         if (target) {
           patchChildren(n1, n2, target, parentComponent);
-        } else {
-          warn(`Teleport target "${n2.props.to}" not found.`);
         }
         break;
       default:
@@ -170,11 +161,8 @@ export function createRenderer(options) {
         } else if (isObjectAndNotArray(type)) {
           if (!n1) {
             mountComponent(n2, container, anchor, parentComponent);
-          } else if (n1.type === n2.type) {
-            updateComponent(n1, n2, container);
           } else {
-            unmount(n1);
-            mountComponent(n2, container, anchor, parentComponent);
+            updateComponent(n1, n2);
           }
         }
     }
@@ -184,8 +172,6 @@ export function createRenderer(options) {
     const el = (n2.el = n1 ? n1.el : hostCreateElement(n2.type));
     const oldProps = n1?.props || {};
     const newProps = n2.props || {};
-
-    log(`Patching props for <${n2.type}>`, { oldProps, newProps });
 
     if ('class' in newProps || 'class' in oldProps) {
       const newClass = normalizeClass(newProps.class);
@@ -383,31 +369,17 @@ export function createRenderer(options) {
           }
 
           if (isHydrating) {
-            log(`Hydrating component subtree for <${instance.type.name}>`);
             if (!vnode.el) {
-              error(
-                `CRITICAL HYDRATION ERROR for <${instance.type.name}>: vnode.el is null. This means no corresponding DOM element was found for this component.`,
-                vnode,
-              );
               throw new Error(
                 `Hydration failed for <${instance.type.name}>: no DOM element to hydrate against.`,
               );
             }
             const parentEl = vnode.el.parentElement;
             if (!parentEl) {
-              error(
-                `CRITICAL HYDRATION ERROR for <${instance.type.name}>: vnode.el.parentElement is null. The DOM node is detached.`,
-                vnode.el,
-              );
               throw new Error(
                 `Hydration failed for component <${instance.type.name}>: DOM node is detached.`,
               );
             }
-            log('Component vnode.el is:', getNodeDescription(vnode.el));
-            log(
-              'Parent for component subtree is:',
-              getNodeDescription(parentEl),
-            );
             hydrateNode(subTree, vnode.el, parentEl, instance);
           } else {
             patch(null, subTree, container, anchor, instance);
@@ -472,11 +444,6 @@ export function createRenderer(options) {
             patch(prevTree, nextTree, parentContainer, null, instance);
             vnode.el = nextTree.el;
             instance.hooks.onUpdated?.forEach((h) => h.call(instance.ctx));
-          } else {
-            warn(
-              `Could not find parent container to patch component update for <${instance.type.name}>. Anchor node:`,
-              anchorNodeForParent,
-            );
           }
         }
 
@@ -493,20 +460,34 @@ export function createRenderer(options) {
     instance.hooks.onReady?.forEach((h) => h.call(instance.ctx));
   };
 
-  const arePropsOrAttrsDifferent = (prev, next) => {
-    const prevKeys = Object.keys(prev);
-    const nextKeys = Object.keys(next);
-    if (prevKeys.length !== nextKeys.length) return true;
+  const hasPropsChanged = (prevProps, nextProps) => {
+    const nextKeys = Object.keys(nextProps);
+    if (nextKeys.length !== Object.keys(prevProps).length) return true;
     for (const key of nextKeys) {
-      if (!prev.hasOwnProperty(key) || prev[key] !== next[key]) {
-        return true;
-      }
+      if (nextProps[key] !== prevProps[key]) return true;
     }
     return false;
   };
 
-  const updateComponent = (n1, n2, container) => {
+  const shouldUpdateComponent = (n1, n2) => {
+    const { props: prevProps, children: prevChildren } = n1;
+    const { props: nextProps, children: nextChildren } = n2;
+
+    if (prevChildren || nextChildren) return true;
+    if (prevProps === nextProps) return false;
+    if (!prevProps) return !!nextProps;
+    if (!nextProps) return true;
+
+    return hasPropsChanged(prevProps, nextProps);
+  };
+
+  const updateComponent = (n1, n2) => {
     const instance = (n2.component = n1.component);
+    if (!shouldUpdateComponent(n1, n2)) {
+      n2.el = n1.el;
+      instance.vnode = n2;
+      return;
+    }
 
     instance.vnode = n2;
     n2.el = n1.el;
@@ -524,9 +505,6 @@ export function createRenderer(options) {
       }
     }
 
-    const needsUpdate =
-      arePropsOrAttrsDifferent(instance.props, nextProps) ||
-      arePropsOrAttrsDifferent(instance.attrs, nextAttrs);
     instance.attrs = nextAttrs;
     instance.slots = n2.children || {};
 
@@ -545,10 +523,9 @@ export function createRenderer(options) {
         instance.internalCtx[key] = newValue;
       }
     }
-
     instance.props = nextProps;
 
-    if (needsUpdate && instance.update) {
+    if (instance.update) {
       instance.update();
     }
   };
@@ -582,21 +559,11 @@ export function createRenderer(options) {
   };
 
   const hydrate = (vnode, container) => {
-    log('HYDRATION PROCESS STARTED.');
     if (!container.firstChild) {
-      warn(
-        'Container has no server-rendered children. Falling back to a clean mount.',
-      );
       patch(null, vnode, container);
       return vnode.component;
     }
-    try {
-      log('Hydrating vnode:', vnode, 'into container:', container);
-      hydrateNode(vnode, container.firstChild, container, null);
-      log('HYDRATION PROCESS COMPLETED SUCCESSFULLY.');
-    } catch (e) {
-      error('HYDRATION PROCESS FAILED.', e);
-    }
+    hydrateNode(vnode, container.firstChild, container, null);
     return vnode.component;
   };
 
@@ -609,7 +576,6 @@ export function createRenderer(options) {
         currentNode.data !== ']') ||
         (currentNode.nodeType === 3 && currentNode.textContent.trim() === ''))
     ) {
-      log(`Skipping non-essential node: ${getNodeDescription(currentNode)}`);
       currentNode = currentNode.nextSibling;
     }
     return currentNode;
@@ -617,23 +583,10 @@ export function createRenderer(options) {
 
   const hydrateNode = (vnode, domNode, parentDom, parentComponent = null) => {
     if (!vnode) {
-      log(
-        'hydrateNode: vnode is null, returning current domNode:',
-        getNodeDescription(domNode),
-      );
       return domNode;
     }
 
-    const vnodeDesc =
-      vnode.type.name ||
-      (typeof vnode.type === 'symbol' ? vnode.type.toString() : vnode.type);
-    group(`Hydrating VNode: ${vnodeDesc}`);
-    log('VNode details:', vnode);
-    log('Targeting DOM Node:', getNodeDescription(domNode));
-    log('Parent DOM is:', getNodeDescription(parentDom));
-
     if (vnode.type === Fragment) {
-      log('Hydrating Fragment children...');
       const nextDomNode = hydrateChildren(
         vnode.children,
         parentDom,
@@ -646,28 +599,13 @@ export function createRenderer(options) {
         .flat()
         .find((c) => c && c.el);
       vnode.el = firstChildVNode ? firstChildVNode.el : null;
-      groupEnd();
       return nextDomNode;
     }
 
     let currentDomNode = skipNonEssentialNodes(domNode);
-    log(
-      'Effective DOM node after skipping:',
-      getNodeDescription(currentDomNode),
-    );
 
     if (!currentDomNode) {
-      error(
-        `Hydration Mismatch: DOM exhausted. Expected a node for vnode:`,
-        vnode,
-        `but found null.`,
-      );
-      warn(
-        'To prevent crashing, patching the remaining vnode into parent:',
-        parentDom,
-      );
       patch(null, vnode, parentDom, null, parentComponent);
-      groupEnd();
       return null;
     }
 
@@ -675,124 +613,109 @@ export function createRenderer(options) {
 
     const { type, props, children } = vnode;
 
-    try {
-      switch (type) {
-        case Text:
-          if (props && props['w-dynamic']) {
-            if (
-              !currentDomNode ||
-              currentDomNode.nodeType !== 8 ||
-              currentDomNode.data !== '['
-            ) {
-              throw new Error(
-                `[Hydration Mismatch] Could not find opening comment marker for dynamic text. Found: ${getNodeDescription(
-                  currentDomNode,
-                )}`,
-              );
-            }
-
-            const textNode = currentDomNode.nextSibling;
-            const closingComment = textNode ? textNode.nextSibling : null;
-            if (
-              !closingComment ||
-              closingComment.nodeType !== 8 ||
-              closingComment.data !== ']'
-            ) {
-              throw new Error(
-                `[Hydration Mismatch] Expected a closing comment '<!--]-->' but found: ${getNodeDescription(
-                  closingComment,
-                )}`,
-              );
-            }
-            log('Successfully hydrated dynamic text content.');
-            vnode.el = textNode;
-            return closingComment.nextSibling;
-          } else {
-            if (!currentDomNode || currentDomNode.nodeType !== 3) {
-              throw new Error(
-                `[Hydration Mismatch] Expected a text node, but found: ${getNodeDescription(
-                  currentDomNode,
-                )}`,
-              );
-            }
-            log('Successfully hydrated static text node.');
-            return currentDomNode.nextSibling;
-          }
-        case Comment:
-          if (!currentDomNode || currentDomNode.nodeType !== 8) {
+    switch (type) {
+      case Text:
+        if (props && props['w-dynamic']) {
+          if (
+            !currentDomNode ||
+            currentDomNode.nodeType !== 8 ||
+            currentDomNode.data !== '['
+          ) {
             throw new Error(
-              `[Hydration Mismatch] Expected a comment node, but found: ${getNodeDescription(
+              `[Hydration Mismatch] Could not find opening comment marker for dynamic text. Found: ${getNodeDescription(
                 currentDomNode,
               )}`,
             );
           }
-          log('Successfully hydrated comment node.');
+
+          const textNode = currentDomNode.nextSibling;
+          const closingComment = textNode ? textNode.nextSibling : null;
+          if (
+            !closingComment ||
+            closingComment.nodeType !== 8 ||
+            closingComment.data !== ']'
+          ) {
+            throw new Error(
+              `[Hydration Mismatch] Expected a closing comment '<!--]-->' but found: ${getNodeDescription(
+                closingComment,
+              )}`,
+            );
+          }
+          vnode.el = textNode;
+          return closingComment.nextSibling;
+        } else {
+          if (!currentDomNode || currentDomNode.nodeType !== 3) {
+            throw new Error(
+              `[Hydration Mismatch] Expected a text node, but found: ${getNodeDescription(
+                currentDomNode,
+              )}`,
+            );
+          }
           return currentDomNode.nextSibling;
-        case Teleport:
-          log(`Hydrating Teleport content to target: "${props.to}"`);
-          return hydrateChildren(
+        }
+      case Comment:
+        if (!currentDomNode || currentDomNode.nodeType !== 8) {
+          throw new Error(
+            `[Hydration Mismatch] Expected a comment node, but found: ${getNodeDescription(
+              currentDomNode,
+            )}`,
+          );
+        }
+        return currentDomNode.nextSibling;
+      case Teleport:
+        return hydrateChildren(
+          children,
+          hostQuerySelector(props.to),
+          null,
+          parentComponent,
+        );
+      default:
+        if (isObjectAndNotArray(type)) {
+          if (
+            currentDomNode &&
+            currentDomNode.nodeType === 8 &&
+            currentDomNode.data === 'w-if'
+          ) {
+            const tempContainer = hostCreateElement('div');
+            patch(null, vnode, tempContainer, null, parentComponent);
+            const newEl = tempContainer.firstChild;
+            if (newEl) {
+              hostInsert(newEl, currentDomNode.parentNode, currentDomNode);
+              hostRemove(currentDomNode);
+              vnode.el = newEl;
+              return newEl.nextSibling;
+            }
+          }
+          mountComponent(vnode, null, null, parentComponent, true);
+          const lastNode = vnode.component.lastEl;
+          return lastNode ? lastNode.nextSibling : null;
+        } else if (isString(type)) {
+          if (
+            !currentDomNode ||
+            currentDomNode.nodeType !== 1 ||
+            currentDomNode.tagName.toLowerCase() !== type.toLowerCase()
+          ) {
+            throw new Error(
+              `[Hydration Mismatch] Expected element <${type}>, but found: ${getNodeDescription(
+                currentDomNode,
+              )}`,
+            );
+          }
+          if (props) {
+            for (const key in props) {
+              hostPatchProp(currentDomNode, key, null, props[key]);
+            }
+          }
+          hydrateChildren(
             children,
-            hostQuerySelector(props.to),
-            null,
+            currentDomNode,
+            currentDomNode.firstChild,
             parentComponent,
           );
-        default:
-          if (isObjectAndNotArray(type)) {
-            if (
-              currentDomNode &&
-              currentDomNode.nodeType === 8 &&
-              currentDomNode.data === 'w-if'
-            ) {
-              warn(
-                `Hydrating a component that was conditionally rendered as 'false' on the server.`,
-              );
-              const tempContainer = hostCreateElement('div');
-              patch(null, vnode, tempContainer, null, parentComponent);
-              const newEl = tempContainer.firstChild;
-              if (newEl) {
-                hostInsert(newEl, currentDomNode.parentNode, currentDomNode);
-                hostRemove(currentDomNode);
-                vnode.el = newEl;
-                return newEl.nextSibling;
-              }
-            }
-            log('Mounting component in hydration mode...');
-            mountComponent(vnode, null, null, parentComponent, true);
-            const lastNode = vnode.component.lastEl;
-            return lastNode ? lastNode.nextSibling : null;
-          } else if (isString(type)) {
-            if (
-              !currentDomNode ||
-              currentDomNode.nodeType !== 1 ||
-              currentDomNode.tagName.toLowerCase() !== type.toLowerCase()
-            ) {
-              throw new Error(
-                `[Hydration Mismatch] Expected element <${type}>, but found: ${getNodeDescription(
-                  currentDomNode,
-                )}`,
-              );
-            }
-            log(
-              `Successfully matched element <${type}>. Patching props and hydrating children.`,
-            );
-            if (props) {
-              for (const key in props) {
-                hostPatchProp(currentDomNode, key, null, props[key]);
-              }
-            }
-            hydrateChildren(
-              children,
-              currentDomNode,
-              currentDomNode.firstChild,
-              parentComponent,
-            );
-            return currentDomNode.nextSibling;
-          }
-      }
-      return currentDomNode ? currentDomNode.nextSibling : null;
-    } finally {
-      groupEnd();
+          return currentDomNode.nextSibling;
+        }
     }
+    return currentDomNode ? currentDomNode.nextSibling : null;
   };
 
   const hydrateChildren = (
@@ -988,9 +911,6 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
   } else if (instance.type.template) {
     instance.render = compile(instance.type);
   } else {
-    warn(
-      `Component "${instance.type.name}" is missing a template or render function.`,
-    );
     instance.render = () => createVnode(Comment, null, 'no template');
   }
 
@@ -1141,13 +1061,6 @@ export async function renderToString(vnode) {
 
     return { html, componentState: unwrappedState };
   } catch (e) {
-    if (e instanceof TypeError && e.message.includes('null is not an object')) {
-      warn(
-        'SSR Warning: Null user object encountered. This is normal for unauthenticated requests.',
-      );
-      throw e;
-    }
-    console.error(`[SSR Error] ${e.message}\n${e.stack}`);
     const html = `<div style="color:red; background:lightyellow; border: 1px solid red; padding: 1rem;">SSR Error: ${escapeHtml(
       e.message,
     )}</div>`;

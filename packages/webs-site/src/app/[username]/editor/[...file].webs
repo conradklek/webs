@@ -6,7 +6,7 @@
           return { error: 'Permission denied.' };
         }
 
-        const path = params.path;
+        const path = params.file;
         if (!path) {
           return { error: 'No file path specified.' };
         }
@@ -14,15 +14,15 @@
         let content = '';
         let exists = false;
         try {
-          exists = await fs.exists(path);
+          exists = await fs.exists(path, { access: 'private' });
           if (exists) {
-            const stats = await fs.stat(path);
+            const stats = await fs.stat(path, { access: 'private' });
 
             if (stats.isDirectory) {
               return { error: `Cannot edit a directory: ${path}` };
             }
 
-            const file = await fs.cat(path);
+            const file = await fs.cat(path, { access: 'private' });
             content = await file.text();
           }
         } catch (e) {
@@ -42,15 +42,12 @@
       params: Object,
     },
     setup(props) {
-      const filePath = props.params.path || 'untitled.txt';
-
-      const initialContent = props.initialState?.isNewFile
-        ? ''
-        : props.initialState?.fileContent;
+      const filePath = props.params.file || 'untitled.txt';
+      const fileContent = props.initialState?.fileContent;
 
       return {
         filePath,
-        initialContent,
+        fileContent,
         error: props.initialState?.error,
       };
     },
@@ -69,7 +66,7 @@
     >
       {{ filePath }}
     </h1>
-    <text-editor :filePath="filePath" :initialContent="initialContent" />
+    <text-editor :filePath="filePath" :initialContent="fileContent" />
     {/if}
   </div>
 </template>

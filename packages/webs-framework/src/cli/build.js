@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { rm, mkdir, exists, writeFile } from 'fs/promises';
+import { rm, mkdir, exists, writeFile, cp, readdir } from 'fs/promises';
 import { join, resolve, dirname, basename } from 'path';
 import { Database } from 'bun:sqlite';
 import { createHash } from 'crypto';
@@ -9,6 +9,7 @@ import websPlugin from './plugin';
 import tailwind from 'bun-plugin-tailwind';
 import { createDatabaseAndActions } from '../lib/db.js';
 import { startServer } from './server.js';
+import { createFileSystemForUser } from '../lib/fs.js';
 
 const userProjectDir = process.argv[2]
   ? resolve(process.argv[2])
@@ -51,10 +52,28 @@ const frameworkSchema = {
           references: 'users(id)',
           onDelete: 'CASCADE',
         },
-        content: { type: 'blob' },
         access: { type: 'text', notNull: true, default: 'private' },
         size: { type: 'integer', notNull: true, default: 0 },
         last_modified: { type: 'timestamp', default: 'CURRENT_TIMESTAMP' },
+        updated_at: { type: 'timestamp', default: 'CURRENT_TIMESTAMP' },
+        content: { type: 'blob', notNull: true },
+      },
+      indexes: [{ name: 'by-user', keyPath: 'user_id' }],
+    },
+    todos: {
+      sync: true,
+      keyPath: 'id',
+      fields: {
+        id: { type: 'text', primaryKey: true },
+        content: { type: 'text', notNull: true },
+        completed: { type: 'integer', notNull: true, default: 0 },
+        user_id: {
+          type: 'integer',
+          notNull: true,
+          references: 'users(id)',
+          onDelete: 'CASCADE',
+        },
+        created_at: { type: 'timestamp', default: 'CURRENT_TIMESTAMP' },
         updated_at: { type: 'timestamp', default: 'CURRENT_TIMESTAMP' },
       },
       indexes: [{ name: 'by-user', keyPath: 'user_id' }],
@@ -120,7 +139,6 @@ async function buildServerComponents() {
   });
 
   if (!result.success) {
-    console.error('Server component compilation failed:', result.logs);
     return { success: false, entrypoints: [], pageEntrypoints: [] };
   }
   const pageEntrypoints = entrypoints.filter((p) =>
@@ -180,10 +198,7 @@ async function discoverAndBuildDbConfig(scanDir) {
         }
       }
     } catch (e) {
-      console.error(
-        `Error importing compiled component ${file} for schema discovery:`,
-        e,
-      );
+      /* e */
     }
   }
 
@@ -224,9 +239,9 @@ async function discoverAndBuildDbConfig(scanDir) {
 }
 
 async function buildServiceWorker(clientOutputs) {
-  const swEntryPath = (await exists(resolve(config.CWD, '../client/cache.js')))
-    ? resolve(config.CWD, '../client/cache.js')
-    : resolve(FRAMEWORK_DIR, '../client/cache.js');
+  const swEntryPath = (await exists(resolve(config.CWD, '../lib/cache.js')))
+    ? resolve(config.CWD, '../lib/cache.js')
+    : resolve(FRAMEWORK_DIR, '../lib/cache.js');
   if (!(await exists(swEntryPath))) return null;
 
   const swBuildResult = await Bun.build({
@@ -238,7 +253,6 @@ async function buildServiceWorker(clientOutputs) {
     sourcemap: 'none',
   });
   if (!swBuildResult.success) {
-    console.error('Service worker build failed:', swBuildResult.logs);
     return null;
   }
 
@@ -282,7 +296,6 @@ async function buildClientAndNotify(entrypoints, currentDbConfig) {
     sourcemap: config.IS_PROD ? 'none' : 'inline',
   });
   if (!clientBuildResult.success) {
-    console.error('Client app build failed:', clientBuildResult.logs);
     return null;
   }
 
@@ -505,7 +518,6 @@ async function prebuildAndGenerateRegistry(prebuildDir, registryPath) {
   });
 
   if (!prebuildResult.success) {
-    console.error('Pre-build for registry/schema generation failed.');
     return false;
   }
 
@@ -535,6 +547,88 @@ ${exports.join('\n')}
   return true;
 }
 
+async function generateActionsFile(dbConfig, config) {
+  const dbModulePath = resolve(FRAMEWORK_DIR, '../lib/db.js');
+  const fsModulePath = resolve(FRAMEWORK_DIR, '../lib/fs.js');
+  const sshModulePath = resolve(FRAMEWORK_DIR, '../lib/ssh.js');
+
+  const actionContent = `
+import { addDoc, setDoc, deleteDoc, updateDoc } from '${dbModulePath}';
+import { createFileSystemForUser } from '${fsModulePath}';
+import { shellManager } from '${sshModulePath}';
+
+export function registerActions(db) {
+  const actions = {
+    async upsertTodos({ user }, record) {
+      if (!user) throw new Error('Unauthorized');
+      
+      const recordToInsert = { ...record };
+
+      if (recordToInsert.hasOwnProperty('name') && !recordToInsert.hasOwnProperty('content')) {
+        recordToInsert.content = recordToInsert.name;
+        delete recordToInsert.name;
+      }
+
+      if (!recordToInsert.user_id) {
+        recordToInsert.user_id = user.id;
+      }
+      
+      if (!recordToInsert.content || typeof recordToInsert.content !== 'string' || !recordToInsert.content.trim()) {
+        throw new Error('Todo content cannot be empty.');
+      }
+
+      const result = await (recordToInsert.id ? updateDoc : addDoc)(db, 'todos', recordToInsert);
+      return { broadcast: { tableName: 'todos', type: 'put', data: result } };
+    },
+    async deleteTodos({ user }, id) {
+      if (!user) throw new Error('Unauthorized');
+      await deleteDoc(db, 'todos', id);
+      return { broadcast: { tableName: 'todos', type: 'delete', id } };
+    },
+    async upsertFiles({ user }, record) {
+      if (!user) throw new Error('Unauthorized');
+      const result = await (record.id ? updateDoc : addDoc)(db, 'files', record);
+      return { broadcast: { tableName: 'files', type: 'put', data: result } };
+    },
+    async deleteFiles({ user }, id) {
+      if (!user) throw new Error('Unauthorized');
+      await deleteDoc(db, 'files', id);
+      return { broadcast: { tableName: 'files', type: 'delete', id } };
+    },
+  };
+  
+  const dynamicActions = {
+    async exec({ user, $ }, command) {
+      if (!user) throw new Error('Unauthorized');
+      const proc = $.spawn(command);
+      const { stdout, stderr, exitCode } = await proc.exited;
+      return { 
+        stdout: stdout.toString(), 
+        stderr: stderr.toString(), 
+        exitCode,
+      };
+    },
+    async pwd({ user, $ }) {
+      if (!user) throw new Error('Unauthorized');
+      const proc = $.spawn(['pwd']);
+      const { stdout, stderr, exitCode } = await proc.exited;
+      return { stdout: stdout.toString().trim(), stderr: stderr.toString(), exitCode };
+    },
+    async ls({ user, fs }, path = '.') {
+      if (!user) throw new Error('Unauthorized');
+      const entries = await fs.ls(path, { access: 'private' });
+      return { entries };
+    },
+  };
+
+  return { ...actions, ...dynamicActions };
+}
+  `;
+
+  await writeFile(config.TMP_GENERATED_ACTIONS, actionContent);
+  console.log('[Build] Server actions file generated.');
+}
+
 async function main() {
   await ensureDir(config.TMPDIR);
   await ensureDir(config.USER_FILES_ROOT);
@@ -547,17 +641,17 @@ async function main() {
     config.TMP_COMPONENT_REGISTRY,
   );
   if (!prebuildSuccess) {
-    console.error('Halting build due to pre-build errors.');
     if (config.IS_PROD) process.exit(1);
     return;
   }
 
   const dbConfig = await discoverAndBuildDbConfig(config.TMP_PREBUILD_DIR);
 
+  await generateActionsFile(dbConfig, config);
+
   const { success, entrypoints, pageEntrypoints } =
     await buildServerComponents();
   if (!success) {
-    console.error('Halting build due to component compilation errors.');
     if (config.IS_PROD) process.exit(1);
     return;
   }
@@ -595,6 +689,27 @@ async function main() {
     }
 
     if (anonUserId) {
+      try {
+        const anonPrivateDir = join(
+          config.USER_FILES_ROOT,
+          String(anonUserId),
+          'private',
+        );
+        await ensureDir(anonPrivateDir);
+        const welcomeFilePath = join(anonPrivateDir, 'welcome.txt');
+
+        if (!(await exists(welcomeFilePath))) {
+          console.log(
+            "[Build] Dev mode: Seeding a 'welcome.txt' into anon user's file system...",
+          );
+          const welcomeContent =
+            'Welcome to your new Webs file system!\n\nYou can edit this file, create new ones, and upload files from the file browser.\n\nAll changes are saved and synced in real-time.';
+          await writeFile(welcomeFilePath, welcomeContent);
+        }
+      } catch (e) {
+        /* e */
+      }
+
       const todoCountResult = db
         .query('SELECT COUNT(*) as count FROM todos WHERE user_id = ?')
         .get(anonUserId);
@@ -673,6 +788,5 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error('An unexpected error occurred:', e);
   process.exit(1);
 });

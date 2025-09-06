@@ -1,11 +1,5 @@
 <script>
-  import {
-    state,
-    session,
-    useTable,
-    onReady,
-    computed,
-  } from '@conradklek/webs';
+  import { state, session, table, onReady, computed } from '@conradklek/webs';
 
   export default {
     tables: {
@@ -33,7 +27,7 @@
     },
     setup(props) {
       const newTodoContent = state('');
-      const todos = useTable('todos', props.initialState?.initialTodos);
+      const todos = table('todos', props.initialState?.initialTodos);
 
       const sortedTodos = computed(() =>
         [...(todos.data || [])].sort(
