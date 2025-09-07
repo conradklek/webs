@@ -330,9 +330,9 @@ export async function startServer(serverContext) {
           const response = req.headers.get('X-Webs-Navigate')
             ? await handleDataRequest(req, routeDefinition, { manifest })
             : await handlePageRequest(req, routeDefinition, {
-              manifest,
-              globalComponents,
-            });
+                manifest,
+                globalComponents,
+              });
 
           const devSessionId = req.headers.get('X-Set-Dev-Session');
           if (devSessionId) {

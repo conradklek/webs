@@ -221,8 +221,8 @@ export function generateRenderFn(ast) {
             const child = ${childNodes}[0];
             if (child && !child.props) child.props = {};
             if (child && child.props) child.props.key = ${this.genExpr(
-            keyName,
-          )};
+              keyName,
+            )};
             return child;
           })()`;
 
@@ -280,7 +280,8 @@ export class Compiler {
 
     collectComponents(allComponents);
     console.log(
-      `[Debug] Compiler: Instantiated for <${componentDef.name
+      `[Debug] Compiler: Instantiated for <${
+        componentDef.name
       }>. Registered components:`,
       Array.from(this.componentNameMap.keys()),
     );

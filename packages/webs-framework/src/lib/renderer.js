@@ -1208,10 +1208,10 @@ function renderProps(props) {
     } else if (key === 'style') {
       const styleString = isObjectAndNotArray(value)
         ? Object.entries(value)
-          .map(
-            ([k, v]) => `${k.replace(/([A-Z])/g, '-$1').toLowerCase()}:${v}`,
-          )
-          .join(';')
+            .map(
+              ([k, v]) => `${k.replace(/([A-Z])/g, '-$1').toLowerCase()}:${v}`,
+            )
+            .join(';')
         : value;
       result += ` style="${escapeHtml(styleString)}"`;
     } else if (typeof value === 'boolean') {

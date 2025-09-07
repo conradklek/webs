@@ -62,9 +62,10 @@ async function performNavigation(url, { isPopState = false } = {}) {
     }
     document.title = data.title;
     if (route) route.path = url.pathname;
+
     window.__WEBS_STATE__ = {
       componentName: data.componentName,
-      swPath: websState.swPath,
+      swPath: data.swPath,
     };
     session.setUser(data.user);
   } catch (err) {

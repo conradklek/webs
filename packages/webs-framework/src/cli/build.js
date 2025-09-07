@@ -26,6 +26,7 @@ const config = {
   APP_DIR: resolve(userProjectDir, 'src/app'),
   GUI_DIR: resolve(userProjectDir, 'src/gui'),
   LIB_DIR: resolve(FRAMEWORK_DIR, '../lib'),
+  USER_FILES_ROOT: resolve(userProjectDir, '.webs/files'),
   TMP_GENERATED_ACTIONS: resolve(userProjectDir, '.webs/actions.js'),
   TMP_COMPONENT_REGISTRY: resolve(userProjectDir, '.webs/registry.js'),
 };
@@ -286,9 +287,9 @@ async function prepareClientEntrypoint(
     import { hydrate } from '@conradklek/webs';
     import '${relCssPath}';
     const dbConfig = ${JSON.stringify({
-    version: dbConfig.version,
-    clientTables: dbConfig.clientTables,
-  })};
+      version: dbConfig.version,
+      clientTables: dbConfig.clientTables,
+    })};
     const componentLoaders = new Map([${allLoaderEntries.join(',\n  ')}]);
     hydrate(componentLoaders, dbConfig);
   `;
@@ -443,10 +444,10 @@ async function generateRoutes(pageEntrypoints) {
                     render() {
                         const pageNode = h(PageComponent, { ...this.$props });
                         return ${layouts.reduceRight(
-        (acc, _, i) =>
-          `h(Layout${i}, { ...this.$props }, { default: () => ${acc} })`,
-        'pageNode',
-      )};
+                          (acc, _, i) =>
+                            `h(Layout${i}, { ...this.$props }, { default: () => ${acc} })`,
+                          'pageNode',
+                        )};
                     }
                 };
             `;
@@ -502,6 +503,8 @@ async function main() {
     `${config.TMP_COMPONENT_REGISTRY}?t=${Date.now()}`
   );
 
+  const SYNC_TOPIC = 'webs-sync';
+
   const db = await createDatabaseAndActions(
     Database,
     dbConfig,
@@ -509,6 +512,129 @@ async function main() {
     writeFile,
     config,
   );
+
+  if (!config.IS_PROD) {
+    const { hashPassword } = await import('../lib/auth.js');
+    const anonUser = {
+      email: 'anon@webs.site',
+      username: 'anon',
+      password: 'password',
+    };
+    let existingUser = db
+      .query('SELECT id FROM users WHERE username = ?')
+      .get(anonUser.username);
+
+    let anonUserId;
+    if (existingUser) {
+      anonUserId = existingUser.id;
+    } else {
+      const hashedPassword = await hashPassword(anonUser.password);
+      const result = db
+        .prepare(
+          'INSERT INTO users (email, username, password) VALUES (?, ?, ?)',
+        )
+        .run(anonUser.email, anonUser.username, hashedPassword);
+      anonUserId = result.lastInsertRowid;
+    }
+
+    if (anonUserId) {
+      const anonPrivateDir = join(
+        config.USER_FILES_ROOT,
+        String(anonUserId),
+        'private',
+      );
+      await ensureDir(anonPrivateDir);
+      const welcomeFilePath = join(anonPrivateDir, 'welcome.txt');
+      const welcomeContent =
+        'Welcome to your new Webs file system!\n\nYou can edit this file, create new ones, and upload files from the file browser.\n\nAll changes are saved and synced in real-time.';
+
+      if (!(await exists(welcomeFilePath))) {
+        console.log(
+          "[Build] Dev mode: Seeding 'welcome.txt' into anon user's file system...",
+        );
+        await writeFile(welcomeFilePath, welcomeContent);
+      }
+
+      const existingFile = db
+        .query('SELECT path FROM files WHERE path = ? AND user_id = ?')
+        .get('welcome.txt', anonUserId);
+      if (!existingFile) {
+        console.log("[Build] Dev mode: Seeding 'welcome.txt' into database...");
+        const now = new Date().toISOString();
+        const fileRecord = {
+          path: 'welcome.txt',
+          user_id: anonUserId,
+          access: 'private',
+          size: welcomeContent.length,
+          last_modified: now,
+          updated_at: now,
+          content: Buffer.from(welcomeContent),
+        };
+        const insertFileStmt = db.prepare(
+          'INSERT INTO files (path, user_id, access, size, last_modified, updated_at, content) VALUES ($path, $user_id, $access, $size, $last_modified, $updated_at, $content)',
+        );
+        insertFileStmt.run({
+          $path: fileRecord.path,
+          $user_id: fileRecord.user_id,
+          $access: fileRecord.access,
+          $size: fileRecord.size,
+          $last_modified: fileRecord.last_modified,
+          $updated_at: fileRecord.updated_at,
+          $content: fileRecord.content,
+        });
+      }
+
+      const todoCountResult = db
+        .query('SELECT COUNT(*) as count FROM todos WHERE user_id = ?')
+        .get(anonUserId);
+      const todoCount = todoCountResult ? todoCountResult.count : 0;
+
+      if (todoCount === 0) {
+        console.log('[Build] Seeding initial todos for anon user.');
+        const seedTodos = [
+          {
+            id: crypto.randomUUID(),
+            content: 'Explore the Webs framework',
+            completed: 1,
+            user_id: anonUserId,
+          },
+          {
+            id: crypto.randomUUID(),
+            content: 'Build something awesome',
+            completed: 0,
+            user_id: anonUserId,
+          },
+          {
+            id: crypto.randomUUID(),
+            content: 'Check out the file system API',
+            completed: 0,
+            user_id: anonUserId,
+          },
+        ];
+
+        const insert = db.prepare(
+          'INSERT INTO todos (id, content, completed, user_id, created_at, updated_at) VALUES ($id, $content, $completed, $user_id, $created_at, $updated_at)',
+        );
+
+        const insertTodos = db.transaction((todos) => {
+          for (const todo of todos) {
+            const now = new Date().toISOString();
+            insert.run({
+              $id: todo.id,
+              $content: todo.content,
+              $completed: todo.completed,
+              $user_id: todo.user_id,
+              $created_at: now,
+              $updated_at: now,
+            });
+          }
+        });
+
+        insertTodos(seedTodos);
+      }
+    }
+  }
+
   const { appRoutes, layoutWrapperEntrypoints } =
     await generateRoutes(pageEntrypoints);
 
@@ -541,6 +667,7 @@ async function main() {
     outdir: config.OUTDIR,
     isProd: config.IS_PROD,
     port: config.PORT,
+    SYNC_TOPIC,
     actionsPath: config.TMP_GENERATED_ACTIONS,
     globalComponents,
   });
