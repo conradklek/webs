@@ -1,4 +1,7 @@
 import { store } from './engine.js';
+import { createLogger } from './shared.js';
+
+const logger = createLogger('[Session]');
 
 const sessionStore = store({
   state: () => ({ user: null, error: null, isReady: false }),
@@ -20,7 +23,7 @@ const sessionStore = store({
           throw new Error((await response.text()) || 'Registration failed');
       } catch (err) {
         this.error = err.message;
-        console.error('Registration failed:', err);
+        logger.error('Registration failed:', err);
         throw err;
       }
     },
@@ -39,7 +42,7 @@ const sessionStore = store({
         return userData;
       } catch (err) {
         this.error = err.message;
-        console.error('Login failed:', err);
+        logger.error('Login failed:', err);
         throw err;
       }
     },
@@ -49,7 +52,7 @@ const sessionStore = store({
         this.user = null;
         this.error = null;
       } catch (err) {
-        console.error('Logout failed:', err);
+        logger.error('Logout failed:', err);
       }
     },
     setUser(user) {

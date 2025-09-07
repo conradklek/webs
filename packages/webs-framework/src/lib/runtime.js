@@ -2,16 +2,16 @@ import { onUnmounted, createRenderer, createVnode } from './renderer.js';
 import { db, fs, syncEngine } from './sync.js';
 import { state } from './engine.js';
 import { session } from './session.js';
+import { normalizeClass, createLogger } from './shared.js';
+import { initDevTools } from './dev.js';
+
+const logger = createLogger('[Runtime]');
 
 export { session, db, fs, syncEngine };
 
 export * from './engine';
 export * from './compiler';
 export * from './renderer';
-
-const LOG_PREFIX = '[Debug] Runtime:';
-const log = (...args) => console.log(LOG_PREFIX, ...args);
-const error = (...args) => console.error(LOG_PREFIX, ...args);
 
 let appInstance = null;
 let componentManifestInstance = null;
@@ -85,22 +85,6 @@ export const router = {
     }
   },
 };
-
-function normalizeClass(value) {
-  let res = '';
-  if (typeof value === 'string') res = value;
-  else if (Array.isArray(value)) {
-    for (const item of value) {
-      const normalized = normalizeClass(item);
-      if (normalized) res += normalized + ' ';
-    }
-  } else if (typeof value === 'object' && value !== null) {
-    for (const key in value) {
-      if (value[key]) res += key + ' ';
-    }
-  }
-  return res.trim();
-}
 
 export const createApp = (() => {
   const renderer = createRenderer({
@@ -225,7 +209,9 @@ export const createApp = (() => {
         app._vnode = vnode;
         app._container = rootContainer;
         const rootInstance = app._context.hydrate(vnode, rootContainer);
-        if (rootInstance) installNavigationHandler(app);
+        if (rootInstance) {
+          installNavigationHandler(app);
+        }
         return rootInstance;
       },
     };
@@ -234,78 +220,90 @@ export const createApp = (() => {
 })();
 
 export async function hydrate(componentManifest, dbConfig = null) {
-  log('Starting client-side hydration...');
+  logger.log('Starting client-side hydration...');
   if (typeof window === 'undefined') {
-    log('Not in a browser environment. Aborting hydration.');
+    logger.log('Not in a browser environment. Aborting hydration.');
     return;
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    initDevTools();
   }
 
   const websState = deserializeState(window.__WEBS_STATE__ || {});
 
   if (dbConfig) {
-    log('Database configuration found. Setting global DB config.');
+    logger.log('Database configuration found. Setting global DB config.');
     window.__WEBS_DB_CONFIG__ = dbConfig;
   } else {
-    log('No database configuration provided.');
+    logger.log('No database configuration provided.');
   }
 
-  log('Starting sync engine...');
+  logger.log('Starting sync engine...');
   syncEngine.start();
 
   if ('serviceWorker' in navigator && websState.swPath) {
-    log(`Attempting to register service worker at: ${websState.swPath}`);
+    logger.log(`Attempting to register service worker at: ${websState.swPath}`);
     window.addEventListener('load', () => {
       navigator.serviceWorker
         .register(websState.swPath)
         .then((registration) => {
-          log(
+          logger.log(
             'Service Worker registered successfully with scope:',
             registration.scope,
           );
         })
         .catch((err) => {
-          error('Service Worker registration failed:', err);
+          logger.error('Service Worker registration failed:', err);
         });
     });
   } else {
-    log('Service worker not supported or no swPath provided in state.');
+    logger.log('Service worker not supported or no swPath provided in state.');
   }
 
   const root = document.getElementById('root');
   if (!root) {
-    error('Root element #root not found. Aborting hydration.');
+    logger.error('Root element #root not found. Aborting hydration.');
     return;
   }
 
   const { componentName, user = {}, params, componentState } = websState;
   if (!componentName) {
-    error('No componentName found in __WEBS_STATE__. Aborting hydration.');
+    logger.error(
+      'No componentName found in __WEBS_STATE__. Aborting hydration.',
+    );
     return;
   }
-  log(`Root component to hydrate: ${componentName}`);
+  logger.log(`Root component to hydrate: ${componentName}`);
 
   componentManifestInstance = componentManifest;
   const componentLoader = componentManifest.get(componentName);
   if (!componentLoader) {
-    error(`Component loader for "${componentName}" not found in manifest.`);
+    logger.error(
+      `Component loader for "${componentName}" not found in manifest.`,
+    );
     return;
   }
 
   const componentModule = await componentLoader();
   const rootComponent = componentModule.default;
   if (!rootComponent) {
-    error(
+    logger.error(
       `Module for "${componentName}" loaded, but it has no default export.`,
     );
     return;
   }
 
   const props = { params, initialState: componentState || {}, user };
-  log('Creating app instance with props:', props);
+  logger.log('Creating app instance with props:', props);
 
   const app = createApp(rootComponent, props, rootComponent.components || {});
   app.mount(root);
-  log('App mounted successfully.');
+  logger.log('App mounted successfully.');
+
+  if (window.__WEBS_DEVELOPER__) {
+    window.__WEBS_DEVELOPER__.registerApp(appInstance);
+  }
 
   session.setUser(websState.user);
   route.path = window.location.pathname;

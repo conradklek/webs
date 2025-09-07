@@ -1,3 +1,6 @@
+import { generateUUID, createLogger } from './shared.js';
+
+const logger = createLogger('[Auth]');
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7;
 
 export async function hashPassword(password) {
@@ -9,7 +12,7 @@ export async function verifyPassword(password, hash) {
 }
 
 export function createSession(db, userId) {
-  const sessionId = crypto.randomUUID();
+  const sessionId = generateUUID();
   const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
   db.query(
     'INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)',
@@ -69,7 +72,7 @@ export async function registerUser(req, db) {
       { status: 201 },
     );
   } catch (error) {
-    console.error('Registration error:', error);
+    logger.error('Registration error:', error);
     return new Response('An internal error occurred.', { status: 500 });
   }
 }
@@ -105,12 +108,12 @@ export async function loginUser(req, db) {
       { headers },
     );
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error:', error);
     if (
       error.name === 'PasswordVerificationFailed' &&
       error.code === 'PASSWORD_UNSUPPORTED_ALGORITHM'
     ) {
-      console.error(
+      logger.error(
         'Password verification failed: The stored password hash is in an unsupported format.',
       );
       return new Response(

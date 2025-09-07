@@ -159,7 +159,7 @@ export async function startServer(serverContext) {
   } = serverContext;
   let syncActions = {};
   if (await exists(actionsPath)) {
-    const { registerActions } = await import(`${actionsPath}?t=${Date.now()}`);
+    const { registerActions } = await import(actionsPath);
     if (typeof registerActions === 'function')
       syncActions = registerActions(db);
   }

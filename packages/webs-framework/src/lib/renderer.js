@@ -1,10 +1,18 @@
 import { watch, isRef } from './engine.js';
 import { voidElements } from './parser.js';
 import { compile } from './compiler.js';
+import {
+  isObject,
+  isString,
+  isFunction,
+  normalizeClass,
+  createLogger,
+} from './shared.js';
 
-const RENDER_LOG_PREFIX = '[Debug] Renderer:';
-const log = (...args) => console.log(RENDER_LOG_PREFIX, ...args);
-const warn = (...args) => console.warn(RENDER_LOG_PREFIX, ...args);
+const logger = createLogger('[Renderer]');
+const devtools = typeof window !== 'undefined' && window.__WEBS_DEVELOPER__;
+
+let instanceIdCounter = 0;
 
 function getNodeDescription(node) {
   if (!node) return 'null';
@@ -21,11 +29,6 @@ function getNodeDescription(node) {
   }
 }
 
-const isObjectAndNotArray = (val) =>
-  val !== null && typeof val === 'object' && !Array.isArray(val);
-const isString = (val) => typeof val === 'string';
-const isFunction = (val) => typeof val === 'function';
-
 export const Text = Symbol('Text');
 export const Comment = Symbol('Comment');
 export const Fragment = Symbol('Fragment');
@@ -33,23 +36,6 @@ export const Teleport = Symbol('Teleport');
 
 let currentInstance = null;
 const instanceStack = [];
-
-function normalizeClass(value) {
-  let res = '';
-  if (isString(value)) {
-    res = value;
-  } else if (Array.isArray(value)) {
-    for (const item of value) {
-      const normalized = normalizeClass(item);
-      if (normalized) res += normalized + ' ';
-    }
-  } else if (isObjectAndNotArray(value)) {
-    for (const key in value) {
-      if (value[key]) res += key + ' ';
-    }
-  }
-  return res.trim();
-}
 
 export function provide(key, value) {
   if (!currentInstance) return;
@@ -171,7 +157,7 @@ export function createRenderer(options) {
       default:
         if (isString(type)) {
           patchElement(n1, n2, container, anchor, parentComponent);
-        } else if (isObjectAndNotArray(type)) {
+        } else if (isObject(type)) {
           if (!n1) {
             mountComponent(n2, container, anchor, parentComponent);
           } else {
@@ -344,7 +330,7 @@ export function createRenderer(options) {
     parentComponent,
     isHydrating = false,
   ) => {
-    log(
+    logger.debug(
       `Mounting component: <${vnode.type.name || 'Anonymous'}>. Hydrating: ${isHydrating}`,
     );
     const instance = (vnode.component = createComponent(
@@ -360,7 +346,7 @@ export function createRenderer(options) {
         currentInstance = instance;
 
         if (!instance.isMounted) {
-          log(`- BeforeMount hook for <${instance.type.name}>`);
+          logger.debug(`- BeforeMount hook for <${instance.type.name}>`);
           instance.hooks.onBeforeMount?.forEach((h) => h.call(instance.ctx));
           let subTree = instance.render.call(instance.ctx, instance.ctx);
 
@@ -377,21 +363,21 @@ export function createRenderer(options) {
           }
 
           if (isHydrating) {
-            log(`- Hydrating DOM for <${instance.type.name}>`);
+            logger.debug(`- Hydrating DOM for <${instance.type.name}>`);
             if (!vnode.el) {
-              warn(
+              logger.warn(
                 `- Hydration failed for <${instance.type.name}>: no DOM element to hydrate against.`,
               );
             }
             const parentEl = vnode.el ? vnode.el.parentElement : null;
             if (!parentEl) {
-              warn(
+              logger.warn(
                 `- Hydration failed for component <${instance.type.name}>: DOM node is detached.`,
               );
             }
             hydrateNode(subTree, vnode.el, parentEl, instance);
           } else {
-            log(`- Patching new DOM for <${instance.type.name}>`);
+            logger.debug(`- Patching new DOM for <${instance.type.name}>`);
             patch(null, subTree, container, anchor, instance);
           }
 
@@ -419,10 +405,20 @@ export function createRenderer(options) {
           }
 
           instance.isMounted = true;
-          log(`- Mounted hook for <${instance.type.name}>`);
+          logger.debug(`- Mounted hook for <${instance.type.name}>`);
           instance.hooks.onMounted?.forEach((h) => h.call(instance.ctx));
+
+          if (devtools) {
+            devtools.events.emit('component:added', {
+              uid: instance.uid,
+              parentId: instance.parent ? instance.parent.uid : null,
+              name: instance.type.name || 'Anonymous',
+              props: instance.props,
+              state: instance.internalCtx,
+            });
+          }
         } else {
-          log(`- Updating component <${instance.type.name}>`);
+          logger.debug(`- Updating component <${instance.type.name}>`);
           instance.hooks.onBeforeUpdate?.forEach((h) => h.call(instance.ctx));
           const prevTree = instance.subTree;
           let nextTree = instance.render.call(instance.ctx, instance.ctx);
@@ -455,8 +451,15 @@ export function createRenderer(options) {
           if (parentContainer) {
             patch(prevTree, nextTree, parentContainer, null, instance);
             vnode.el = nextTree.el;
-            log(`- Updated hook for <${instance.type.name}>`);
+            logger.debug(`- Updated hook for <${instance.type.name}>`);
             instance.hooks.onUpdated?.forEach((h) => h.call(instance.ctx));
+            if (devtools) {
+              devtools.events.emit('component:updated', {
+                uid: instance.uid,
+                props: instance.props,
+                state: instance.internalCtx,
+              });
+            }
           }
         }
 
@@ -547,7 +550,12 @@ export function createRenderer(options) {
     if (!vnode) return;
 
     if (vnode.component) {
-      log(`Unmounting component: <${vnode.type.name || 'Anonymous'}>`);
+      logger.debug(`Unmounting component: <${vnode.type.name || 'Anonymous'}>`);
+
+      if (devtools) {
+        devtools.events.emit('component:removed', { uid: vnode.component.uid });
+      }
+
       if (vnode.component.update && vnode.component.update.watch) {
         vnode.component.update.watch.stop();
       }
@@ -573,14 +581,14 @@ export function createRenderer(options) {
   };
 
   const hydrate = (vnode, container) => {
-    log('Starting hydration...');
+    logger.log('Starting hydration...');
     if (!container.firstChild) {
-      warn('Container is empty, falling back to patch.');
+      logger.warn('Container is empty, falling back to patch.');
       patch(null, vnode, container);
       return vnode.component;
     }
     hydrateNode(vnode, container.firstChild, container, null);
-    log('Hydration complete.');
+    logger.log('Hydration complete.');
     return vnode.component;
   };
 
@@ -600,22 +608,22 @@ export function createRenderer(options) {
 
   const hydrateNode = (vnode, domNode, parentDom, parentComponent = null) => {
     if (!vnode) {
-      log('- HydrateNode: VNode is null, returning current DOM node.');
+      logger.debug('- HydrateNode: VNode is null, returning current DOM node.');
       return domNode;
     }
 
-    if (isObjectAndNotArray(vnode.type)) {
-      log(`- Hydrating Component VNode: <${vnode.type.name}>`);
+    if (isObject(vnode.type)) {
+      logger.debug(`- Hydrating Component VNode: <${vnode.type.name}>`);
       vnode.el = domNode;
       mountComponent(vnode, parentDom, domNode, parentComponent, true);
       const lastNode = vnode.component.lastEl;
       return lastNode ? lastNode.nextSibling : domNode;
     }
 
-    log(`- Hydrating VNode type: ${vnode.type.toString()}`);
+    logger.debug(`- Hydrating VNode type: ${vnode.type.toString()}`);
 
     if (vnode.type === Fragment) {
-      log('-- VNode is a Fragment.');
+      logger.debug('-- VNode is a Fragment.');
       const nextDomNode = hydrateChildren(
         vnode.children,
         parentDom,
@@ -632,12 +640,12 @@ export function createRenderer(options) {
     }
 
     let currentDomNode = skipNonEssentialNodes(domNode);
-    log(
+    logger.debug(
       `-- Current DOM node to hydrate against: ${getNodeDescription(currentDomNode)}`,
     );
 
     if (!currentDomNode) {
-      warn('-- DOM node is null, patching VNode instead.');
+      logger.warn('-- DOM node is null, patching VNode instead.');
       patch(null, vnode, parentDom, null, parentComponent);
       return null;
     }
@@ -667,7 +675,7 @@ export function createRenderer(options) {
             closingComment.nodeType !== 8 ||
             closingComment.data !== ']'
           ) {
-            warn(
+            logger.warn(
               `[Hydration Mismatch] Expected a closing comment '<!--]-->' but found: ${getNodeDescription(
                 closingComment,
               )}`,
@@ -677,7 +685,7 @@ export function createRenderer(options) {
           return closingComment.nextSibling;
         } else {
           if (!currentDomNode || currentDomNode.nodeType !== 3) {
-            warn(
+            logger.warn(
               `[Hydration Mismatch] Expected a text node, but found: ${getNodeDescription(
                 currentDomNode,
               )}`,
@@ -687,7 +695,7 @@ export function createRenderer(options) {
         }
       case Comment:
         if (!currentDomNode || currentDomNode.nodeType !== 8) {
-          warn(
+          logger.warn(
             `[Hydration Mismatch] Expected a comment node, but found: ${getNodeDescription(
               currentDomNode,
             )}`,
@@ -705,7 +713,7 @@ export function createRenderer(options) {
         if (isString(type)) {
           const vnodeTagName = type.toLowerCase();
           const domTagName = currentDomNode?.tagName?.toLowerCase();
-          log(
+          logger.debug(
             `-- Comparing VNode tag <${vnodeTagName}> with DOM tag <${domTagName}>`,
           );
           if (
@@ -713,7 +721,7 @@ export function createRenderer(options) {
             currentDomNode.nodeType !== 1 ||
             domTagName !== vnodeTagName
           ) {
-            warn(
+            logger.warn(
               `[Hydration Mismatch] Expected element <${type}>, but found: ${getNodeDescription(
                 currentDomNode,
               )}`,
@@ -771,10 +779,11 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
   appContext.provides = appContext.provides || {};
 
   if (isSsr) {
-    log(`SSR: Creating component instance for <${vnode.type.name}>`);
+    logger.debug(`SSR: Creating component instance for <${vnode.type.name}>`);
   }
 
   const instance = {
+    uid: instanceIdCounter++,
     vnode,
     type: vnode.type,
     slots: vnode.children || {},
@@ -853,10 +862,7 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
       } else if (Array.isArray(existing) && Array.isArray(serverVal)) {
         existing.length = 0;
         existing.push(...serverVal);
-      } else if (
-        isObjectAndNotArray(existing) &&
-        isObjectAndNotArray(serverVal)
-      ) {
+      } else if (isObject(existing) && isObject(serverVal)) {
         for (const subKey in serverVal) {
           if (serverVal.hasOwnProperty(subKey)) {
             existing[subKey] = serverVal[subKey];
@@ -915,7 +921,7 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
             ...(instance.appContext.components || {}),
           };
           if (key in allComponents) {
-            log(`SSR: Resolved component <${key}>`);
+            logger.debug(`SSR: Resolved component <${key}>`);
             return allComponents[key];
           }
         }
@@ -931,7 +937,7 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
           return instance.appContext.globals[key];
 
         if (isSsr) {
-          warn(
+          logger.warn(
             `SSR: Component or property "${key}" not found on instance <${instance.type.name}>`,
           );
         }
@@ -981,7 +987,7 @@ export function createVnode(type, propsOrChildren, children) {
   let props = {};
   let finalChildren = null;
 
-  if (isObjectAndNotArray(propsOrChildren) && !Array.isArray(propsOrChildren)) {
+  if (isObject(propsOrChildren) && !Array.isArray(propsOrChildren)) {
     props = propsOrChildren;
     if (arguments.length > 2) {
       finalChildren = Array.prototype.slice.call(arguments, 2);
@@ -1001,14 +1007,10 @@ export function createVnode(type, propsOrChildren, children) {
 
   if (arguments.length > 2) {
     const lastArg = arguments[arguments.length - 1];
-    if (isObjectAndNotArray(lastArg) && !lastArg.type) {
+    if (isObject(lastArg) && !lastArg.type) {
       finalChildren = lastArg;
     }
-  } else if (
-    isObjectAndNotArray(children) &&
-    !Array.isArray(children) &&
-    !children.type
-  ) {
+  } else if (isObject(children) && !Array.isArray(children) && !children.type) {
     finalChildren = children;
   }
 
@@ -1022,11 +1024,7 @@ export function createVnode(type, propsOrChildren, children) {
 export const h = (...args) => {
   if (typeof args[0] === 'function' || typeof args[0] === 'object') {
     const [type, props, children] = args;
-    if (
-      args.length === 3 &&
-      isObjectAndNotArray(children) &&
-      !Array.isArray(children)
-    ) {
+    if (args.length === 3 && isObject(children) && !Array.isArray(children)) {
       return new VNode(type, props || {}, children);
     }
   }
@@ -1122,7 +1120,7 @@ async function renderVnode(vnode, parentComponent, context) {
   if (isString(vnode) || typeof vnode === 'number') {
     return escapeHtml(String(vnode));
   }
-  if (!isObjectAndNotArray(vnode) || !vnode.type) {
+  if (!isObject(vnode) || !vnode.type) {
     return `<!-- invalid vnode detected -->`;
   }
 
@@ -1138,7 +1136,7 @@ async function renderVnode(vnode, parentComponent, context) {
       return `<!--${escapeHtml(children)}-->`;
     case Fragment:
     case Teleport:
-      if (isObjectAndNotArray(children) && !Array.isArray(children)) {
+      if (isObject(children) && !Array.isArray(children)) {
         const slotContent = children.default ? children.default() : [];
         return await renderChildren(slotContent, parentComponent, context);
       }
@@ -1152,7 +1150,7 @@ async function renderVnode(vnode, parentComponent, context) {
           html += `</${tag}>`;
         }
         return html;
-      } else if (isObjectAndNotArray(type)) {
+      } else if (isObject(type)) {
         const instance = createComponent(vnode, parentComponent, true);
 
         if (parentComponent) {
@@ -1206,7 +1204,7 @@ function renderProps(props) {
     if (key === 'class') {
       result += ` class="${escapeHtml(normalizeClass(value))}"`;
     } else if (key === 'style') {
-      const styleString = isObjectAndNotArray(value)
+      const styleString = isObject(value)
         ? Object.entries(value)
             .map(
               ([k, v]) => `${k.replace(/([A-Z])/g, '-$1').toLowerCase()}:${v}`,

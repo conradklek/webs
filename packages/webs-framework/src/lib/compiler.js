@@ -1,6 +1,8 @@
 import { parseHtml, parseJs, tokenizeJs } from './parser.js';
 import * as Webs from './renderer.js';
 
+const devtools = typeof window !== 'undefined' && window.__WEBS_DEVELOPER__;
+
 export const NODE_TYPES = {
   ROOT: 0,
   ELEMENT: 1,
@@ -279,12 +281,6 @@ export class Compiler {
     };
 
     collectComponents(allComponents);
-    console.log(
-      `[Debug] Compiler: Instantiated for <${
-        componentDef.name
-      }>. Registered components:`,
-      Array.from(this.componentNameMap.keys()),
-    );
     this.options = options;
   }
 
@@ -295,7 +291,16 @@ export class Compiler {
   compile() {
     const rawAst = this.parseHtml(this.definition.template);
     const transformedAst = this._transformNode(rawAst);
-    const { fn } = generateRenderFn(transformedAst);
+    const { fn, source } = generateRenderFn(transformedAst);
+
+    if (devtools) {
+      devtools.events.emit('component:compiled', {
+        name: this.definition.name,
+        template: this.definition.template,
+        source: source,
+      });
+    }
+
     return fn;
   }
 

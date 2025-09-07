@@ -1,6 +1,7 @@
 import { session } from './session.js';
 import { watch, state } from './engine.js';
 import { onUnmounted } from './renderer.js';
+import { generateUUID } from './shared.js';
 
 const coreFS = {
   readFile: (path) =>
@@ -34,7 +35,7 @@ const coreFS = {
 
   async createOperation(payload) {
     if (!session.isLoggedIn) throw new Error('User not logged in.');
-    const op = { ...payload, opId: crypto.randomUUID() };
+    const op = { ...payload, opId: generateUUID() };
 
     await performTransaction(['files', 'outbox'], 'readwrite', (tx) => {
       const filesStore = tx.objectStore('files');
@@ -299,7 +300,7 @@ const coreDB = {
           tableName,
           type: 'put',
           data: recordWithUser,
-          opId: crypto.randomUUID(),
+          opId: generateUUID(),
         };
         tx.objectStore('outbox').add(op);
       }
@@ -328,7 +329,7 @@ const coreDB = {
           tableName,
           type: 'delete',
           id: key,
-          opId: crypto.randomUUID(),
+          opId: generateUUID(),
         };
         tx.objectStore('outbox').add(op);
       }

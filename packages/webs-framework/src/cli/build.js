@@ -395,7 +395,7 @@ async function generateRoutes(pageEntrypoints) {
       .replace('.webs', '');
     if (basename(componentName) === 'layout') continue;
 
-    const mod = await import(`${compiledPagePath}?t=${Date.now()}`);
+    const mod = await import(compiledPagePath);
     const layouts = await findLayoutsForPage(sourcePagePath);
     let finalComponent = mod.default;
     let finalComponentName = `app/${componentName}`;
@@ -452,7 +452,7 @@ async function generateRoutes(pageEntrypoints) {
                 };
             `;
       await writeFile(wrapperPath, wrapperContent);
-      finalComponent = (await import(`${wrapperPath}?t=${Date.now()}`)).default;
+      finalComponent = (await import(wrapperPath)).default;
     }
 
     let urlPath =
@@ -500,7 +500,7 @@ async function main() {
   await generateComponentRegistry();
 
   const { default: globalComponents } = await import(
-    `${config.TMP_COMPONENT_REGISTRY}?t=${Date.now()}`
+    config.TMP_COMPONENT_REGISTRY
   );
 
   const SYNC_TOPIC = 'webs-sync';
