@@ -1,1 +1,4 @@
 preload = ["./src/cli/plugin.js"]
+
+[serve.static]
+plugins = ["bun-plugin-tailwind"]

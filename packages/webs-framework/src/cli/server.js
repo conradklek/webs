@@ -443,8 +443,8 @@ export async function startServer(serverContext) {
         }
       },
     },
-    error: (error) => {
-      error('Internal server error occurred:', error);
+    error: (err) => {
+      error('Internal server error occurred:', err);
       return new Response('Internal Server Error', { status: 500 });
     },
   });
