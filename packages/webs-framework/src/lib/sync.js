@@ -68,9 +68,9 @@ export function fs(path = '') {
         isLoading: false,
         error: null,
       });
-      s.hydrate = async () => {};
-      s.write = async () => {};
-      s.rm = async () => {};
+      s.hydrate = async () => { };
+      s.write = async () => { };
+      s.rm = async () => { };
       return s;
     };
     return {
@@ -337,6 +337,10 @@ const coreDB = {
     if (isSynced) syncEngine.process();
     notify(tableName);
   },
+  clear: (tableName) =>
+    coreDB.performTransaction(tableName, 'readwrite', (tx) =>
+      promisifyRequest(tx.objectStore(tableName).clear()),
+    ),
   subscribe: (tableName, callback) => {
     if (!tableSubscribers.has(tableName)) {
       tableSubscribers.set(tableName, new Set());
@@ -459,7 +463,8 @@ function createSsrDbMock() {
     put: fn,
     bulkPut: fn,
     delete: fn,
-    subscribe: () => () => {},
+    subscribe: () => () => { },
+    clear: fn,
   };
 }
 
@@ -477,6 +482,7 @@ export function db(tableName) {
     bulkPut: (records) => coreDB.bulkPut(tableName, records),
     delete: (key) => coreDB.delete(tableName, key),
     subscribe: (callback) => coreDB.subscribe(tableName, callback),
+    clear: () => coreDB.clear(tableName),
   };
 }
 

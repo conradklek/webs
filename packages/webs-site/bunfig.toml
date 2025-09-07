@@ -1,4 +1,0 @@
-preload = ["@conradklek/webs/plugin"]
-
-[serve.static]
-plugins = ["bun-plugin-tailwind"]

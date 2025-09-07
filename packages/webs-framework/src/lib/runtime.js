@@ -412,9 +412,9 @@ export function table(tableName, initialData = []) {
   const table = db(tableName);
   if (typeof window === 'undefined') {
     const mock = state({ data: initialData, isLoading: false, error: null });
-    mock.hydrate = async () => {};
-    mock.put = async () => {};
-    mock.destroy = async () => {};
+    mock.hydrate = async () => { };
+    mock.put = async () => { };
+    mock.destroy = async () => { };
     return mock;
   }
 
@@ -439,8 +439,11 @@ export function table(tableName, initialData = []) {
   onUnmounted(unsubscribe);
 
   s.hydrate = async (serverData) => {
-    if (serverData && serverData.length > 0) {
-      await table.bulkPut(serverData);
+    if (serverData) {
+      await table.clear();
+      if (serverData.length > 0) {
+        await table.bulkPut(serverData);
+      }
     }
     await fetchData();
   };
