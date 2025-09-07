@@ -9,6 +9,10 @@ export * from './engine';
 export * from './compiler';
 export * from './renderer';
 
+const LOG_PREFIX = '[Debug] Runtime:';
+const log = (...args) => console.log(LOG_PREFIX, ...args);
+const error = (...args) => console.error(LOG_PREFIX, ...args);
+
 let appInstance = null;
 let componentManifestInstance = null;
 const prefetchCache = new Map();
@@ -58,7 +62,10 @@ async function performNavigation(url, { isPopState = false } = {}) {
     }
     document.title = data.title;
     if (route) route.path = url.pathname;
-    window.__WEBS_STATE__ = { componentName: data.componentName };
+    window.__WEBS_STATE__ = {
+      componentName: data.componentName,
+      swPath: websState.swPath,
+    };
     session.setUser(data.user);
   } catch (err) {
     window.location.assign(url.href);
@@ -195,25 +202,29 @@ export const createApp = (() => {
     querySelector: (selector) => document?.querySelector(selector),
   });
 
-  return function createApp(rootComponent, rootProps = {}) {
+  return function createApp(
+    rootComponent,
+    rootProps = {},
+    globalComponents = {},
+  ) {
     const app = {
       _component: rootComponent,
       _container: null,
       _vnode: null,
       _context: {
-        components: rootComponent.components || {},
+        components: { ...rootComponent.components, ...globalComponents },
         provides: {},
         patch: renderer.patch,
         hydrate: renderer.hydrate,
         params: rootProps.params || {},
       },
-      mount(rootContainer, components) {
+      mount(rootContainer) {
         const vnode = createVnode(rootComponent, rootProps);
         vnode.appContext = app._context;
         app._vnode = vnode;
         app._container = rootContainer;
         const rootInstance = app._context.hydrate(vnode, rootContainer);
-        if (rootInstance) installNavigationHandler(app, components);
+        if (rootInstance) installNavigationHandler(app);
         return rootInstance;
       },
     };
@@ -222,41 +233,85 @@ export const createApp = (() => {
 })();
 
 export async function hydrate(componentManifest, dbConfig = null) {
-  if (typeof window === 'undefined') return;
+  log('Starting client-side hydration...');
+  if (typeof window === 'undefined') {
+    log('Not in a browser environment. Aborting hydration.');
+    return;
+  }
 
   const websState = deserializeState(window.__WEBS_STATE__ || {});
-  window.__WEBS_DB_CONFIG__ = dbConfig;
+
+  if (dbConfig) {
+    log('Database configuration found. Setting global DB config.');
+    window.__WEBS_DB_CONFIG__ = dbConfig;
+  } else {
+    log('No database configuration provided.');
+  }
+
+  log('Starting sync engine...');
   syncEngine.start();
 
   if ('serviceWorker' in navigator && websState.swPath) {
+    log(`Attempting to register service worker at: ${websState.swPath}`);
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register(websState.swPath).catch(console.error);
+      navigator.serviceWorker
+        .register(websState.swPath)
+        .then((registration) => {
+          log(
+            'Service Worker registered successfully with scope:',
+            registration.scope,
+          );
+        })
+        .catch((err) => {
+          error('Service Worker registration failed:', err);
+        });
     });
+  } else {
+    log('Service worker not supported or no swPath provided in state.');
   }
 
   const root = document.getElementById('root');
-  if (!root) return;
+  if (!root) {
+    error('Root element #root not found. Aborting hydration.');
+    return;
+  }
 
   const { componentName, user = {}, params, componentState } = websState;
-  if (!componentName) return;
+  if (!componentName) {
+    error('No componentName found in __WEBS_STATE__. Aborting hydration.');
+    return;
+  }
+  log(`Root component to hydrate: ${componentName}`);
 
+  componentManifestInstance = componentManifest;
   const componentLoader = componentManifest.get(componentName);
-  if (!componentLoader) return;
+  if (!componentLoader) {
+    error(`Component loader for "${componentName}" not found in manifest.`);
+    return;
+  }
 
   const componentModule = await componentLoader();
   const rootComponent = componentModule.default;
-  const props = { params, initialState: componentState || {}, user };
+  if (!rootComponent) {
+    error(
+      `Module for "${componentName}" loaded, but it has no default export.`,
+    );
+    return;
+  }
 
-  const app = createApp(rootComponent, props);
-  app.mount(root, componentManifest);
+  const props = { params, initialState: componentState || {}, user };
+  log('Creating app instance with props:', props);
+
+  const app = createApp(rootComponent, props, rootComponent.components || {});
+  app.mount(root);
+  log('App mounted successfully.');
 
   session.setUser(websState.user);
   route.path = window.location.pathname;
 }
 
-function installNavigationHandler(app, componentManifest) {
+function installNavigationHandler(app) {
   appInstance = app;
-  componentManifestInstance = componentManifest;
 
   const prefetch = async (url) => {
     if (prefetchCache.has(url.href)) return;

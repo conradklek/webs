@@ -1,0 +1,29 @@
+<script>
+  export default {
+    setup() {
+      const components = [
+        { name: 'Accordion', url: '/components/accordion' },
+        { name: 'Breadcrumb', url: '/components/breadcrumb' },
+        { name: 'Card', url: '/components/card' },
+        { name: 'Menubar', url: '/components/menubar' },
+        { name: 'Modal', url: '/components/modal' },
+        { name: 'Checkbox', url: '/components/checkbox' },
+        { name: 'Radio', url: '/components/radio-group' },
+        { name: 'Tabs', url: '/components/tabs' },
+      ];
+      return { components };
+    },
+  };
+</script>
+
+<template>
+  <div class="w-full flex flex-col items-start justify-start gap-4">
+    <ul class="list-disc pl-8 space-y-1">
+      {#each components as component (component.name)}
+      <li>
+        <a :href="component.url" class="link">{{ component.name }}</a>
+      </li>
+      {/each}
+    </ul>
+  </div>
+</template>

@@ -1,0 +1,12 @@
+<template>
+  <div class="w-full flex flex-col items-start justify-start gap-6">
+    <div class="w-full flex flex-row items-center justify-start gap-4">
+      <a href="/components" class="link">components</a>
+      <span>/</span>
+      <h1>{{ params.component }}</h1>
+    </div>
+    <div class="w-full p-6 bg-white border border-border rounded-lg">
+      <component :is="params.component + '-demo'"></component>
+    </div>
+  </div>
+</template>

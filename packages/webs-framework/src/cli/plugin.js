@@ -1,11 +1,29 @@
-import { resolve, basename } from 'path';
+import { resolve, basename, relative, dirname } from 'path';
 
 export default (options = {}) => ({
   name: 'bun-plugin-webs',
   async setup(build) {
     const root = options.root || process.cwd();
     const registryPath = options.registryPath;
-    const skipRegistry = options.skipRegistry || false;
+    const guiDir = options.guiDir;
+    const LOG_PREFIX = '[Debug] Webs Plugin:';
+
+    build.onResolve({ filter: /\.js$/ }, (args) => {
+      if (args.importer.endsWith('.webs')) {
+        const resolvedPath = resolve(dirname(args.importer), args.path);
+
+        if (registryPath && resolvedPath === registryPath) {
+          return null;
+        }
+
+        const websPath = resolvedPath.replace(/\.js$/, '.webs');
+        return {
+          path: websPath,
+          namespace: 'webs-components',
+        };
+      }
+      return null;
+    });
 
     build.onResolve({ filter: /\.webs$/ }, (args) => {
       const path = resolve(args.resolveDir || root, args.path);
@@ -20,85 +38,87 @@ export default (options = {}) => ({
       async (args) => {
         try {
           const sourceCode = await Bun.file(args.path).text();
+          const componentName = basename(args.path, '.webs');
 
           const moduleScriptMatch =
             /<script type="module">(.*?)<\/script>/s.exec(sourceCode);
+          if (moduleScriptMatch && !/<template>/.test(sourceCode)) {
+            let scriptContent = moduleScriptMatch[1].trim();
+            scriptContent = scriptContent.replace(
+              /from\s+['"](.+?)\.webs['"]/g,
+              "from '$1.js'",
+            );
+            return {
+              contents: scriptContent,
+              loader: 'js',
+              resolveDir: dirname(args.path),
+            };
+          }
+
           const componentScriptMatch =
             /<script\b(?! type="module")[^>]*>(.*?)<\/script>/s.exec(
               sourceCode,
             );
           const templateMatch = /<template>(.*?)<\/template>/s.exec(sourceCode);
-          const styleMatch = /<style>([\s\S]*?)<\/style>/s.exec(sourceCode);
 
-          if (
-            moduleScriptMatch &&
-            !componentScriptMatch &&
-            !templateMatch &&
-            !styleMatch
-          ) {
-            return {
-              contents: moduleScriptMatch[1].trim(),
-              loader: 'js',
-            };
+          let scriptContent =
+            (moduleScriptMatch || componentScriptMatch)?.[1].trim() || '';
+          const templateContent = templateMatch ? templateMatch[1].trim() : '';
+
+          scriptContent = scriptContent.replace(
+            /from\s+['"](.+?)\.webs['"]/g,
+            "from '$1.js'",
+          );
+
+          let registryImport = '';
+          const isGlobalComponent = guiDir && args.path.startsWith(guiDir);
+
+          if (!isGlobalComponent && registryPath) {
+            let relPath = relative(dirname(args.path), registryPath).replace(
+              /\\/g,
+              '/',
+            );
+            if (!relPath.startsWith('.')) relPath = './' + relPath;
+            registryImport = `import __globalComponents from '${relPath}';\n`;
           }
 
-          const scriptMatch = moduleScriptMatch || componentScriptMatch;
-          let scriptContent = scriptMatch ? scriptMatch[1].trim() : '';
-          const templateContent = templateMatch ? templateMatch[1].trim() : '';
-          const componentName = basename(args.path, '.webs');
-
-          const registryImport =
-            !skipRegistry &&
-            registryPath &&
-            (await Bun.file(registryPath).exists())
-              ? `import __globalComponents from '${registryPath}';\n`
-              : '';
-
-          const isTemplateExpression =
-            /^\s*([a-zA-Z_$][a-zA-Z0-9_$]*\s*`|`|\(|\{)/.test(templateContent);
-
-          const templateProperty = isTemplateExpression
-            ? `template: ${templateContent}`
-            : `template: ${JSON.stringify(templateContent)}`;
-
-          const injectedProps = `
-              name: '${componentName}',
-              ${templateProperty},
-            `;
+          const templateProperty = `template: ${JSON.stringify(templateContent)}`;
+          const injectedProps = `name: '${componentName}', ${templateProperty}`;
 
           let finalScript;
 
-          if (!scriptContent) {
-            finalScript = `export default { ${injectedProps} ${registryImport ? ', components: __globalComponents' : ''} };`;
-          } else if (!scriptContent.includes('export default')) {
-            finalScript = `${scriptContent}\nexport default { ${injectedProps} ${registryImport ? ', components: __globalComponents' : ''} };`;
+          if (!scriptContent.includes('export default')) {
+            finalScript = `${scriptContent}\nexport default { ${injectedProps} };`;
           } else {
-            let modifiedScript = scriptContent;
-            let propsToInject = injectedProps;
-
-            if (registryImport) {
-              if (modifiedScript.includes('components:')) {
-                modifiedScript = modifiedScript.replace(
-                  /(components\s*:\s*\{)/,
-                  '$1 ...__globalComponents,',
-                );
-              } else {
-                propsToInject += ', components: __globalComponents';
-              }
-            }
-
-            finalScript = modifiedScript.replace(
+            finalScript = scriptContent.replace(
               /(export default\s*\{)/,
-              `$1 ${propsToInject},`,
+              `$1 ${injectedProps},`,
             );
           }
 
+          if (!isGlobalComponent) {
+            if (finalScript.includes('components:')) {
+              finalScript = finalScript.replace(
+                /(components\s*:\s*\{)/,
+                '$1 ...(__globalComponents || {}),',
+              );
+            } else {
+              finalScript = finalScript.replace(
+                /(export default\s*\{)/,
+                '$1 components: __globalComponents || {},',
+              );
+            }
+          }
+
+          const finalContents = registryImport + finalScript;
+
           return {
-            contents: registryImport + finalScript,
+            contents: finalContents,
             loader: 'js',
+            resolveDir: dirname(args.path),
           };
         } catch (e) {
-          console.error(`[Webs Plugin Error] Failed to load ${args.path}:`, e);
+          console.error(`${LOG_PREFIX} Failed to load ${args.path}:`, e);
           throw e;
         }
       },

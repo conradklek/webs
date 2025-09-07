@@ -1,0 +1,122 @@
+<script type="module">
+  import { provide, inject, state, computed } from '@conradklek/webs';
+
+  export const AccordionItem = {
+    name: 'accordion-item',
+    props: {
+      value: {
+        type: String,
+        required: true,
+      },
+    },
+    setup(props) {
+      provide('itemValue', props.value);
+    },
+    template: `
+        <div class="w-full flex flex-col gap-1.5">
+          <slot></slot>
+        </div>
+      `,
+  };
+
+  export const AccordionTrigger = {
+    name: 'accordion-trigger',
+    setup() {
+      const accordion = inject('accordion');
+      const { toggle } = accordion || {};
+      const value = inject('itemValue');
+      return {
+        handleClick: () => toggle && value && toggle(value),
+      };
+    },
+    template: `
+        <h3>
+          <button
+            type="button"
+            @click="handleClick"
+            class="w-full flex flex-row items-start justify-start cursor-pointer"
+          >
+            <span
+              class="flex-1 flex flex-row items-start justify-start font-medium"
+            >
+              <slot></slot>
+            </span>
+          </button>
+        </h3>
+      `,
+  };
+
+  export const AccordionContent = {
+    name: 'accordion-content',
+    setup() {
+      const accordion = inject('accordion');
+      const { openItems } = accordion || {};
+      const value = inject('itemValue');
+      const isOpen = computed(() => openItems && openItems.has(value));
+      return { isOpen };
+    },
+    template: `
+        {#if isOpen}
+        <div class="pb-3 pt-1">
+          <slot></slot>
+        </div>
+        {/if}
+      `,
+  };
+
+  export default {
+    name: 'accordion',
+    components: {
+      'accordion-item': AccordionItem,
+      'accordion-trigger': AccordionTrigger,
+      'accordion-content': AccordionContent,
+    },
+    props: {
+      type: {
+        type: String,
+        default: 'single',
+      },
+      collapsible: {
+        type: Boolean,
+        default: true,
+      },
+    },
+    setup(props) {
+      const openItems = state(new Set());
+
+      function toggle(value) {
+        const newSet = new Set(openItems);
+        if (props.type === 'single') {
+          if (newSet.has(value)) {
+            if (props.collapsible) {
+              newSet.delete(value);
+            }
+          } else {
+            newSet.clear();
+            newSet.add(value);
+          }
+        } else if (props.type === 'multiple') {
+          if (newSet.has(value)) {
+            newSet.delete(value);
+          } else {
+            newSet.add(value);
+          }
+        }
+        openItems.clear();
+        for (const item of newSet) {
+          openItems.add(item);
+        }
+      }
+
+      provide('accordion', {
+        openItems,
+        toggle,
+      });
+    },
+    template: `
+        <div class="w-full flex flex-col items-start justify-start gap-3">
+          <slot></slot>
+        </div>
+      `,
+  };
+</script>

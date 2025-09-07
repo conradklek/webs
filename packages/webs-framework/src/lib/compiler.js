@@ -221,8 +221,8 @@ export function generateRenderFn(ast) {
             const child = ${childNodes}[0];
             if (child && !child.props) child.props = {};
             if (child && child.props) child.props.key = ${this.genExpr(
-              keyName,
-            )};
+            keyName,
+          )};
             return child;
           })()`;
 
@@ -260,13 +260,17 @@ export class Compiler {
   constructor(componentDef, options = null) {
     this.definition = componentDef;
     this.componentNameMap = new Map();
+    const allComponents = {
+      ...(componentDef.components || {}),
+      ...(options?.globalComponents || {}),
+    };
 
     const collectComponents = (comps) => {
       if (!comps) return;
       for (const key in comps) {
         const compDef = comps[key];
         if (compDef && typeof compDef === 'object') {
-          this.componentNameMap.set(key, key);
+          this.componentNameMap.set(key.toLowerCase(), key);
           if (compDef.components) {
             collectComponents(compDef.components);
           }
@@ -274,7 +278,12 @@ export class Compiler {
       }
     };
 
-    collectComponents(componentDef.components);
+    collectComponents(allComponents);
+    console.log(
+      `[Debug] Compiler: Instantiated for <${componentDef.name
+      }>. Registered components:`,
+      Array.from(this.componentNameMap.keys()),
+    );
     this.options = options;
   }
 
@@ -498,7 +507,7 @@ export class Compiler {
     }
 
     const tagName = el.tagName;
-    const registeredCompKey = this.componentNameMap.get(tagName);
+    const registeredCompKey = this.componentNameMap.get(tagName.toLowerCase());
     const isComponent = !!registeredCompKey;
 
     if (isComponent) {
@@ -608,7 +617,7 @@ export class Compiler {
 
 const compileCache = new WeakMap();
 
-export function compile(componentDef) {
+export function compile(componentDef, options = null) {
   if (compileCache.has(componentDef)) {
     return compileCache.get(componentDef);
   }
@@ -638,7 +647,7 @@ export function compile(componentDef) {
   }
 
   const finalComponentDef = { ...componentDef, template: templateContent };
-  const compiler = new Compiler(finalComponentDef);
+  const compiler = new Compiler(finalComponentDef, options);
   const renderFn = compiler.compile();
   compileCache.set(componentDef, renderFn);
   return renderFn;

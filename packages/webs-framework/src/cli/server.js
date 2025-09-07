@@ -48,18 +48,19 @@ async function executePrefetch(routeDefinition, context) {
     const result = await routeDefinition.actions.prefetch(context);
     log('Prefetch action completed successfully.');
     return result;
-  } catch (error) {
+  } catch (err) {
     error(
       `Prefetch Error for component "${routeDefinition.componentName}":`,
-      error,
+      err,
     );
     return { error: 'Failed to load data on the server.' };
   }
 }
 
-async function handleDataRequest(req, routeDefinition) {
+async function handleDataRequest(req, routeDefinition, context) {
   log(`Handling data request for route '${req.url}'`);
   const { db, user, params } = req;
+  const { manifest } = context;
   const fs = user ? createFileSystemForUser(user.id, db) : null;
 
   const componentState = await executePrefetch(routeDefinition, {
@@ -75,6 +76,7 @@ async function handleDataRequest(req, routeDefinition) {
     componentState,
     componentName: routeDefinition.componentName,
     title: routeDefinition.component.name || 'Webs App',
+    swPath: manifest.sw ? `/${basename(manifest.sw)}` : null,
   };
   log('Sending JSON response for data request.');
   return new Response(JSON.stringify(websState), {
@@ -84,7 +86,7 @@ async function handleDataRequest(req, routeDefinition) {
 
 async function handlePageRequest(req, routeDefinition, context) {
   log(`Handling page request for route '${req.url}'`);
-  const { manifest } = context;
+  const { manifest, globalComponents } = context;
   const { db, user, params } = req;
   const fs = user ? createFileSystemForUser(user.id, db) : null;
 
@@ -96,9 +98,12 @@ async function handlePageRequest(req, routeDefinition, context) {
   });
 
   const props = { user, params, initialState };
-  const { html: appHtml, componentState } = await renderToString(
-    h(routeDefinition.component, props),
-  );
+
+  const vnode = h(routeDefinition.component, props);
+  vnode.appContext = { components: globalComponents || {} };
+
+  log('Starting SSR with global components attached to app context.');
+  const { html: appHtml, componentState } = await renderToString(vnode);
   log('Component rendered to string on server.');
 
   const websState = {
@@ -150,6 +155,7 @@ export async function startServer(serverContext) {
     SYNC_TOPIC,
     actionsPath,
     outdir,
+    globalComponents,
   } = serverContext;
   let syncActions = {};
   if (await exists(actionsPath)) {
@@ -164,10 +170,7 @@ export async function startServer(serverContext) {
   log('Starting Webs server...');
   const server = Bun.serve({
     port,
-    development: {
-      hmr: false,
-      console: true,
-    },
+    development: !isProd,
     async fetch(req, server) {
       const url = new URL(req.url);
       const { pathname } = url;
@@ -235,9 +238,9 @@ export async function startServer(serverContext) {
             JSON.stringify({ success: true, path: filePath }),
             { status: 201 },
           );
-        } catch (error) {
-          error('[Upload Error]', error);
-          return new Response(`Upload failed: ${error.message}`, {
+        } catch (err) {
+          error('[Upload Error]', err);
+          return new Response(`Upload failed: ${err.message}`, {
             status: 500,
           });
         }
@@ -325,8 +328,11 @@ export async function startServer(serverContext) {
             {},
           );
           const response = req.headers.get('X-Webs-Navigate')
-            ? await handleDataRequest(req, routeDefinition)
-            : await handlePageRequest(req, routeDefinition, { manifest });
+            ? await handleDataRequest(req, routeDefinition, { manifest })
+            : await handlePageRequest(req, routeDefinition, {
+              manifest,
+              globalComponents,
+            });
 
           const devSessionId = req.headers.get('X-Set-Dev-Session');
           if (devSessionId) {

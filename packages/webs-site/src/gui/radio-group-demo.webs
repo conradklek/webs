@@ -1,0 +1,27 @@
+<script>
+  import RadioGroup from './radio-group.webs';
+
+  export default {
+    components: {
+      'radio-group': RadioGroup,
+      ...RadioGroup.components,
+    },
+  };
+</script>
+
+<template>
+  <radio-group defaultValue="comfortable">
+    <div class="flex items-center space-x-2">
+      <radio-group-item value="default" id="r1" />
+      <label for="r1">Default</label>
+    </div>
+    <div class="flex items-center space-x-2">
+      <radio-group-item value="comfortable" id="r2" />
+      <label for="r2">Comfortable</label>
+    </div>
+    <div class="flex items-center space-x-2">
+      <radio-group-item value="compact" id="r3" />
+      <label for="r3">Compact</label>
+    </div>
+  </radio-group>
+</template>
