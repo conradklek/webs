@@ -44,16 +44,37 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
 
   if (request.headers.has('X-Webs-Navigate')) {
-    event.respondWith(fetch(request));
+    event.respondWith(
+      fetch(request).catch(() => {
+        return new Response(JSON.stringify({ error: 'Network unavailable' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
     return;
   }
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(() => {
-        console.log('[SW] Network fetch failed, serving app shell from cache.');
-        return caches.match(APP_SHELL_URL);
-      }),
+      fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, responseToCache);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          console.log(
+            '[SW] Network fetch failed, trying cache for navigation.',
+          );
+          return caches.match(request).then((cachedResponse) => {
+            return cachedResponse || caches.match(APP_SHELL_URL);
+          });
+        }),
     );
     return;
   }

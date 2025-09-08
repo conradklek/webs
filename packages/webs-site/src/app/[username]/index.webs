@@ -7,6 +7,9 @@
       <li>
         <a :href="`/${params.username}/fs`" class="link">Files</a>
       </li>
+      <li>
+        <a :href="`/${params.username}/search`" class="link">Search</a>
+      </li>
     </ul>
   </div>
 </template>

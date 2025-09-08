@@ -5,6 +5,8 @@ import { join, resolve, dirname, basename, relative } from 'path';
 import { Database } from 'bun:sqlite';
 import { createDatabaseAndActions } from '../lib/db.js';
 import { startServer } from './server.js';
+import { AI } from '../lib/ai/index.js';
+import { config as aiDefaultConfig } from '../lib/ai/config.js';
 import tailwind from 'bun-plugin-tailwind';
 import websPlugin from './plugin.js';
 
@@ -177,7 +179,7 @@ async function generateComponentRegistry() {
 
 function getDbConfig() {
   const schema = {
-    name: 'webs.db',
+    name: 'fw.db',
     version: 1,
     tables: {
       users: {
@@ -206,8 +208,9 @@ function getDbConfig() {
       files: {
         sync: true,
         keyPath: 'path',
+        primaryKeys: ['path', 'user_id'],
         fields: {
-          path: { type: 'text', primaryKey: true },
+          path: { type: 'text', notNull: true },
           user_id: {
             type: 'integer',
             notNull: true,
@@ -239,6 +242,24 @@ function getDbConfig() {
           updated_at: { type: 'timestamp', default: 'CURRENT_TIMESTAMP' },
         },
         indexes: [{ name: 'by-user', keyPath: 'user_id' }],
+      },
+      chat_messages: {
+        sync: true,
+        keyPath: 'id',
+        fields: {
+          id: { type: 'text', primaryKey: true },
+          channel: { type: 'text', notNull: true },
+          username: { type: 'text', notNull: true },
+          message: { type: 'text', notNull: true },
+          user_id: {
+            type: 'integer',
+            references: 'users(id)',
+            onDelete: 'SET NULL',
+          },
+          created_at: { type: 'timestamp', default: 'CURRENT_TIMESTAMP' },
+          updated_at: { type: 'timestamp', default: 'CURRENT_TIMESTAMP' },
+        },
+        indexes: [{ name: 'by-channel', keyPath: 'channel' }],
       },
     },
   };
@@ -390,9 +411,12 @@ async function generateRoutes(pageEntrypoints) {
     source: sourcePagePath,
     compiled: compiledPagePath,
   } of pageEntrypoints) {
-    const componentName = relative(config.APP_DIR, sourcePagePath)
-      .replace(/\\/g, '/')
-      .replace('.webs', '');
+    const componentPath = relative(config.APP_DIR, sourcePagePath).replace(
+      /\\/g,
+      '/',
+    );
+    const componentName = componentPath.replace('.webs', '');
+
     if (basename(componentName) === 'layout') continue;
 
     const mod = await import(compiledPagePath);
@@ -457,10 +481,13 @@ async function generateRoutes(pageEntrypoints) {
 
     let urlPath =
       '/' +
-      componentName
+      componentPath
+        .replace('.webs', '')
         .replace(/index$/, '')
+        .replace(/\/\[\.\.\.(\w+)\]/g, ':$1*')
         .replace(/\[\.\.\.(\w+)\]/g, ':$1*')
         .replace(/\[(\w+)\]/g, ':$1');
+
     if (urlPath.length > 1 && urlPath.endsWith('/'))
       urlPath = urlPath.slice(0, -1);
 
@@ -474,7 +501,14 @@ async function generateRoutes(pageEntrypoints) {
     });
   }
 
-  routeDefinitions.sort((a, b) => b.path.length - a.path.length);
+  routeDefinitions.sort((a, b) => {
+    const aIsCatchAll = a.path.includes('*');
+    const bIsCatchAll = b.path.includes('*');
+
+    if (aIsCatchAll && !bIsCatchAll) return 1;
+    if (!aIsCatchAll && bIsCatchAll) return -1;
+    return b.path.length - a.path.length;
+  });
   console.log('[Build] Server routes generated.');
   const appRoutes = Object.fromEntries(
     routeDefinitions.map((r) => [r.path, r.definition]),
@@ -489,10 +523,25 @@ async function generateActionsFile() {
 
 async function main() {
   await rm(config.TMPDIR, { recursive: true, force: true });
+
   await ensureDir(config.TMPDIR);
 
   const dbConfig = getDbConfig();
+
   await generateActionsFile();
+
+  const aiConfig = {
+    ...aiDefaultConfig,
+    db: {
+      ...aiDefaultConfig.db,
+      path: resolve(config.TMPDIR, 'ai.db'),
+      dimensions: 768,
+    },
+  };
+
+  const ai = new AI(aiConfig);
+  await ai.init();
+  console.log('[Build] AI module initialized.');
 
   const { sourceEntrypoints, pageEntrypoints } =
     await manualCompileAllWebsFiles();
@@ -544,44 +593,60 @@ async function main() {
         'private',
       );
       await ensureDir(anonPrivateDir);
-      const welcomeFilePath = join(anonPrivateDir, 'welcome.txt');
-      const welcomeContent =
-        'Welcome to your new Webs file system!\n\nYou can edit this file, create new ones, and upload files from the file browser.\n\nAll changes are saved and synced in real-time.';
 
-      if (!(await exists(welcomeFilePath))) {
-        console.log(
-          "[Build] Dev mode: Seeding 'welcome.txt' into anon user's file system...",
-        );
-        await writeFile(welcomeFilePath, welcomeContent);
-      }
+      const seedFiles = {
+        'welcome.txt':
+          'Welcome to your new Webs file system!\n\nYou can edit this file, create new ones, and upload files from the file browser.\n\nAll changes are saved and synced in real-time.',
+        'docs/webs-framework.md':
+          '# Webs Framework\n\nThe Webs framework is a modern, file-based, full-stack JavaScript framework. It uses a `.webs` single-file component format that combines template, script, and style blocks. Key features include server-side rendering (SSR), real-time data synchronization with a built-in SQLite database, and a file system API for user-specific storage.',
+        'docs/ai-features.md':
+          "# AI Features\n\nThe framework includes a powerful AI module for semantic search and Retrieval-Augmented Generation (RAG). All text-based user files are automatically embedded and indexed. This allows applications to perform semantic searches across a user's entire file collection, enabling features like question-answering bots and intelligent document retrieval.",
+        'stories/the-comet.txt':
+          'The old astronomer adjusted the brass telescope, his eye pressed to the lens. For weeks, he had tracked the comet, a celestial wanderer named "Aethelred\'s Tear" by some forgotten poet. It wasn\'t the size or brightness that fascinated him, but its path. It moved not with the clockwork grace of planets, but with a hesitant, almost thoughtful trajectory. Tonight, it would pass closer to Earth than ever before. He held his breath, expecting a flash, a spectacle. Instead, a profound silence fell over the observatory. The low hum of the tracking motor ceased. Through the lens, the comet seemed to stop, hanging in the void like a suspended drop of light. And then, a single, pure note resonated, not in his ears, but in the very fiber of his being—a greeting from the deep dark.',
+        'history/enigma.md':
+          '# The Enigma Machine\nThe Enigma was a cipher device used extensively by Nazi Germany during World War II. Its complex series of rotating wheels and electrical pathways made its code incredibly difficult to break. The successful decryption of Enigma messages by Allied codebreakers, most famously at Bletley Park, is considered a pivotal factor in the outcome of the war, shortening it by an estimated two to four years.',
+      };
 
-      const existingFile = db
-        .query('SELECT path FROM files WHERE path = ? AND user_id = ?')
-        .get('welcome.txt', anonUserId);
-      if (!existingFile) {
-        console.log("[Build] Dev mode: Seeding 'welcome.txt' into database...");
-        const now = new Date().toISOString();
-        const fileRecord = {
-          path: 'welcome.txt',
-          user_id: anonUserId,
-          access: 'private',
-          size: welcomeContent.length,
-          last_modified: now,
-          updated_at: now,
-          content: Buffer.from(welcomeContent),
-        };
-        const insertFileStmt = db.prepare(
-          'INSERT INTO files (path, user_id, access, size, last_modified, updated_at, content) VALUES ($path, $user_id, $access, $size, $last_modified, $updated_at, $content)',
-        );
-        insertFileStmt.run({
-          $path: fileRecord.path,
-          $user_id: fileRecord.user_id,
-          $access: fileRecord.access,
-          $size: fileRecord.size,
-          $last_modified: fileRecord.last_modified,
-          $updated_at: fileRecord.updated_at,
-          $content: fileRecord.content,
-        });
+      for (const [filePath, content] of Object.entries(seedFiles)) {
+        const fullPath = join(anonPrivateDir, filePath);
+        const dir = dirname(fullPath);
+        await ensureDir(dir);
+
+        if (!(await exists(fullPath))) {
+          console.log(`[Build] Dev mode: Seeding '${filePath}'...`);
+          await writeFile(fullPath, content);
+
+          const existingFile = db
+            .query('SELECT path FROM files WHERE path = ? AND user_id = ?')
+            .get(filePath, anonUserId);
+
+          if (!existingFile) {
+            const now = new Date().toISOString();
+            const fileRecord = {
+              path: filePath,
+              user_id: anonUserId,
+              access: 'private',
+              size: content.length,
+              last_modified: now,
+              updated_at: now,
+              content: Buffer.from(content),
+            };
+            const insertFileStmt = db.prepare(
+              'INSERT INTO files (path, user_id, access, size, last_modified, updated_at, content) VALUES ($path, $user_id, $access, $size, $last_modified, $updated_at, $content)',
+            );
+            insertFileStmt.run({
+              $path: fileRecord.path,
+              $user_id: fileRecord.user_id,
+              $access: fileRecord.access,
+              $size: fileRecord.size,
+              $last_modified: fileRecord.last_modified,
+              $updated_at: fileRecord.updated_at,
+              $content: fileRecord.content,
+            });
+
+            await ai.indexFile(filePath, content, { userId: anonUserId });
+          }
+        }
       }
 
       const todoCountResult = db
@@ -659,8 +724,9 @@ async function main() {
     manifest.sw = swPath;
   }
 
-  await startServer({
+  const server = await startServer({
     db,
+    ai,
     dbConfig,
     manifest,
     appRoutes,
@@ -671,6 +737,18 @@ async function main() {
     actionsPath: config.TMP_GENERATED_ACTIONS,
     globalComponents,
   });
+
+  ai.initialize(server, db);
+
+  const shutdown = async () => {
+    console.log('\n[Build] Shutting down gracefully...');
+    if (ai) await ai.shutdown();
+    server.stop(true);
+    process.exit(0);
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 main().catch((e) => {

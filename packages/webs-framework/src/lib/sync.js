@@ -1,7 +1,9 @@
 import { session } from './session.js';
 import { watch, state } from './engine.js';
-import { onUnmounted } from './renderer.js';
-import { generateUUID } from './shared.js';
+import { onUnmounted, onMounted } from './renderer.js';
+import { generateUUID, createLogger } from './shared.js';
+
+const logger = createLogger('[Sync]');
 
 const coreFS = {
   readFile: (path) =>
@@ -10,7 +12,9 @@ const coreFS = {
       .then((file) => (file ? file.content : null)),
 
   listDirectory: async (path) => {
-    const prefix = path ? `${path}/` : '';
+    logger.debug(`[FS] Listing directory: "${path}"`);
+    const normalizedPath = path.replace(/\/$/, '');
+    const prefix = normalizedPath ? `${normalizedPath}/` : '';
     const allFiles = await db('files').getAllWithPrefix(prefix);
     const directChildren = new Map();
 
@@ -30,12 +34,17 @@ const coreFS = {
         });
       }
     }
-    return Array.from(directChildren.values());
+    const result = Array.from(directChildren.values()).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+    logger.debug(`[FS] Directory listing for "${path}" result:`, result);
+    return result;
   },
 
   async createOperation(payload) {
     if (!session.isLoggedIn) throw new Error('User not logged in.');
     const op = { ...payload, opId: generateUUID() };
+    logger.log(`[FS] Creating operation:`, op);
 
     await performTransaction(['files', 'outbox'], 'readwrite', (tx) => {
       const filesStore = tx.objectStore('files');
@@ -51,11 +60,16 @@ const coreFS = {
           last_modified: new Date().toISOString(),
         });
       } else if (op.type === 'fs:rm') {
-        filesStore.delete(op.path);
+        const key =
+          typeof op.path === 'string'
+            ? { path: op.path, user_id: session.user.id }
+            : op.path;
+        filesStore.delete([key.path, key.user_id]);
       }
       outboxStore.put(op);
     });
 
+    notify('files');
     syncEngine.process();
   },
 };
@@ -68,9 +82,9 @@ export function fs(path = '') {
         isLoading: false,
         error: null,
       });
-      s.hydrate = async () => { };
-      s.write = async () => { };
-      s.rm = async () => { };
+      s.hydrate = async () => {};
+      s.write = async () => {};
+      s.rm = async () => {};
       return s;
     };
     return {
@@ -82,71 +96,124 @@ export function fs(path = '') {
     };
   }
 
-  const isDirectory = path === '' || path.endsWith('/');
-  const normalizedPath = path.endsWith('/') ? path.slice(0, -1) : path;
+  const isDirectoryOp =
+    typeof path === 'function' ? true : path === '' || path.endsWith('/');
 
   const methods = {
     read: () => {
-      if (isDirectory) throw new Error('Cannot call .read() on a directory.');
-      return coreFS.readFile(normalizedPath);
+      if (isDirectoryOp) throw new Error('Cannot call .read() on a directory.');
+      const currentPath = typeof path === 'function' ? path() : path;
+      return coreFS.readFile(currentPath);
     },
     ls: () => {
-      if (!isDirectory)
+      if (!isDirectoryOp)
         throw new Error(
           'Can only call .ls() on a directory path (ending with "/").',
         );
-      return coreFS.listDirectory(path);
+      const currentPath = typeof path === 'function' ? path() : path;
+      return coreFS.listDirectory(currentPath);
     },
     write: (content, options = { access: 'private' }) => {
-      if (isDirectory) throw new Error('Cannot call .write() on a directory.');
+      if (isDirectoryOp)
+        throw new Error('Cannot call .write() on a directory.');
+      const currentPath = typeof path === 'function' ? path() : path;
       return coreFS.createOperation({
         type: 'fs:write',
-        path: normalizedPath,
+        path: currentPath,
         data: content,
         options,
       });
     },
     rm: (options = { access: 'private' }) => {
+      const currentPath = typeof path === 'function' ? path() : path;
       return coreFS.createOperation({
         type: 'fs:rm',
-        path: normalizedPath,
+        path: currentPath,
         options,
       });
     },
     use(initialData = null) {
+      const hasInitialData =
+        initialData && (!Array.isArray(initialData) || initialData.length > 0);
+      logger.log(
+        `[fs.use] Initializing for path: ${typeof path === 'function' ? path() : path}`,
+        { initialData, hasInitialData },
+      );
+
       const s = state({
         data: initialData,
-        isLoading: initialData === null,
+        isLoading: !hasInitialData,
         error: null,
       });
 
+      let unsubscribe = null;
+
       const fetchData = async () => {
+        const currentDynamicPath = typeof path === 'function' ? path() : path;
+
+        const isDir =
+          Array.isArray(s.data) ||
+          currentDynamicPath === '' ||
+          currentDynamicPath.endsWith('/');
+
+        logger.log(`[fs.use] Fetching data for path: "${currentDynamicPath}"`);
         try {
           s.isLoading = true;
           s.error = null;
-          s.data = isDirectory
-            ? await coreFS.listDirectory(path)
-            : await coreFS.readFile(normalizedPath);
+          const newData = isDir
+            ? await coreFS.listDirectory(currentDynamicPath)
+            : await coreFS.readFile(currentDynamicPath);
+          logger.log(
+            `[fs.use] Fetched data for "${currentDynamicPath}":`,
+            newData,
+          );
+          s.data = newData;
         } catch (e) {
+          logger.error(
+            `[fs.use] Error fetching data for "${currentDynamicPath}":`,
+            e,
+          );
           s.error = e.message;
         } finally {
           s.isLoading = false;
         }
       };
 
-      if (typeof window !== 'undefined') {
-        const unsubscribe = db('files').subscribe(fetchData);
-        onUnmounted(unsubscribe);
-
-        if (initialData === null) fetchData();
-      }
-
-      s.hydrate = async (serverData) => {
-        if (serverData !== null && serverData !== undefined) {
-          await db('files').bulkPut(serverData);
+      const setupSubscription = (skipInitialFetch = false) => {
+        if (unsubscribe) unsubscribe();
+        const currentDynamicPath = typeof path === 'function' ? path() : path;
+        logger.log(
+          `[fs.use] Setting up subscription for path: "${currentDynamicPath}"`,
+        );
+        unsubscribe = db('files').subscribe(fetchData);
+        if (!skipInitialFetch) {
+          fetchData();
         }
-        await fetchData();
       };
+
+      onMounted(() => {
+        setupSubscription(hasInitialData);
+
+        if (typeof path === 'function') {
+          const stopWatch = watch(path, () => {
+            logger.log(
+              `[fs.use] Watched path changed to: "${path()}", re-subscribing.`,
+            );
+            setupSubscription(true);
+          });
+          onUnmounted(stopWatch);
+        }
+      });
+
+      onUnmounted(() => {
+        if (unsubscribe) {
+          logger.log(
+            `[fs.use] Unsubscribing for path: "${typeof path === 'function' ? path() : path}"`,
+          );
+          unsubscribe();
+        }
+      });
+
       s.write = this.write;
       s.rm = this.rm;
 
@@ -167,8 +234,24 @@ let socket = null;
 let isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 let reconnectTimeout = null;
 let reconnectAttempts = 0;
-const messageListeners = new Set();
 let isProcessingOutbox = false;
+
+const eventEmitter = {
+  listeners: new Map(),
+  on(event, callback) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    const eventListeners = this.listeners.get(event);
+    eventListeners.add(callback);
+    return () => eventListeners.delete(callback);
+  },
+  emit(event, data) {
+    if (this.listeners.has(event)) {
+      this.listeners.get(event).forEach((cb) => cb(data));
+    }
+  },
+};
 
 function promisifyRequest(request) {
   return new Promise((resolve, reject) => {
@@ -182,26 +265,36 @@ function openDB(config) {
     return Promise.resolve(null);
   }
   if (dbPromise) return dbPromise;
-
+  logger.log('Opening IndexedDB...');
   dbPromise = new Promise((resolve, reject) => {
     const version = config?.version || 1;
     const request = indexedDB.open(DB_NAME, version);
 
-    request.onerror = (e) => reject(e.target.error);
+    request.onerror = (e) => {
+      logger.error('IndexedDB error:', e.target.error);
+      reject(e.target.error);
+    };
     request.onsuccess = () => {
+      logger.log('IndexedDB opened successfully.');
       resolve(request.result);
     };
 
     request.onupgradeneeded = (e) => {
+      logger.log('IndexedDB upgrade needed.', {
+        oldVersion: e.oldVersion,
+        newVersion: e.newVersion,
+      });
       const db = e.target.result;
       const tx = e.target.transaction;
 
       if (!db.objectStoreNames.contains('outbox')) {
+        logger.debug("Creating 'outbox' object store.");
         db.createObjectStore('outbox', { keyPath: 'opId' });
       }
 
       config?.clientTables?.forEach((tableSchema) => {
         if (!db.objectStoreNames.contains(tableSchema.name)) {
+          logger.debug(`Creating '${tableSchema.name}' object store.`);
           const store = db.createObjectStore(tableSchema.name, {
             keyPath: tableSchema.keyPath,
             autoIncrement: tableSchema.autoIncrement,
@@ -210,10 +303,16 @@ function openDB(config) {
             store.createIndex(index.name, index.keyPath, index.options),
           );
         } else {
+          logger.debug(
+            `Checking indexes for '${tableSchema.name}' object store.`,
+          );
           const store = tx.objectStore(tableSchema.name);
           const existingIndices = new Set(store.indexNames);
           tableSchema.indexes?.forEach((index) => {
             if (!existingIndices.has(index.name)) {
+              logger.debug(
+                `Creating index '${index.name}' on '${tableSchema.name}'.`,
+              );
               store.createIndex(index.name, index.keyPath, index.options);
             }
           });
@@ -226,6 +325,7 @@ function openDB(config) {
 
 const tableSubscribers = new Map();
 function notify(tableName) {
+  logger.debug(`Notifying subscribers for table: ${tableName}`);
   tableSubscribers.get(tableName)?.forEach((callback) => callback());
 }
 
@@ -349,6 +449,7 @@ const coreDB = {
     return () => tableSubscribers.get(tableName)?.delete(callback);
   },
   handleSyncMessage: async ({ tableName, type, data, id }) => {
+    logger.log(`Handling incoming sync message`, { tableName, type, data, id });
     await coreDB.performTransaction(tableName, 'readwrite', (tx) => {
       const store = tx.objectStore(tableName);
       if (type === 'put') {
@@ -368,60 +469,64 @@ export function performTransaction(tableNames, mode, action) {
 function connectToSyncServer() {
   if (socket?.readyState === WebSocket.OPEN) return processOutbox();
   if (!isOnline) {
+    logger.log('Offline, cannot connect to sync server.');
     return;
   }
   if (reconnectTimeout) clearTimeout(reconnectTimeout);
 
+  logger.log('Attempting to connect to sync server...');
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const url = `${protocol}//${window.location.host}/api/sync`;
   socket = new WebSocket(url);
 
   socket.onopen = () => {
+    logger.log('Sync server connection established.');
     reconnectAttempts = 0;
     processOutbox();
   };
 
   socket.onmessage = async (event) => {
-    try {
-      const payload = JSON.parse(event.data);
-      if (payload.type === 'sync') {
-        if (payload.data.tableName === 'files' && payload.data.type === 'put') {
-          const records = [payload.data.data];
-          await coreDB.bulkPut('files', records);
-        } else {
-          await coreDB.handleSyncMessage(payload.data);
-        }
-      } else if (payload.type === 'ack' || payload.type === 'sync-error') {
-        await coreDB.performTransaction('outbox', 'readwrite', (tx) => {
-          tx.objectStore('outbox').delete(payload.opId);
-        });
-        isProcessingOutbox = false;
-        processOutbox();
+    const payload = JSON.parse(event.data);
+    logger.debug('Received message from sync server:', payload);
+    eventEmitter.emit('message', payload);
+    if (payload.type === 'sync') {
+      await coreDB.handleSyncMessage(payload.data);
+    } else if (payload.type === 'ack' || payload.type === 'sync-error') {
+      if (payload.type === 'sync-error') {
+        logger.error('Sync error from server:', payload);
       }
-      messageListeners.forEach((listener) => listener(payload));
-    } catch (e) {
-      /* e */
+      await coreDB.performTransaction('outbox', 'readwrite', (tx) => {
+        tx.objectStore('outbox').delete(payload.opId);
+      });
+      processOutbox();
     }
   };
 
   socket.onclose = (event) => {
+    logger.warn('Sync server connection closed.', {
+      code: event.code,
+      reason: event.reason,
+    });
     if (event.code !== 1000) {
       reconnectAttempts++;
       const delay = Math.min(30000, 1000 * 2 ** reconnectAttempts);
+      logger.log(`Will attempt to reconnect in ${delay}ms.`);
       reconnectTimeout = setTimeout(connectToSyncServer, delay);
     }
   };
 
-  socket.onerror = () => {
+  socket.onerror = (err) => {
+    logger.error('Sync server connection error:', err);
     socket.close();
   };
 }
 
 async function processOutbox() {
   if (isProcessingOutbox || socket?.readyState !== WebSocket.OPEN) {
-    if (!isOnline) {
-      /* e */
-    }
+    logger.debug('Skipping outbox processing.', {
+      isProcessingOutbox,
+      socketState: socket?.readyState,
+    });
     return;
   }
 
@@ -438,16 +543,19 @@ async function processOutbox() {
           if (cursor) {
             isProcessingOutbox = true;
             const op = cursor.value;
+            logger.log('Processing and sending operation from outbox:', op);
             socket.send(JSON.stringify(op));
           } else {
             isProcessingOutbox = false;
+            logger.debug('Outbox is empty.');
             resolve();
           }
         };
         request.onerror = (e) => reject(e.target.error);
       });
     })
-    .catch(() => {
+    .catch((err) => {
+      logger.error('Error processing outbox:', err);
       isProcessingOutbox = false;
     });
 }
@@ -463,7 +571,7 @@ function createSsrDbMock() {
     put: fn,
     bulkPut: fn,
     delete: fn,
-    subscribe: () => () => { },
+    subscribe: () => () => {},
     clear: fn,
   };
 }
@@ -494,18 +602,22 @@ export const syncEngine = {
       () => session.user,
       (newUser, oldUser) => {
         if (newUser && !oldUser) {
+          logger.log('User logged in, starting sync engine.');
           connectToSyncServer();
         } else if (oldUser && !newUser) {
+          logger.log('User logged out, stopping sync engine.');
           socket?.close(1000, 'User logged out');
         }
       },
     );
 
     window.addEventListener('online', () => {
+      logger.log('Browser is online.');
       isOnline = true;
       if (session.user) connectToSyncServer();
     });
     window.addEventListener('offline', () => {
+      logger.log('Browser is offline.');
       isOnline = false;
       socket?.close(1000, 'Network offline');
     });
@@ -517,8 +629,7 @@ export const syncEngine = {
     if (socket?.readyState === WebSocket.OPEN)
       socket.send(JSON.stringify(message));
   },
-  onMessage: (callback) => {
-    messageListeners.add(callback);
-    return () => messageListeners.delete(callback);
+  addEventListener: (event, callback) => {
+    return eventEmitter.on(event, callback);
   },
 };

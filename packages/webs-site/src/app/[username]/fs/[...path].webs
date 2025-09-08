@@ -1,5 +1,11 @@
 <script>
-  import { watch, computed, state, fs } from '@conradklek/webs';
+  import {
+    computed,
+    state,
+    fs,
+    onPropsReceived,
+    onMounted,
+  } from '@conradklek/webs';
 
   export default {
     actions: {
@@ -8,9 +14,17 @@
           return { error: 'You must be logged in to view files.' };
         }
         try {
-          const items = await fs.ls(params.path || '.', { access: 'private' });
+          const path = params.path || '';
+          console.log(
+            `[Prefetch] Listing files for path: "${path}" on server.`,
+          );
+          const items = await fs.ls(path, {
+            access: 'private',
+          });
+          console.log(`[Prefetch] Found ${items?.length || 0} items.`);
           return { items: items || [] };
         } catch (error) {
+          console.error('[Prefetch Error]', error);
           return { error: 'Could not load directory contents.' };
         }
       },
@@ -21,36 +35,48 @@
     },
 
     setup(props) {
-      const uploadStatus = state('');
-      const newItemName = state('');
-      const creationError = state(null);
+      console.log('[FS Component] Setup called with props:', {
+        initialState: JSON.parse(JSON.stringify(props.initialState || {})),
+        params: JSON.parse(JSON.stringify(props.params || {})),
+      });
 
-      const itemsController = fs(props.params.path || '').use(
+      const currentPath = state(props.params.path || '');
+
+      const itemsController = fs(() => currentPath.value).use(
         props.initialState?.items || [],
       );
 
-      const currentPath = computed(() => props.params.path || '');
+      onMounted(() => {
+        console.log(
+          '[FS Component] Mounted. Current items data:',
+          JSON.parse(JSON.stringify(itemsController.data)),
+        );
+      });
 
-      const breadcrumbs = computed(() => {
-        const path = props.params.path || '';
-        const segments = path.split('/').filter(Boolean);
-        const crumbs = [{ name: 'fs', path: `/${props.params.username}/fs` }];
-        let pathAccumulator = `/${props.params.username}/fs`;
-        for (const segment of segments) {
-          pathAccumulator += `/${segment}`;
-          crumbs.push({ name: segment, path: pathAccumulator });
+      onPropsReceived((newProps) => {
+        console.log(
+          '[FS Component] onPropsReceived hook triggered with new props:',
+          {
+            newInitialState: JSON.parse(
+              JSON.stringify(newProps.initialState || {}),
+            ),
+            newParams: JSON.parse(JSON.stringify(newProps.params || {})),
+          },
+        );
+
+        currentPath.value = newProps.params.path || '';
+
+        if (newProps.initialState && newProps.initialState.items) {
+          itemsController.data = newProps.initialState.items;
         }
-        return crumbs;
       });
 
       const parentDirectoryLink = computed(() => {
-        const path = (props.params.path || '').replace(/\/$/, '');
+        const path = (currentPath.value || '').replace(/\/$/, '');
         if (!path) return null;
-
         const segments = path.split('/');
         segments.pop();
         const parentPath = segments.join('/');
-
         return parentPath
           ? `/${props.params.username}/fs/${parentPath}`
           : `/${props.params.username}/fs`;
@@ -65,72 +91,16 @@
         });
       });
 
-      async function handleFileUpload(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        uploadStatus.value = `Uploading ${file.name}...`;
-        creationError.value = null;
-        const targetPath = `${currentPath.value ? currentPath.value + '/' : ''}${file.name}`;
-
-        try {
-          await fs(targetPath).write(file, { access: 'private' });
-          uploadStatus.value = `Successfully uploaded ${file.name}!`;
-        } catch (error) {
-          uploadStatus.value = `Error: ${error.message}`;
-        }
-        event.target.value = '';
-      }
-
-      async function handleCreateItem() {
-        const name = newItemName.value.trim();
-        if (!name || name.includes('..') || name.includes('\\')) {
-          return;
-        }
-
-        creationError.value = null;
-        const isDir = name.endsWith('/');
-        const cleanName = isDir ? name.slice(0, -1) : name;
-        if (!cleanName) return;
-
-        const basePath = currentPath.value || '';
-        const newPath = `${basePath ? basePath + '/' : ''}${cleanName}`;
-
-        try {
-          if (isDir) {
-            await fs(`${newPath}/.placeholder`).write('', {
-              access: 'private',
-            });
-          } else {
-            await fs(newPath).write('', { access: 'private' });
-          }
-          newItemName.value = '';
-        } catch (error) {
-          console.error('Error creating item:', error);
-          creationError.value = error.message;
-        }
-      }
-
-      async function handleDeleteItem(path) {
-        await fs(path).rm({ access: 'private' });
+      function getDirectoryLink(item) {
+        return `/${props.params.username}/fs/${item.path}`;
       }
 
       return {
         items: itemsController,
         sortedItems,
-        currentPath,
-        breadcrumbs,
         params: props.params,
-        handleFileUpload,
-        uploadStatus,
-        newItemName,
-        handleCreateItem,
         parentDirectoryLink,
-        handleDeleteItem,
-        creationError,
-        error: computed(
-          () => itemsController.error || props.initialState?.error,
-        ),
+        getDirectoryLink,
       };
     },
   };
@@ -138,78 +108,23 @@
 
 <template>
   <div class="flex flex-col gap-4">
-    <breadcrumb>
-      <breadcrumb-list>
-        {#each breadcrumbs as (crumb, index) (crumb.path)}
-        <breadcrumb-item>
-          {#if index < breadcrumbs.length - 1}
-          <breadcrumb-link :href="crumb.path">{{ crumb.name }}</breadcrumb-link>
-          {:else}
-          <breadcrumb-active>{{ crumb.name }}</breadcrumb-active>
-          {/if}
-        </breadcrumb-item>
-        {#if index < breadcrumbs.length - 1}
-        <breadcrumb-separator />
-        {/if} {/each}
-      </breadcrumb-list>
-    </breadcrumb>
-
-    {#if error}
+    {#if items.error}
     <div class="p-4 bg-red-100 text-red-700 rounded-lg">
-      <strong>Error:</strong> {{ error }}
+      <strong>Error:</strong> {{ items.error }}
     </div>
     {:else}
     <div class="mt-4">
-      <div class="mb-4 space-y-4">
-        <form @submit.prevent="handleCreateItem" class="flex gap-2">
-          <input
-            bind:value="newItemName"
-            type="text"
-            placeholder="new-directory/ or new-file.txt"
-            class="input"
-          />
-          <button
-            type="submit"
-            class="btn btn-size-lg btn-default"
-            :disabled="!newItemName.trim()"
-          >
-            Create
-          </button>
-        </form>
-        {#if creationError}
-        <p class="text-sm text-red-500">{{ creationError }}</p>
-        {/if}
-        <div>
-          <label
-            for="file-upload"
-            class="btn btn-size-lg btn-default cursor-pointer"
-          >
-            Upload File
-          </label>
-          <input
-            id="file-upload"
-            type="file"
-            class="hidden"
-            @change="handleFileUpload"
-          />
-          {#if uploadStatus}
-          <p class="text-sm text-muted-foreground mt-2">{{ uploadStatus }}</p>
-          {/if}
-        </div>
-      </div>
-      <ul class="space-y-2">
+      <ul class="space-y-2 font-mono">
         {#if parentDirectoryLink}
-        <li class="font-mono">
+        <li>
           <a :href="parentDirectoryLink" class="link">../</a>
         </li>
         {/if} {#if sortedItems && sortedItems.length > 0} {#each sortedItems as
         item (item.path)}
-        <li class="font-mono flex justify-between items-center group">
+        <li class="flex justify-between items-center group">
           <div class="flex-1">
             {#if item.isDirectory}
-            <a :href="'/' + params.username + '/fs/' + item.path" class="link"
-              >{{ item.name }}/</a
-            >
+            <a :href="getDirectoryLink(item)" class="link">{{ item.name }}/</a>
             {:else}
             <a
               :href="'/' + params.username + '/editor/' + item.path"
@@ -218,13 +133,6 @@
             >
             {/if}
           </div>
-          <button
-            @click="handleDeleteItem(item.path)"
-            class="link text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity"
-            aria-label="Delete item"
-          >
-            Delete
-          </button>
         </li>
         {/each} {:else if !items?.isLoading}
         <li class="text-muted-foreground">This directory is empty.</li>

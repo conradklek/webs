@@ -1,0 +1,59 @@
+<script>
+  import { state, ai, onMounted, watch } from '@conradklek/webs';
+  export default {
+    props: {
+      params: Object,
+    },
+    setup(props) {
+      const { state: chatState, send } = ai().useChannel(props.params.channel);
+      const newMessage = state('');
+      const chatContainer = state(null);
+
+      function sendMessage() {
+        if (newMessage.value.trim()) {
+          send(newMessage.value.trim());
+          newMessage.value = '';
+        }
+      }
+
+      return {
+        channel: props.params.channel,
+        chatState,
+        newMessage,
+        sendMessage,
+        chatContainer,
+      };
+    },
+  };
+</script>
+
+<template>
+  <div class="flex flex-col h-[80vh] max-w-2xl mx-auto mt-4">
+    <header class="p-4 border-b border-b-border">
+      <p class="text-sm">
+        {{ chatState.isConnected ? 'Connected' : 'Disconnected' }} | Users: {{
+        Array.from(chatState.users).join(', ') }}
+      </p>
+    </header>
+    <main @ref="chatContainer" class="flex-1 p-4 overflow-y-auto">
+      <ul class="space-y-2">
+        {#each chatState.messages as msg (msg.id)} {#if msg.type === 'system'}
+        <li class="text-center text-sm italic">{{ msg.text }}</li>
+        {:else}
+        <li><strong>{{ msg.username }}:</strong> {{ msg.message }}</li>
+        {/if} {/each}
+      </ul>
+    </main>
+    <footer class="border-t border-t-border">
+      <form @submit.prevent="sendMessage" class="flex gap-2">
+        <input
+          bind:value="newMessage"
+          type="text"
+          placeholder="Type a message..."
+          class="input flex-grow"
+        />
+        <button type="submit" class="btn btn-default btn-size-lg">Send</button>
+      </form>
+    </footer>
+  </div>
+</template>

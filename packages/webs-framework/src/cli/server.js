@@ -15,6 +15,21 @@ const log = (...args) => console.log(LOG_PREFIX, ...args);
 const warn = (...args) => console.warn(LOG_PREFIX, ...args);
 const error = (...args) => console.error(LOG_PREFIX, ...args);
 
+const isTextFile = (filePath) => {
+  const textExtensions = [
+    '.txt',
+    '.md',
+    '.js',
+    '.json',
+    '.html',
+    '.css',
+    '.webs',
+    '.xml',
+    '.csv',
+  ];
+  return textExtensions.some((ext) => filePath.toLowerCase().endsWith(ext));
+};
+
 function renderHtmlShell({ appHtml, websState, manifest, title }) {
   const cssPath = manifest.css ? `/${basename(manifest.css)}` : '';
   const jsPath = manifest.js ? `/${basename(manifest.js)}` : '';
@@ -46,7 +61,7 @@ async function executePrefetch(routeDefinition, context) {
   }
   try {
     const result = await routeDefinition.actions.prefetch(context);
-    log('Prefetch action completed successfully.');
+    log('Prefetch action completed successfully with result:', result);
     return result;
   } catch (err) {
     error(
@@ -78,7 +93,7 @@ async function handleDataRequest(req, routeDefinition, context) {
     title: routeDefinition.component.name || 'Webs App',
     swPath: manifest.sw ? `/${basename(manifest.sw)}` : null,
   };
-  log('Sending JSON response for data request.');
+  log('Sending JSON response for data request:', websState);
   return new Response(JSON.stringify(websState), {
     headers: { 'Content-Type': 'application/json;charset=utf-8' },
   });
@@ -98,6 +113,7 @@ async function handlePageRequest(req, routeDefinition, context) {
   });
 
   const props = { user, params, initialState };
+  log('Props for SSR:', JSON.parse(JSON.stringify(props)));
 
   const vnode = h(routeDefinition.component, props);
   vnode.appContext = { components: globalComponents || {} };
@@ -113,6 +129,10 @@ async function handlePageRequest(req, routeDefinition, context) {
     componentName: routeDefinition.componentName,
     swPath: manifest.sw ? `/${basename(manifest.sw)}` : null,
   };
+  log(
+    'Final websState to be embedded in HTML:',
+    JSON.parse(JSON.stringify(websState)),
+  );
   const fullHtml = renderHtmlShell({
     appHtml,
     websState,
@@ -147,6 +167,7 @@ const authMiddleware = (db, isProd) => (req) => {
 export async function startServer(serverContext) {
   const {
     db,
+    ai,
     dbConfig,
     manifest,
     isProd,
@@ -166,6 +187,8 @@ export async function startServer(serverContext) {
 
   const attachContext = authMiddleware(db, isProd);
   const sortedAppRoutePaths = Object.keys(appRoutes);
+
+  let websocketHandler;
 
   log('Starting Webs server...');
   const server = Bun.serve({
@@ -191,6 +214,92 @@ export async function startServer(serverContext) {
       }
 
       attachContext(req);
+
+      if (req.headers.get('upgrade') === 'websocket') {
+        if (pathname === '/api/sync') {
+          if (req.user) {
+            log('Upgrading request to WebSocket for sync channel.');
+            return server.upgrade(req, {
+              data: { isSyncChannel: true, user: req.user },
+            })
+              ? undefined
+              : new Response('Unauthorized', { status: 401 });
+          } else {
+            warn('WebSocket upgrade denied: User not authenticated.');
+            return new Response('Unauthorized', { status: 401 });
+          }
+        }
+        if (pathname === '/api/chat') {
+          return ai.handleChatUpgrade(req);
+        }
+      }
+
+      if (pathname.startsWith('/api/ai/')) {
+        if (!req.user) {
+          warn('Unauthorized AI API attempt.');
+          return new Response('Unauthorized', { status: 401 });
+        }
+
+        if (pathname.endsWith('/search/files') && req.method === 'POST') {
+          try {
+            const { query, limit } = await req.json();
+            const results = await ai.search(query, limit, {
+              userId: req.user.id,
+            });
+            return Response.json(results);
+          } catch (err) {
+            error('AI Search Error:', err);
+            return new Response(err.message, { status: 500 });
+          }
+        }
+
+        if (pathname.endsWith('/chat') && req.method === 'POST') {
+          try {
+            const { messages, options } = await req.json();
+            const stream = await ai.chat(messages, options);
+            return new Response(stream, {
+              headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+            });
+          } catch (err) {
+            error('AI Chat Error:', err);
+            return new Response(err.message, { status: 500 });
+          }
+        }
+
+        if (pathname.startsWith('/api/ai/models/')) {
+          if (pathname.endsWith('/list')) {
+            try {
+              const list = await ai.list();
+              return Response.json(list?.models || []);
+            } catch (err) {
+              error('AI Model List Error:', err);
+              return new Response(err.message, { status: 500 });
+            }
+          }
+          if (pathname.endsWith('/pull') && req.method === 'POST') {
+            try {
+              const { model } = await req.json();
+              const stream = await ai.pull(model);
+              return new Response(stream, {
+                headers: { 'Content-Type': 'application/json; charset=utf-8' },
+              });
+            } catch (err) {
+              error('AI Model Pull Error:', err);
+              return new Response(err.message, { status: 500 });
+            }
+          }
+          if (pathname.endsWith('/delete') && req.method === 'POST') {
+            try {
+              const { model } = await req.json();
+              await ai.delete(model);
+              return Response.json({ success: true, model });
+            } catch (err) {
+              error('AI Model Delete Error:', err);
+              return new Response(err.message, { status: 500 });
+            }
+          }
+        }
+      }
 
       if (pathname.startsWith('/api/fs/') && req.method === 'PUT') {
         if (!req.user) {
@@ -246,22 +355,6 @@ export async function startServer(serverContext) {
         }
       }
 
-      if (req.headers.get('upgrade') === 'websocket') {
-        if (pathname === '/api/sync') {
-          if (req.user) {
-            log('Upgrading request to WebSocket for sync channel.');
-            return server.upgrade(req, {
-              data: { isSyncChannel: true, user: req.user },
-            })
-              ? undefined
-              : new Response('Unauthorized', { status: 401 });
-          } else {
-            warn('WebSocket upgrade denied: User not authenticated.');
-            return new Response('Unauthorized', { status: 401 });
-          }
-        }
-      }
-
       if (pathname.startsWith('/api/auth/')) {
         log(`Handling auth request for: ${pathname}`);
         if (pathname.endsWith('/register')) return registerUser(req, db);
@@ -312,9 +405,8 @@ export async function startServer(serverContext) {
       for (const path of sortedAppRoutePaths) {
         const routeDefinition = appRoutes[path];
         const paramNames = [];
-        const processedPath = path.replace(/\/(:\w+\*)$/, '(?:/$1)?');
         const regex = new RegExp(
-          `^${processedPath.replace(/:(\w+)(\*?)/g, (_, name, isCatchAll) => {
+          `^${path.replace(/:(\w+)(\*)?/g, (_, name, isCatchAll) => {
             paramNames.push(name);
             return isCatchAll === '*' ? '(.*)' : '([^/]+)';
           })}$`,
@@ -323,10 +415,17 @@ export async function startServer(serverContext) {
 
         if (match) {
           log(`Matched request to route: '${path}'`);
-          req.params = paramNames.reduce(
-            (acc, name, i) => ({ ...acc, [name]: match[i + 1] || '' }),
-            {},
-          );
+          req.params = paramNames.reduce((acc, name, i) => {
+            let value = match[i + 1] || '';
+            if (
+              path.endsWith('*') &&
+              name === paramNames[paramNames.length - 1]
+            ) {
+              value = value.startsWith('/') ? value.substring(1) : value;
+            }
+            acc[name] = value;
+            return acc;
+          }, {});
           const response = req.headers.get('X-Webs-Navigate')
             ? await handleDataRequest(req, routeDefinition, { manifest })
             : await handlePageRequest(req, routeDefinition, {
@@ -347,15 +446,34 @@ export async function startServer(serverContext) {
       log('No route matched, returning 404.');
       return new Response('Not Found', { status: 404 });
     },
-    websocket: {
+    websocket: (websocketHandler = {
       open(ws) {
         if (ws.data?.isSyncChannel) {
           log('WebSocket client connected and subscribed to sync topic.');
           ws.subscribe(SYNC_TOPIC);
         }
+        if (ws.data?.isChatChannel) {
+          ai.handleChatOpen(ws);
+        }
       },
-      async message(ws, message) {
-        if (!ws.data?.isSyncChannel) return;
+      message(ws, message) {
+        if (ws.data?.isSyncChannel) {
+          websocketHandler.handleSyncMessage(ws, message);
+        }
+        if (ws.data?.isChatChannel) {
+          ai.handleChatMessage(ws, message);
+        }
+      },
+      close(ws) {
+        if (ws.data?.isSyncChannel) {
+          log('WebSocket client disconnected.');
+          ws.unsubscribe(SYNC_TOPIC);
+        }
+        if (ws.data?.isChatChannel) {
+          ai.handleChatClose(ws);
+        }
+      },
+      async handleSyncMessage(ws, message) {
         let payload;
         try {
           payload = JSON.parse(message);
@@ -370,25 +488,37 @@ export async function startServer(serverContext) {
 
             if (type === 'fs:write') {
               await fs.write(path, data, options);
+
               const stats = await fs.stat(path, options);
+              const fileBlob = await fs.cat(path, options);
+              const fileContent = await fileBlob.arrayBuffer();
+
               const record = {
-                path,
+                path: path,
                 user_id: user.id,
-                content: data,
-                access: options.access || 'private',
+                content: Buffer.from(fileContent),
+                access: options?.access || 'private',
                 size: stats.size,
-                last_modified: stats.mtime.toISOString(),
+                last_modified: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
               };
-              broadcastPayload = syncActions.upsertFiles(
-                { user },
-                record,
-              ).broadcast;
+
+              const result = syncActions.upsertFiles({ user }, record);
+              if (result?.broadcast) {
+                broadcastPayload = result.broadcast;
+              }
+
+              if (isTextFile(path)) {
+                const contentString = Buffer.from(data).toString('utf-8');
+                await ai.indexFile(path, contentString, { userId: user.id });
+              }
             } else if (type === 'fs:rm') {
               await fs.rm(path, options);
               broadcastPayload = syncActions.deleteFiles(
                 { user },
-                path,
+                { path, user_id: user.id },
               ).broadcast;
+              await ai.removeFileIndex(path, { userId: user.id });
             }
 
             ws.send(JSON.stringify({ type: 'ack', opId }));
@@ -442,13 +572,7 @@ export async function startServer(serverContext) {
           );
         }
       },
-      close(ws) {
-        if (ws.data?.isSyncChannel) {
-          log('WebSocket client disconnected.');
-          ws.unsubscribe(SYNC_TOPIC);
-        }
-      },
-    },
+    }),
     error: (err) => {
       error('Internal server error occurred:', err);
       return new Response('Internal Server Error', { status: 500 });

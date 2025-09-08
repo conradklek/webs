@@ -86,36 +86,42 @@ export function createFileSystemForUser(userId, db) {
         );
       }
       try {
-        const normalizedPath = path === '.' || path === '' ? '' : path;
+        const normalizedPath =
+          path === '.' || path === '' ? '' : path.replace(/\/$/, '');
         const prefix = normalizedPath ? `${normalizedPath}/` : '';
 
-        const query = 'SELECT path FROM files WHERE user_id = ? AND access = ?';
+        const query =
+          'SELECT path FROM files WHERE user_id = ? AND access = ? AND path LIKE ?';
         const allUserPaths = db
           .query(query)
-          .all(userId, access)
+          .all(userId, access, `${prefix}%`)
           .map((row) => row.path);
 
         const directChildren = new Map();
 
         for (const fullPath of allUserPaths) {
-          if (prefix && !fullPath.startsWith(prefix)) {
+          const relativePath = fullPath.substring(prefix.length);
+          if (relativePath.startsWith('/')) {
             continue;
           }
 
-          const relativePath = fullPath.substring(prefix.length);
           const segments = relativePath.split('/');
           const childName = segments[0];
 
           if (!childName || directChildren.has(childName)) continue;
 
           const isDirectory = segments.length > 1;
+          const itemPath = isDirectory ? `${prefix}${childName}` : fullPath;
+
           directChildren.set(childName, {
             name: childName,
             isDirectory,
-            path: isDirectory ? `${prefix}${childName}` : fullPath,
+            path: itemPath,
           });
         }
-        return Array.from(directChildren.values());
+        return Array.from(directChildren.values()).sort((a, b) =>
+          a.name.localeCompare(b.name),
+        );
       } catch (e) {
         console.error('Error in server fs.ls:', e);
         return [];

@@ -1,0 +1,88 @@
+<script>
+  import { state, ai } from '@conradklek/webs';
+
+  export default {
+    setup() {
+      const query = state('');
+      const searchResults = state([]);
+      const isLoading = state(false);
+      const error = state(null);
+
+      const search = async () => {
+        if (!query.value.trim()) return;
+        isLoading.value = true;
+        error.value = null;
+        searchResults.value = [];
+        try {
+          const results = await ai().search(query.value);
+          searchResults.value = Array.isArray(results) ? results : [];
+        } catch (err) {
+          error.value = err.message;
+        } finally {
+          isLoading.value = false;
+        }
+      };
+
+      const calculateSimilarity = (distance) => {
+        if (distance === null || typeof distance === 'undefined') return 0;
+        const similarity = (1 - distance) * 100;
+        return similarity.toFixed(2);
+      };
+
+      return {
+        query,
+        searchResults,
+        isLoading,
+        error,
+        search,
+        calculateSimilarity,
+      };
+    },
+  };
+</script>
+
+<template>
+  <div class="max-w-2xl mx-auto">
+    <form @submit.prevent="search" class="flex gap-2 mb-6">
+      <input
+        bind:value="query"
+        type="text"
+        placeholder="Search file contents..."
+        class="input flex-grow"
+      />
+      <button
+        type="submit"
+        class="btn btn-default btn-size-lg"
+        :disabled="isLoading"
+      >
+        {{ isLoading ? 'Searching...' : 'Search' }}
+      </button>
+    </form>
+
+    {#if isLoading}
+    <p class="text-center text-gray-500">Searching...</p>
+    {/if} {#if error}
+    <div class="p-4 bg-red-100 text-red-700 rounded-lg">
+      <strong>Error:</strong> {{ error }}
+    </div>
+    {/if} {#if !isLoading && searchResults.length > 0}
+    <ul class="space-y-4">
+      {#each searchResults as result}
+      <li class="p-4 border border-border rounded-lg bg-popover">
+        <a
+          :href="'/anon/editor/' + (result.metadata?.filePath || '')"
+          class="font-mono font-semibold text-blue-600 hover:underline"
+          >{{ result.metadata?.filePath || 'Unknown File' }}</a
+        >
+        <p class="text-sm text-gray-500 mt-1">
+          Similarity: {{ calculateSimilarity(result.score) }}%
+        </p>
+        <p class="mt-2 text-gray-800 bg-gray-100 p-2 rounded">
+          "...{{ (result.text || '').substring(0, 200) }}..."
+        </p>
+      </li>
+      {/each}
+    </ul>
+    {/if}
+  </div>
+</template>

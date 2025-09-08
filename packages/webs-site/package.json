@@ -9,9 +9,5 @@
   },
   "dependencies": {
     "@conradklek/webs": "workspace:*"
-  },
-  "devDependencies": {
-    "tailwindcss": "^4.1.13",
-    "bun-plugin-tailwind": "^0.0.15"
   }
 }

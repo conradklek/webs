@@ -77,6 +77,7 @@ export const onBeforeUpdate = createLifecycleMethod('onBeforeUpdate');
 export const onUpdated = createLifecycleMethod('onUpdated');
 export const onUnmounted = createLifecycleMethod('onUnmounted');
 export const onReady = createLifecycleMethod('onReady');
+export const onPropsReceived = createLifecycleMethod('onPropsReceived');
 
 function mergeProps(vnodeProps, fallthroughAttrs) {
   const merged = { ...vnodeProps };
@@ -92,6 +93,48 @@ function mergeProps(vnodeProps, fallthroughAttrs) {
     }
   }
   return merged;
+}
+
+function applyServerState(targetState, serverState) {
+  logger.debug('Applying server state...', {
+    targetState: { ...targetState },
+    serverState: { ...serverState },
+  });
+  if (!isObject(targetState) || !isObject(serverState)) return;
+
+  for (const key in serverState) {
+    if (!serverState.hasOwnProperty(key)) continue;
+    const serverVal = serverState[key];
+    const existing = targetState[key];
+
+    if (isRef(existing)) {
+      if (existing.value !== serverVal) {
+        logger.debug(`Updating ref for key: ${key}`, {
+          from: existing.value,
+          to: serverVal,
+        });
+        if (isObject(existing.value) && isObject(serverVal)) {
+          applyServerState(existing.value, serverVal);
+        } else {
+          existing.value = serverVal;
+        }
+      }
+    } else if (Array.isArray(existing) && Array.isArray(serverVal)) {
+      logger.debug(`Updating array for key: ${key}`);
+      existing.length = 0;
+      existing.push(...serverVal);
+    } else if (
+      isObject(existing) &&
+      isObject(serverVal) &&
+      !Array.isArray(existing)
+    ) {
+      logger.debug(`Recursively applying state for key: ${key}`);
+      applyServerState(existing, serverVal);
+    } else {
+      logger.debug(`Directly setting state for key: ${key}`);
+      targetState[key] = serverVal;
+    }
+  }
 }
 
 export function createRenderer(options) {
@@ -330,7 +373,7 @@ export function createRenderer(options) {
     parentComponent,
     isHydrating = false,
   ) => {
-    logger.debug(
+    logger.log(
       `Mounting component: <${vnode.type.name || 'Anonymous'}>. Hydrating: ${isHydrating}`,
     );
     const instance = (vnode.component = createComponent(
@@ -499,6 +542,11 @@ export function createRenderer(options) {
 
   const updateComponent = (n1, n2) => {
     const instance = (n2.component = n1.component);
+    logger.debug(`Updating component instance <${instance.type.name}>`, {
+      oldProps: n1.props,
+      newProps: n2.props,
+    });
+
     if (!shouldUpdateComponent(n1, n2)) {
       n2.el = n1.el;
       instance.vnode = n2;
@@ -524,6 +572,12 @@ export function createRenderer(options) {
     instance.attrs = nextAttrs;
     instance.slots = n2.children || {};
 
+    if (instance.hooks.onPropsReceived) {
+      instance.hooks.onPropsReceived.forEach((h) =>
+        h.call(instance.ctx, nextProps, instance.props),
+      );
+    }
+
     if (propsOptions) {
       for (const key in propsOptions) {
         const options = propsOptions[key];
@@ -540,6 +594,14 @@ export function createRenderer(options) {
       }
     }
     instance.props = nextProps;
+
+    if (vnodeProps.initialState) {
+      logger.log(
+        `Component <${instance.type.name}> received new initialState, applying...`,
+        vnodeProps.initialState,
+      );
+      applyServerState(instance.internalCtx, vnodeProps.initialState);
+    }
 
     if (instance.update) {
       instance.update();
@@ -581,9 +643,11 @@ export function createRenderer(options) {
   };
 
   const hydrate = (vnode, container) => {
-    logger.log('Starting hydration...');
+    logger.log('Starting client-side hydration process...');
     if (!container.firstChild) {
-      logger.warn('Container is empty, falling back to patch.');
+      logger.warn(
+        'Hydration container is empty, falling back to patch (mount).',
+      );
       patch(null, vnode, container);
       return vnode.component;
     }
@@ -596,9 +660,7 @@ export function createRenderer(options) {
     let currentNode = node;
     while (
       currentNode &&
-      ((currentNode.nodeType === 8 &&
-        currentNode.data !== '[' &&
-        currentNode.data !== ']') ||
+      (currentNode.nodeType === 8 ||
         (currentNode.nodeType === 3 && currentNode.textContent.trim() === ''))
     ) {
       currentNode = currentNode.nextSibling;
@@ -620,7 +682,10 @@ export function createRenderer(options) {
       return lastNode ? lastNode.nextSibling : domNode;
     }
 
-    logger.debug(`- Hydrating VNode type: ${vnode.type.toString()}`);
+    const vnodeTypeStr = isString(vnode.type)
+      ? vnode.type
+      : vnode.type.toString();
+    logger.debug(`- Hydrating VNode of type: ${vnodeTypeStr}`);
 
     if (vnode.type === Fragment) {
       logger.debug('-- VNode is a Fragment.');
@@ -630,12 +695,15 @@ export function createRenderer(options) {
         domNode,
         parentComponent,
       );
-      const firstChildVNode = (
+      const childVnodes = (
         Array.isArray(vnode.children) ? vnode.children : [vnode.children]
-      )
-        .flat()
-        .find((c) => c && c.el);
-      vnode.el = firstChildVNode ? firstChildVNode.el : null;
+      ).flat();
+
+      const firstChildVnode = childVnodes.find((c) => c && c.el);
+
+      if (firstChildVnode) {
+        vnode.el = firstChildVnode.el;
+      }
       return nextDomNode;
     }
 
@@ -645,54 +713,63 @@ export function createRenderer(options) {
     );
 
     if (!currentDomNode) {
-      logger.warn('-- DOM node is null, patching VNode instead.');
+      logger.warn(
+        '-- DOM node is null. Mismatch found. Patching VNode into parent.',
+        { vnode, parentDom },
+      );
       patch(null, vnode, parentDom, null, parentComponent);
       return null;
     }
 
-    vnode.el = currentDomNode;
-
     const { type, props, children } = vnode;
+
+    if (type === Text && props && props['w-dynamic']) {
+      if (
+        currentDomNode &&
+        currentDomNode.nodeType === 8 &&
+        currentDomNode.data === '['
+      ) {
+        const textNode = currentDomNode.nextSibling;
+        const closingComment = textNode ? textNode.nextSibling : null;
+
+        if (
+          closingComment &&
+          closingComment.nodeType === 8 &&
+          closingComment.data === ']'
+        ) {
+          vnode.el = textNode;
+          logger.debug('-- Hydrated dynamic text block successfully.');
+          return closingComment.nextSibling;
+        } else {
+          logger.warn(
+            `[Hydration Mismatch] Dynamic text block malformed. Expected closing comment '<!--]-->'.`,
+          );
+          patch(null, vnode, parentDom, currentDomNode, parentComponent);
+          return vnode.el ? vnode.el.nextSibling : currentDomNode;
+        }
+      }
+    }
+
+    vnode.el = currentDomNode;
 
     switch (type) {
       case Text:
-        const isDynamic = props && props['w-dynamic'];
-        const isDynamicMarker =
-          currentDomNode &&
-          currentDomNode.nodeType === 8 &&
-          currentDomNode.data === '[';
-
-        if (isDynamic || isDynamicMarker) {
-          if (!isDynamicMarker) {
-            patch(null, vnode, parentDom, currentDomNode, parentComponent);
-            return vnode.el.nextSibling;
-          }
-
-          const textNode = currentDomNode.nextSibling;
-          const closingComment = textNode ? textNode.nextSibling : null;
-          if (
-            !closingComment ||
-            closingComment.nodeType !== 8 ||
-            closingComment.data !== ']'
-          ) {
-            logger.warn(
-              `[Hydration Mismatch] Expected a closing comment '<!--]-->' but found: ${getNodeDescription(
-                closingComment,
-              )}`,
-            );
-          }
-          vnode.el = textNode;
-          return closingComment.nextSibling;
-        } else {
-          if (!currentDomNode || currentDomNode.nodeType !== 3) {
-            logger.warn(
-              `[Hydration Mismatch] Expected a text node, but found: ${getNodeDescription(
-                currentDomNode,
-              )}`,
-            );
-          }
-          return currentDomNode.nextSibling;
+        if (!currentDomNode || currentDomNode.nodeType !== 3) {
+          logger.warn(
+            `[Hydration Mismatch] Expected a text node, but found: ${getNodeDescription(
+              currentDomNode,
+            )}`,
+            { expectedContent: vnode.children },
+          );
+        } else if (
+          String(currentDomNode.textContent) !== String(vnode.children)
+        ) {
+          logger.warn(
+            `[Hydration Mismatch] Text content does not match. DOM: "${currentDomNode.textContent}", VNode: "${vnode.children}"`,
+          );
         }
+        return currentDomNode.nextSibling;
+
       case Comment:
         if (!currentDomNode || currentDomNode.nodeType !== 8) {
           logger.warn(
@@ -848,35 +925,18 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
     currentInstance = instanceStack[instanceStack.length - 1] || null;
   }
 
-  const serverState = (vnode.props || {}).initialState || {};
-
-  const finalState = { ...resolvedProps, ...setupResult };
-
-  for (const key in serverState) {
-    const serverVal = serverState[key];
-    if (finalState.hasOwnProperty(key)) {
-      const existing = finalState[key];
-
-      if (isRef(existing)) {
-        existing.value = serverVal;
-      } else if (Array.isArray(existing) && Array.isArray(serverVal)) {
-        existing.length = 0;
-        existing.push(...serverVal);
-      } else if (isObject(existing) && isObject(serverVal)) {
-        for (const subKey in serverVal) {
-          if (serverVal.hasOwnProperty(subKey)) {
-            existing[subKey] = serverVal[subKey];
-          }
-        }
-      } else {
-        finalState[key] = serverVal;
-      }
-    } else {
-      finalState[key] = serverVal;
-    }
+  if (!isSsr) {
+    const serverState = (vnode.props || {}).initialState || {};
+    logger.debug(
+      `Applying initial server state to <${instance.type.name}> component`,
+      { serverState },
+    );
+    const finalState = { ...resolvedProps, ...setupResult };
+    applyServerState(finalState, serverState);
+    instance.internalCtx = finalState;
+  } else {
+    instance.internalCtx = { ...resolvedProps, ...setupResult };
   }
-
-  instance.internalCtx = finalState;
 
   instance.ctx = new Proxy(
     {},

@@ -82,6 +82,10 @@ export function isRef(r) {
   return !!(r && r.__is_ref === true);
 }
 
+export function ref(value) {
+  return createRef(value);
+}
+
 function createRef(value) {
   const wrapper = {
     _value: value,
