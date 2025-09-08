@@ -55,13 +55,12 @@
 </script>
 
 <template>
-  <div class="w-full max-w-3xl mx-auto">
+  <div class="flex-1 w-full h-full">
     {#if error}
     <div class="p-4 bg-red-100 text-red-700 rounded-lg">
       <strong>Error:</strong> {{ error }}
     </div>
     {:else}
-    <h1 class="font-mono mb-4 overflow-x-auto">{{ filePath }}</h1>
     <text-editor :filePath="filePath" :initialContent="fileContent" />
     {/if}
   </div>

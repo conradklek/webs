@@ -17,7 +17,6 @@
       const file = fs(props.filePath);
       const localContent = state(props.initialContent || '');
       const editorRef = state(null);
-
       onMounted(() => {
         const unsubscribe = db('files').subscribe(async () => {
           const newContent = await file.read();
@@ -26,34 +25,30 @@
           }
         });
         onUnmounted(unsubscribe);
-
         editorRef.value?.focus();
       });
-
       let saveTimeout;
       watch(
         () => localContent.value,
         (newValue) => {
           if (typeof window === 'undefined') return;
-
           clearTimeout(saveTimeout);
           saveTimeout = setTimeout(() => {
             file.write(newValue, { access: 'private' });
           }, 300);
         },
       );
-
       return { editorRef, localContent };
     },
   };
 </script>
 
 <template>
-  <div class="w-full relative">
+  <div class="flex-1 w-full h-full">
     <textarea
       @ref="editorRef"
       bind:value="localContent"
-      class="w-full h-96 p-4 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow font-mono"
+      class="w-full h-96 p-4 border border-border rounded-lg bg-popover focus:outline-none focus:ring-2 focus:ring-accent-foreground font-mono"
       placeholder="Start typing..."
     ></textarea>
   </div>

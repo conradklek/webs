@@ -164,20 +164,295 @@ const authMiddleware = (db, isProd) => (req) => {
   req.user = user;
 };
 
-export async function startServer(serverContext) {
+export function createFetchHandler(context) {
   const {
     db,
     ai,
-    dbConfig,
     manifest,
-    isProd,
     appRoutes,
-    port,
-    SYNC_TOPIC,
-    actionsPath,
-    outdir,
     globalComponents,
-  } = serverContext;
+    outdir,
+    srcDir,
+    isProd,
+    syncActions,
+  } = context;
+
+  const attachContext = authMiddleware(db, isProd);
+  const sortedAppRoutePaths = Object.keys(appRoutes || {});
+
+  return async function fetch(req, server) {
+    const url = new URL(req.url);
+    const { pathname } = url;
+    log(`Received request for: ${pathname}`);
+
+    attachContext(req);
+
+    if (pathname.includes('..')) {
+      warn('Path traversal attempt detected.');
+      return new Response('Forbidden', { status: 403 });
+    }
+
+    if (req.headers.get('upgrade') === 'websocket') {
+      if (pathname === '/api/sync') {
+        if (req.user) {
+          log('Upgrading request to WebSocket for sync channel.');
+          return server.upgrade(req, {
+            data: { isSyncChannel: true, user: req.user },
+          })
+            ? undefined
+            : new Response('Unauthorized', { status: 401 });
+        } else {
+          warn('WebSocket upgrade denied: User not authenticated.');
+          return new Response('Unauthorized', { status: 401 });
+        }
+      }
+      if (pathname === '/api/hmr') {
+        log('Upgrading request to WebSocket for HMR channel.');
+        if (server.upgrade(req, { data: { isHmrChannel: true } })) {
+          return;
+        }
+        return new Response('HMR WebSocket upgrade failed', { status: 500 });
+      }
+      if (pathname === '/api/chat') {
+        return ai.handleChatUpgrade(req);
+      }
+      return new Response('WebSocket endpoint not found', { status: 404 });
+    }
+
+    const potentialStaticPath = join(outdir, pathname.substring(1));
+    if (await exists(potentialStaticPath)) {
+      const stats = await stat(potentialStaticPath);
+      if (stats.isFile()) {
+        log(`Serving static file: ${potentialStaticPath}`);
+        return new Response(Bun.file(potentialStaticPath));
+      }
+    }
+
+    const potentialSrcPath = join(srcDir, pathname.substring(1));
+    if (!isProd && (await exists(potentialSrcPath))) {
+      const stats = await stat(potentialSrcPath);
+      if (stats.isFile()) {
+        log(`Serving dev source file: ${potentialSrcPath}`);
+        return new Response(Bun.file(potentialSrcPath));
+      }
+    }
+
+    if (pathname.startsWith('/api/ai/')) {
+      if (!req.user) {
+        warn('Unauthorized AI API attempt.');
+        return new Response('Unauthorized', { status: 401 });
+      }
+
+      if (pathname.endsWith('/search/files') && req.method === 'POST') {
+        try {
+          const { query, limit } = await req.json();
+          const results = await ai.search(query, limit, {
+            userId: req.user.id,
+          });
+          return Response.json(results);
+        } catch (err) {
+          error('AI Search Error:', err);
+          return new Response(err.message, { status: 500 });
+        }
+      }
+
+      if (pathname.endsWith('/chat') && req.method === 'POST') {
+        try {
+          const { messages, options } = await req.json();
+          const stream = await ai.chat(messages, options);
+          return new Response(stream, {
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          });
+        } catch (err) {
+          error('AI Chat Error:', err);
+          return new Response(err.message, { status: 500 });
+        }
+      }
+
+      if (pathname.startsWith('/api/ai/models/')) {
+        if (pathname.endsWith('/list')) {
+          try {
+            const list = await ai.list();
+            return Response.json(list?.models || []);
+          } catch (err) {
+            error('AI Model List Error:', err);
+            return new Response(err.message, { status: 500 });
+          }
+        }
+        if (pathname.endsWith('/pull') && req.method === 'POST') {
+          try {
+            const { model } = await req.json();
+            const stream = await ai.pull(model);
+            return new Response(stream, {
+              headers: { 'Content-Type': 'application/json; charset=utf-8' },
+            });
+          } catch (err) {
+            error('AI Model Pull Error:', err);
+            return new Response(err.message, { status: 500 });
+          }
+        }
+        if (pathname.endsWith('/delete') && req.method === 'POST') {
+          try {
+            const { model } = await req.json();
+            await ai.delete(model);
+            return Response.json({ success: true, model });
+          } catch (err) {
+            error('AI Model Delete Error:', err);
+            return new Response(err.message, { status: 500 });
+          }
+        }
+      }
+    }
+
+    if (pathname.startsWith('/api/fs/') && req.method === 'PUT') {
+      if (!req.user) {
+        warn('Unauthorized FS write attempt.');
+        return new Response('Unauthorized', { status: 401 });
+      }
+
+      const filePath = decodeURIComponent(
+        pathname.substring('/api/fs/'.length),
+      );
+      if (!filePath) {
+        warn('Missing file path for FS write.');
+        return new Response('File path is required', { status: 400 });
+      }
+
+      const fs = createFileSystemForUser(req.user.id, db);
+      const access = url.searchParams.get('access') || 'private';
+
+      try {
+        await fs.write(filePath, req.body, { access });
+
+        const fileBlob = await fs.cat(filePath, { access });
+        const fileContent = await fileBlob.arrayBuffer();
+        const stats = await fs.stat(filePath, { access });
+
+        const record = {
+          path: filePath,
+          user_id: req.user.id,
+          content: fileContent,
+          access: access,
+          size: stats.size,
+          last_modified: new Date().toISOString(),
+        };
+
+        const result = syncActions.upsertFiles({ user: req.user }, record);
+
+        if (result?.broadcast) {
+          server.publish(
+            context.SYNC_TOPIC,
+            JSON.stringify({ type: 'sync', data: result.broadcast }),
+          );
+        }
+        log('FS write successful, broadcasting sync message.');
+        return new Response(JSON.stringify({ success: true, path: filePath }), {
+          status: 201,
+        });
+      } catch (err) {
+        error('[Upload Error]', err);
+        return new Response(`Upload failed: ${err.message}`, {
+          status: 500,
+        });
+      }
+    }
+
+    if (pathname.startsWith('/api/auth/')) {
+      log(`Handling auth request for: ${pathname}`);
+      if (pathname.endsWith('/register')) return registerUser(req, db);
+      if (pathname.endsWith('/login')) return loginUser(req, db);
+      if (pathname.endsWith('/logout')) return logoutUser(req, db);
+    }
+
+    const actionMatch = pathname.match(/^\/__actions__\/(.+?)\/(.+?)$/);
+    if (actionMatch) {
+      log(`Handling client-side action call: ${pathname}`);
+      if (!req.user) {
+        warn('Unauthorized action call.');
+        return new Response('Unauthorized', { status: 401 });
+      }
+      const [, componentName, actionName] = actionMatch;
+
+      const routeDef = Object.values(appRoutes).find(
+        (r) =>
+          r.componentName === componentName ||
+          r.component.name === componentName,
+      );
+
+      const action = routeDef?.component?.actions?.[actionName];
+
+      if (typeof action !== 'function') {
+        warn(`Action not found: ${actionName} on component ${componentName}`);
+        return new Response('Action not found', { status: 404 });
+      }
+      try {
+        const args = await req.json();
+        const result = await action(
+          {
+            req,
+            db,
+            fs: createFileSystemForUser(req.user.id, db),
+            user: req.user,
+          },
+          ...args,
+        );
+        log('Action executed successfully, sending JSON response.');
+        return result instanceof Response ? result : Response.json(result);
+      } catch (e) {
+        error('Error executing action:', e);
+        return new Response('Internal Server Error', { status: 500 });
+      }
+    }
+
+    for (const path of sortedAppRoutePaths) {
+      const routeDefinition = appRoutes[path];
+      const paramNames = [];
+      const regex = new RegExp(
+        `^${path.replace(/:(\w+)(\*)?/g, (_, name, isCatchAll) => {
+          paramNames.push(name);
+          return isCatchAll === '*' ? '(.*)' : '([^/]+)';
+        })}$`,
+      );
+      const match = pathname.match(regex);
+
+      if (match) {
+        log(`Matched request to route: '${path}'`);
+        req.params = paramNames.reduce((acc, name, i) => {
+          let value = match[i + 1] || '';
+          if (
+            path.endsWith('*') &&
+            name === paramNames[paramNames.length - 1]
+          ) {
+            value = value.startsWith('/') ? value.substring(1) : value;
+          }
+          acc[name] = value;
+          return acc;
+        }, {});
+        const response = req.headers.get('X-Webs-Navigate')
+          ? await handleDataRequest(req, routeDefinition, { manifest })
+          : await handlePageRequest(req, routeDefinition, {
+              manifest,
+              globalComponents,
+            });
+
+        const devSessionId = req.headers.get('X-Set-Dev-Session');
+        if (devSessionId) {
+          response.headers.append(
+            'Set-Cookie',
+            `session_id=${devSessionId}; HttpOnly; Path=/; SameSite=Strict; Max-Age=604800`,
+          );
+        }
+        return response;
+      }
+    }
+    log('No route matched, returning 404.');
+    return new Response('Not Found', { status: 404 });
+  };
+}
+
+export async function startServer(serverContext) {
+  const { db, dbConfig, isProd, port, SYNC_TOPIC, actionsPath } = serverContext;
+
   let syncActions = {};
   if (await exists(actionsPath)) {
     const { registerActions } = await import(actionsPath);
@@ -185,275 +460,28 @@ export async function startServer(serverContext) {
       syncActions = registerActions(db);
   }
 
-  const attachContext = authMiddleware(db, isProd);
-  const sortedAppRoutePaths = Object.keys(appRoutes);
+  const fetchHandler = createFetchHandler({ ...serverContext, syncActions });
 
+  const HMR_TOPIC = 'webs-hmr';
   let websocketHandler;
 
   log('Starting Webs server...');
   const server = Bun.serve({
     port,
-    development: !isProd,
-    async fetch(req, server) {
-      const url = new URL(req.url);
-      const { pathname } = url;
-      log(`Received request for: ${pathname}`);
-
-      if (pathname.includes('..')) {
-        warn('Path traversal attempt detected.');
-        return new Response('Forbidden', { status: 403 });
-      }
-
-      const potentialFilePath = join(outdir, pathname.substring(1));
-      if (await exists(potentialFilePath)) {
-        const stats = await stat(potentialFilePath);
-        if (stats.isFile()) {
-          log(`Serving static file: ${potentialFilePath}`);
-          return new Response(Bun.file(potentialFilePath));
-        }
-      }
-
-      attachContext(req);
-
-      if (req.headers.get('upgrade') === 'websocket') {
-        if (pathname === '/api/sync') {
-          if (req.user) {
-            log('Upgrading request to WebSocket for sync channel.');
-            return server.upgrade(req, {
-              data: { isSyncChannel: true, user: req.user },
-            })
-              ? undefined
-              : new Response('Unauthorized', { status: 401 });
-          } else {
-            warn('WebSocket upgrade denied: User not authenticated.');
-            return new Response('Unauthorized', { status: 401 });
-          }
-        }
-        if (pathname === '/api/chat') {
-          return ai.handleChatUpgrade(req);
-        }
-      }
-
-      if (pathname.startsWith('/api/ai/')) {
-        if (!req.user) {
-          warn('Unauthorized AI API attempt.');
-          return new Response('Unauthorized', { status: 401 });
-        }
-
-        if (pathname.endsWith('/search/files') && req.method === 'POST') {
-          try {
-            const { query, limit } = await req.json();
-            const results = await ai.search(query, limit, {
-              userId: req.user.id,
-            });
-            return Response.json(results);
-          } catch (err) {
-            error('AI Search Error:', err);
-            return new Response(err.message, { status: 500 });
-          }
-        }
-
-        if (pathname.endsWith('/chat') && req.method === 'POST') {
-          try {
-            const { messages, options } = await req.json();
-            const stream = await ai.chat(messages, options);
-            return new Response(stream, {
-              headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-            });
-          } catch (err) {
-            error('AI Chat Error:', err);
-            return new Response(err.message, { status: 500 });
-          }
-        }
-
-        if (pathname.startsWith('/api/ai/models/')) {
-          if (pathname.endsWith('/list')) {
-            try {
-              const list = await ai.list();
-              return Response.json(list?.models || []);
-            } catch (err) {
-              error('AI Model List Error:', err);
-              return new Response(err.message, { status: 500 });
-            }
-          }
-          if (pathname.endsWith('/pull') && req.method === 'POST') {
-            try {
-              const { model } = await req.json();
-              const stream = await ai.pull(model);
-              return new Response(stream, {
-                headers: { 'Content-Type': 'application/json; charset=utf-8' },
-              });
-            } catch (err) {
-              error('AI Model Pull Error:', err);
-              return new Response(err.message, { status: 500 });
-            }
-          }
-          if (pathname.endsWith('/delete') && req.method === 'POST') {
-            try {
-              const { model } = await req.json();
-              await ai.delete(model);
-              return Response.json({ success: true, model });
-            } catch (err) {
-              error('AI Model Delete Error:', err);
-              return new Response(err.message, { status: 500 });
-            }
-          }
-        }
-      }
-
-      if (pathname.startsWith('/api/fs/') && req.method === 'PUT') {
-        if (!req.user) {
-          warn('Unauthorized FS write attempt.');
-          return new Response('Unauthorized', { status: 401 });
-        }
-
-        const filePath = decodeURIComponent(
-          pathname.substring('/api/fs/'.length),
-        );
-        if (!filePath) {
-          warn('Missing file path for FS write.');
-          return new Response('File path is required', { status: 400 });
-        }
-
-        const fs = createFileSystemForUser(req.user.id, db);
-        const access = url.searchParams.get('access') || 'private';
-
-        try {
-          await fs.write(filePath, req.body, { access });
-
-          const fileBlob = await fs.cat(filePath, { access });
-          const fileContent = await fileBlob.arrayBuffer();
-          const stats = await fs.stat(filePath, { access });
-
-          const record = {
-            path: filePath,
-            user_id: req.user.id,
-            content: fileContent,
-            access: access,
-            size: stats.size,
-            last_modified: new Date().toISOString(),
-          };
-
-          const result = syncActions.upsertFiles({ user: req.user }, record);
-
-          if (result?.broadcast) {
-            server.publish(
-              SYNC_TOPIC,
-              JSON.stringify({ type: 'sync', data: result.broadcast }),
-            );
-          }
-          log('FS write successful, broadcasting sync message.');
-          return new Response(
-            JSON.stringify({ success: true, path: filePath }),
-            { status: 201 },
-          );
-        } catch (err) {
-          error('[Upload Error]', err);
-          return new Response(`Upload failed: ${err.message}`, {
-            status: 500,
-          });
-        }
-      }
-
-      if (pathname.startsWith('/api/auth/')) {
-        log(`Handling auth request for: ${pathname}`);
-        if (pathname.endsWith('/register')) return registerUser(req, db);
-        if (pathname.endsWith('/login')) return loginUser(req, db);
-        if (pathname.endsWith('/logout')) return logoutUser(req, db);
-      }
-
-      const actionMatch = pathname.match(/^\/__actions__\/(.+?)\/(.+?)$/);
-      if (actionMatch) {
-        log(`Handling client-side action call: ${pathname}`);
-        if (!req.user) {
-          warn('Unauthorized action call.');
-          return new Response('Unauthorized', { status: 401 });
-        }
-        const [, componentName, actionName] = actionMatch;
-
-        const routeDef = Object.values(appRoutes).find(
-          (r) =>
-            r.componentName === componentName ||
-            r.component.name === componentName,
-        );
-
-        const action = routeDef?.component?.actions?.[actionName];
-
-        if (typeof action !== 'function') {
-          warn(`Action not found: ${actionName} on component ${componentName}`);
-          return new Response('Action not found', { status: 404 });
-        }
-        try {
-          const args = await req.json();
-          const result = await action(
-            {
-              req,
-              db,
-              fs: createFileSystemForUser(req.user.id, db),
-              user: req.user,
-            },
-            ...args,
-          );
-          log('Action executed successfully, sending JSON response.');
-          return result instanceof Response ? result : Response.json(result);
-        } catch (e) {
-          error('Error executing action:', e);
-          return new Response('Internal Server Error', { status: 500 });
-        }
-      }
-
-      for (const path of sortedAppRoutePaths) {
-        const routeDefinition = appRoutes[path];
-        const paramNames = [];
-        const regex = new RegExp(
-          `^${path.replace(/:(\w+)(\*)?/g, (_, name, isCatchAll) => {
-            paramNames.push(name);
-            return isCatchAll === '*' ? '(.*)' : '([^/]+)';
-          })}$`,
-        );
-        const match = pathname.match(regex);
-
-        if (match) {
-          log(`Matched request to route: '${path}'`);
-          req.params = paramNames.reduce((acc, name, i) => {
-            let value = match[i + 1] || '';
-            if (
-              path.endsWith('*') &&
-              name === paramNames[paramNames.length - 1]
-            ) {
-              value = value.startsWith('/') ? value.substring(1) : value;
-            }
-            acc[name] = value;
-            return acc;
-          }, {});
-          const response = req.headers.get('X-Webs-Navigate')
-            ? await handleDataRequest(req, routeDefinition, { manifest })
-            : await handlePageRequest(req, routeDefinition, {
-                manifest,
-                globalComponents,
-              });
-
-          const devSessionId = req.headers.get('X-Set-Dev-Session');
-          if (devSessionId) {
-            response.headers.append(
-              'Set-Cookie',
-              `session_id=${devSessionId}; HttpOnly; Path=/; SameSite=Strict; Max-Age=604800`,
-            );
-          }
-          return response;
-        }
-      }
-      log('No route matched, returning 404.');
-      return new Response('Not Found', { status: 404 });
-    },
+    development: isProd ? false : undefined,
+    fetch: fetchHandler,
     websocket: (websocketHandler = {
       open(ws) {
         if (ws.data?.isSyncChannel) {
           log('WebSocket client connected and subscribed to sync topic.');
           ws.subscribe(SYNC_TOPIC);
         }
+        if (ws.data?.isHmrChannel) {
+          log('HMR WebSocket client connected.');
+          ws.subscribe(HMR_TOPIC);
+        }
         if (ws.data?.isChatChannel) {
-          ai.handleChatOpen(ws);
+          serverContext.ai.handleChatOpen(ws);
         }
       },
       message(ws, message) {
@@ -461,7 +489,7 @@ export async function startServer(serverContext) {
           websocketHandler.handleSyncMessage(ws, message);
         }
         if (ws.data?.isChatChannel) {
-          ai.handleChatMessage(ws, message);
+          serverContext.ai.handleChatMessage(ws, message);
         }
       },
       close(ws) {
@@ -469,8 +497,12 @@ export async function startServer(serverContext) {
           log('WebSocket client disconnected.');
           ws.unsubscribe(SYNC_TOPIC);
         }
+        if (ws.data?.isHmrChannel) {
+          log('HMR WebSocket client disconnected.');
+          ws.unsubscribe(HMR_TOPIC);
+        }
         if (ws.data?.isChatChannel) {
-          ai.handleChatClose(ws);
+          serverContext.ai.handleChatClose(ws);
         }
       },
       async handleSyncMessage(ws, message) {
@@ -510,7 +542,9 @@ export async function startServer(serverContext) {
 
               if (isTextFile(path)) {
                 const contentString = Buffer.from(data).toString('utf-8');
-                await ai.indexFile(path, contentString, { userId: user.id });
+                await serverContext.ai.indexFile(path, contentString, {
+                  userId: user.id,
+                });
               }
             } else if (type === 'fs:rm') {
               await fs.rm(path, options);
@@ -518,7 +552,7 @@ export async function startServer(serverContext) {
                 { user },
                 { path, user_id: user.id },
               ).broadcast;
-              await ai.removeFileIndex(path, { userId: user.id });
+              await serverContext.ai.removeFileIndex(path, { userId: user.id });
             }
 
             ws.send(JSON.stringify({ type: 'ack', opId }));

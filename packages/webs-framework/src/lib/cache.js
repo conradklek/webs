@@ -10,6 +10,12 @@ const assetUrls = fullManifest
 const urlsToCache = [APP_SHELL_URL, ...assetUrls];
 
 self.addEventListener('install', (event) => {
+  if (typeof IS_PROD !== 'undefined' && !IS_PROD) {
+    console.log('[SW] Development mode: skipping caching on install.');
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
+
   event.waitUntil(
     caches
       .open(CACHE_NAME)
@@ -41,6 +47,14 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  if (typeof IS_PROD !== 'undefined' && !IS_PROD) {
+    console.log(
+      '[SW] Fetch event ignored in development mode for request:',
+      event.request.url,
+    );
+    return;
+  }
+
   const { request } = event;
 
   if (request.headers.has('X-Webs-Navigate')) {

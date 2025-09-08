@@ -1,6 +1,6 @@
 import { watch, isRef } from './engine.js';
 import { voidElements } from './parser.js';
-import { compile } from './compiler.js';
+import { compile, compileCache } from './compiler.js';
 import {
   isObject,
   isString,
@@ -11,6 +11,9 @@ import {
 
 const logger = createLogger('[Renderer]');
 const devtools = typeof window !== 'undefined' && window.__WEBS_DEVELOPER__;
+
+export const hmrRegistry =
+  typeof window !== 'undefined' ? new Map() : undefined;
 
 let instanceIdCounter = 0;
 
@@ -470,6 +473,12 @@ export function createRenderer(options) {
             nextTree = createVnode(Comment, null, 'w-if');
           }
           instance.subTree = nextTree;
+          logger.debug(
+            `[VDOM Diff] <${instance.type.name}> Before:`,
+            prevTree,
+            'After:',
+            nextTree,
+          );
 
           const newAttrs = instance.attrs;
           if (Object.keys(newAttrs).length > 0 && nextTree.type !== Fragment) {
@@ -542,14 +551,19 @@ export function createRenderer(options) {
 
   const updateComponent = (n1, n2) => {
     const instance = (n2.component = n1.component);
+    const oldProps = { ...(n1.props || {}) };
+    const newProps = { ...(n2.props || {}) };
     logger.debug(`Updating component instance <${instance.type.name}>`, {
-      oldProps: n1.props,
-      newProps: n2.props,
+      oldProps,
+      newProps,
     });
 
     if (!shouldUpdateComponent(n1, n2)) {
       n2.el = n1.el;
       instance.vnode = n2;
+      logger.log(
+        `Component <${instance.type.name}> update skipped as props and children are identical.`,
+      );
       return;
     }
 
@@ -723,6 +737,24 @@ export function createRenderer(options) {
 
     const { type, props, children } = vnode;
 
+    const handleMismatch = (expected, found, vnodeDetails) => {
+      if (process.env.NODE_ENV !== 'production') {
+        logger.debug(
+          `[HMR Hydration Info] Mismatch is expected during dev. Expected ${expected}, found ${found}. Patching DOM.`,
+          vnodeDetails,
+        );
+        patch(null, vnode, parentDom, currentDomNode, parentComponent);
+        hostRemove(currentDomNode);
+        return vnode.el ? vnode.el.nextSibling : null;
+      } else {
+        logger.warn(
+          `[Hydration Mismatch] Expected ${expected}, but found ${found}`,
+          vnodeDetails,
+        );
+        return currentDomNode.nextSibling;
+      }
+    };
+
     if (type === Text && props && props['w-dynamic']) {
       if (
         currentDomNode &&
@@ -741,11 +773,11 @@ export function createRenderer(options) {
           logger.debug('-- Hydrated dynamic text block successfully.');
           return closingComment.nextSibling;
         } else {
-          logger.warn(
-            `[Hydration Mismatch] Dynamic text block malformed. Expected closing comment '<!--]-->'.`,
+          return handleMismatch(
+            "closing comment '<!--]-->'",
+            getNodeDescription(closingComment),
+            vnode,
           );
-          patch(null, vnode, parentDom, currentDomNode, parentComponent);
-          return vnode.el ? vnode.el.nextSibling : currentDomNode;
         }
       }
     }
@@ -755,27 +787,28 @@ export function createRenderer(options) {
     switch (type) {
       case Text:
         if (!currentDomNode || currentDomNode.nodeType !== 3) {
-          logger.warn(
-            `[Hydration Mismatch] Expected a text node, but found: ${getNodeDescription(
-              currentDomNode,
-            )}`,
-            { expectedContent: vnode.children },
+          return handleMismatch(
+            'a text node',
+            getNodeDescription(currentDomNode),
+            { expectedContent: vnode.children, vnode },
           );
         } else if (
           String(currentDomNode.textContent) !== String(vnode.children)
         ) {
-          logger.warn(
-            `[Hydration Mismatch] Text content does not match. DOM: "${currentDomNode.textContent}", VNode: "${vnode.children}"`,
+          return handleMismatch(
+            `text content "${vnode.children}"`,
+            `"${currentDomNode.textContent}"`,
+            vnode,
           );
         }
         return currentDomNode.nextSibling;
 
       case Comment:
         if (!currentDomNode || currentDomNode.nodeType !== 8) {
-          logger.warn(
-            `[Hydration Mismatch] Expected a comment node, but found: ${getNodeDescription(
-              currentDomNode,
-            )}`,
+          return handleMismatch(
+            'a comment node',
+            getNodeDescription(currentDomNode),
+            vnode,
           );
         }
         return currentDomNode.nextSibling;
@@ -790,18 +823,16 @@ export function createRenderer(options) {
         if (isString(type)) {
           const vnodeTagName = type.toLowerCase();
           const domTagName = currentDomNode?.tagName?.toLowerCase();
-          logger.debug(
-            `-- Comparing VNode tag <${vnodeTagName}> with DOM tag <${domTagName}>`,
-          );
+
           if (
             !currentDomNode ||
             currentDomNode.nodeType !== 1 ||
             domTagName !== vnodeTagName
           ) {
-            logger.warn(
-              `[Hydration Mismatch] Expected element <${type}>, but found: ${getNodeDescription(
-                currentDomNode,
-              )}`,
+            return handleMismatch(
+              `element <${type}>`,
+              getNodeDescription(currentDomNode),
+              vnode,
             );
           }
           if (props) {
@@ -881,6 +912,20 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
     hooks: {},
     lastEl: null,
   };
+
+  if (import.meta.hot) {
+    const componentDef = instance.type;
+    if (!hmrRegistry.has(componentDef)) {
+      hmrRegistry.set(componentDef, new Set());
+    }
+    hmrRegistry.get(componentDef).add(instance);
+    onUnmounted(() => {
+      const instances = hmrRegistry.get(componentDef);
+      if (instances) {
+        instances.delete(instance);
+      }
+    });
+  }
 
   const { props: propsOptions, setup } = instance.type;
   const vnodeProps = vnode.props || {};

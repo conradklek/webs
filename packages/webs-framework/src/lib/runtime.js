@@ -3,6 +3,7 @@ import {
   createRenderer,
   createVnode,
   onPropsReceived,
+  hmrRegistry,
 } from './renderer.js';
 import { db, fs, syncEngine } from './sync.js';
 import { ai } from './ai/ai.service.js';
@@ -10,6 +11,7 @@ import { state, ref } from './engine.js';
 import { session } from './session.js';
 import { normalizeClass, createLogger } from './shared.js';
 import { initDevTools } from './dev.js';
+import { compile, compileCache } from './compiler.js';
 
 const logger = createLogger('[Runtime]');
 
@@ -257,6 +259,36 @@ export const createApp = (() => {
   };
 })();
 
+function connectToHmrServer() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${protocol}//${window.location.host}/api/hmr`;
+  const hmrSocket = new WebSocket(url);
+
+  hmrSocket.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    logger.log('HMR message received from server:', message);
+    if (message.type === 'reload') {
+      logger.log(
+        `[${new Date().toISOString()}] HMR 'reload' signal received. Reloading page.`,
+      );
+      window.location.reload();
+    }
+  };
+
+  hmrSocket.onopen = () => {
+    logger.log('HMR WebSocket connected.');
+  };
+
+  hmrSocket.onclose = () => {
+    logger.log('HMR WebSocket disconnected. Attempting to reconnect in 2s...');
+    setTimeout(connectToHmrServer, 2000);
+  };
+
+  hmrSocket.onerror = (err) => {
+    logger.error('HMR WebSocket error:', err);
+  };
+}
+
 export async function hydrate(componentManifest, dbConfig = null) {
   logger.log('Starting client-side hydration...');
   if (typeof window === 'undefined') {
@@ -301,6 +333,40 @@ export async function hydrate(componentManifest, dbConfig = null) {
     });
   } else {
     logger.log('Service worker not supported or no swPath provided in state.');
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    logger.log('Development mode detected. Initializing HMR connection...');
+    connectToHmrServer();
+
+    window.__WEBS_HMR_UPDATE__ = (oldDef, newDef) => {
+      logger.log('HMR update hook fired for component:', oldDef.name);
+
+      const instances = hmrRegistry.get(oldDef);
+      if (!instances) {
+        logger.warn(
+          'No active instances found for HMR update. Forcing full reload.',
+        );
+        window.location.reload();
+        return;
+      }
+
+      compileCache.delete(oldDef);
+      hmrRegistry.delete(oldDef);
+      hmrRegistry.set(newDef, instances);
+
+      instances.forEach((instance) => {
+        logger.log(
+          `- HMR: Updating instance #${instance.uid} of <${instance.type.name}>`,
+        );
+        instance.type = newDef;
+        instance.render = compile(newDef, {
+          globalComponents: instance.appContext.components,
+        });
+        instance.update();
+      });
+      logger.log('HMR update process complete for', oldDef.name);
+    };
   }
 
   const root = document.getElementById('root');

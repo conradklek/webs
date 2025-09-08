@@ -4,11 +4,12 @@ import { rm, mkdir, exists, writeFile } from 'fs/promises';
 import { join, resolve, dirname, basename, relative } from 'path';
 import { Database } from 'bun:sqlite';
 import { createDatabaseAndActions } from '../lib/db.js';
-import { startServer } from './server.js';
+import { startServer, createFetchHandler } from './server.js';
 import { AI } from '../lib/ai/index.js';
 import { config as aiDefaultConfig } from '../lib/ai/config.js';
 import tailwind from 'bun-plugin-tailwind';
 import websPlugin from './plugin.js';
+import { watch } from 'fs';
 
 const userProjectDir = process.argv[2]
   ? resolve(process.argv[2])
@@ -43,6 +44,21 @@ async function compileWebsFile(filePath) {
   const templateContent = templateMatch ? templateMatch[1].trim() : '';
   const styleContent = styleMatch ? styleMatch[1].trim() : '';
   const componentName = basename(filePath, '.webs');
+
+  const tempFileDir = dirname(
+    resolve(config.TMP_COMPILED_DIR, relative(config.SRC_DIR, filePath)),
+  );
+  scriptContent = scriptContent.replace(
+    /import\s+['"](\..*?\.css)['"]/g,
+    (match, cssPath) => {
+      const absoluteCssPath = resolve(dirname(filePath), cssPath);
+      let relativePathFromTemp = relative(tempFileDir, absoluteCssPath);
+      if (!relativePathFromTemp.startsWith('.')) {
+        relativePathFromTemp = './' + relativePathFromTemp;
+      }
+      return `import '${relativePathFromTemp.replace(/\\/g, '/')}';`;
+    },
+  );
 
   scriptContent = scriptContent.replace(
     /from\s+['"](.+?)\.webs['"]/g,
@@ -335,7 +351,11 @@ async function buildClientBundle(
     target: 'browser',
     splitting: true,
     minify: config.IS_PROD,
-    naming: config.IS_PROD ? '[name]-[hash].[ext]' : '[name].[ext]',
+    naming: {
+      entry: '[name].[ext]',
+      chunk: '[name]-[hash].[ext]',
+      asset: '[name]-[hash].[ext]',
+    },
     plugins: [
       websPlugin({
         root: config.CWD,
@@ -370,18 +390,21 @@ async function generateServiceWorker(buildOutputs) {
   }
   const swTemplate = await Bun.file(swTemplatePath).text();
 
-  const assetUrls = ['/'];
-  for (const output of buildOutputs) {
-    if (output.kind === 'entry-point' || output.kind === 'chunk') {
-      if (output.path.endsWith('.js') || output.path.endsWith('.css')) {
-        assetUrls.push('/' + basename(output.path));
-      }
-    }
-  }
-  console.log('[Build] Assets for service worker cache:', assetUrls);
+  const manifestForSw = JSON.stringify(
+    buildOutputs
+      .filter(
+        (o) =>
+          (o.kind === 'entry-point' || o.kind === 'chunk') &&
+          (o.path.endsWith('.js') || o.path.endsWith('.css')),
+      )
+      .map((o) => ({ url: '/' + basename(o.path) }))
+      .filter((entry) => !entry.url.includes('[...'))
+      .concat({ url: '/' }),
+  );
 
-  const manifestForSw = JSON.stringify(assetUrls.map((url) => ({ url })));
-  const finalSwContent = `self.__WEBS_MANIFEST = ${manifestForSw};\n\n${swTemplate}`;
+  const finalSwContent = `const IS_PROD = ${
+    config.IS_PROD
+  };\nself.__WEBS_MANIFEST = ${manifestForSw};\n\n${swTemplate}`;
 
   const swOutputPath = join(config.OUTDIR, 'sw.js');
   await writeFile(swOutputPath, finalSwContent);
@@ -523,11 +546,9 @@ async function generateActionsFile() {
 
 async function main() {
   await rm(config.TMPDIR, { recursive: true, force: true });
-
   await ensureDir(config.TMPDIR);
 
   const dbConfig = getDbConfig();
-
   await generateActionsFile();
 
   const aiConfig = {
@@ -547,13 +568,11 @@ async function main() {
     await manualCompileAllWebsFiles();
 
   await generateComponentRegistry();
-
   const { default: globalComponents } = await import(
     config.TMP_COMPONENT_REGISTRY
   );
 
   const SYNC_TOPIC = 'webs-sync';
-
   const db = await createDatabaseAndActions(
     Database,
     dbConfig,
@@ -700,10 +719,10 @@ async function main() {
     }
   }
 
-  const { appRoutes, layoutWrapperEntrypoints } =
+  let { appRoutes, layoutWrapperEntrypoints } =
     await generateRoutes(pageEntrypoints);
 
-  const buildOutputs = await buildClientBundle(
+  let buildOutputs = await buildClientBundle(
     sourceEntrypoints,
     layoutWrapperEntrypoints,
     dbConfig,
@@ -712,7 +731,7 @@ async function main() {
     process.exit(1);
   }
 
-  const manifest = {
+  let manifest = {
     js: buildOutputs.find(
       (o) => o.kind === 'entry-point' && o.path.endsWith('.js'),
     )?.path,
@@ -724,19 +743,84 @@ async function main() {
     manifest.sw = swPath;
   }
 
-  const server = await startServer({
+  const serverContext = {
     db,
     ai,
     dbConfig,
     manifest,
     appRoutes,
     outdir: config.OUTDIR,
+    srcDir: config.SRC_DIR,
     isProd: config.IS_PROD,
     port: config.PORT,
     SYNC_TOPIC,
     actionsPath: config.TMP_GENERATED_ACTIONS,
     globalComponents,
-  });
+  };
+
+  const server = await startServer(serverContext);
+
+  if (!config.IS_PROD) {
+    const HMR_TOPIC = 'webs-hmr';
+    console.log(`[Build] Watching for file changes in: ${config.SRC_DIR}`);
+    let hmrDebounceTimer;
+
+    watch(config.SRC_DIR, { recursive: true }, (event, filename) => {
+      if (filename && !filename.endsWith('~')) {
+        clearTimeout(hmrDebounceTimer);
+        hmrDebounceTimer = setTimeout(async () => {
+          console.log(
+            `[Build] File change detected: ${filename}. Rebuilding...`,
+          );
+          try {
+            const { sourceEntrypoints: newSource, pageEntrypoints: newPages } =
+              await manualCompileAllWebsFiles();
+
+            ({ appRoutes, layoutWrapperEntrypoints } =
+              await generateRoutes(newPages));
+
+            const newBuildOutputs = await buildClientBundle(
+              newSource,
+              layoutWrapperEntrypoints,
+              dbConfig,
+            );
+
+            if (newBuildOutputs) {
+              manifest = {
+                js: newBuildOutputs.find(
+                  (o) => o.kind === 'entry-point' && o.path.endsWith('.js'),
+                )?.path,
+                css: newBuildOutputs.find((o) => o.path.endsWith('.css'))?.path,
+                sw:
+                  (await generateServiceWorker(newBuildOutputs)) || manifest.sw,
+              };
+
+              const newServerContext = {
+                ...serverContext,
+                manifest,
+                appRoutes,
+              };
+
+              const newFetchHandler = createFetchHandler(newServerContext);
+
+              server.reload({
+                fetch: newFetchHandler,
+              });
+
+              console.log(
+                '[Build] Rebuild complete. Sending HMR reload message.',
+              );
+              server.publish(HMR_TOPIC, JSON.stringify({ type: 'reload' }));
+            } else {
+              console.error('[Build] Rebuild failed. HMR message not sent.');
+            }
+          } catch (e) {
+            console.error('[Build] Error during rebuild:', e);
+          }
+        }, 100);
+      }
+    });
+  }
 
   ai.initialize(server, db);
 

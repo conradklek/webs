@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { resolve, basename, relative, dirname } from 'path';
 
 export default (options = {}) => ({
@@ -40,29 +41,10 @@ export default (options = {}) => ({
           const sourceCode = await Bun.file(args.path).text();
           const componentName = basename(args.path, '.webs');
 
-          const moduleScriptMatch =
-            /<script type="module">(.*?)<\/script>/s.exec(sourceCode);
-          if (moduleScriptMatch && !/<template>/.test(sourceCode)) {
-            let scriptContent = moduleScriptMatch[1].trim();
-            scriptContent = scriptContent.replace(
-              /from\s+['"](.+?)\.webs['"]/g,
-              "from '$1.js'",
-            );
-            return {
-              contents: scriptContent,
-              loader: 'js',
-              resolveDir: dirname(args.path),
-            };
-          }
-
-          const componentScriptMatch =
-            /<script\b(?! type="module")[^>]*>(.*?)<\/script>/s.exec(
-              sourceCode,
-            );
+          const scriptMatch = /<script[^>]*>(.*?)<\/script>/s.exec(sourceCode);
           const templateMatch = /<template>(.*?)<\/template>/s.exec(sourceCode);
 
-          let scriptContent =
-            (moduleScriptMatch || componentScriptMatch)?.[1].trim() || '';
+          let scriptContent = scriptMatch ? scriptMatch[1].trim() : '';
           const templateContent = templateMatch ? templateMatch[1].trim() : '';
 
           scriptContent = scriptContent.replace(
@@ -80,37 +62,55 @@ export default (options = {}) => ({
             );
             if (!relPath.startsWith('.')) relPath = './' + relPath;
             registryImport = `import __globalComponents from '${relPath}';\n`;
+
+            if (scriptContent.includes('export default')) {
+              if (scriptContent.includes('components:')) {
+                scriptContent = scriptContent.replace(
+                  /(components\s*:\s*\{)/,
+                  '$1 ...(__globalComponents || {}),',
+                );
+              } else {
+                scriptContent = scriptContent.replace(
+                  /(export default\s*\{)/,
+                  '$1 components: __globalComponents || {},',
+                );
+              }
+            }
           }
 
-          const templateProperty = `template: ${JSON.stringify(templateContent)}`;
+          const templateProperty = `template: ${JSON.stringify(
+            templateContent,
+          )}`;
           const injectedProps = `name: '${componentName}', ${templateProperty}`;
 
           let finalScript;
 
           if (!scriptContent.includes('export default')) {
-            finalScript = `${scriptContent}\nexport default { ${injectedProps} };`;
+            const componentsProp = !isGlobalComponent
+              ? 'components: __globalComponents || {},'
+              : '';
+            finalScript = `${scriptContent}\nconst __webs_component_def = { ${injectedProps}, ${componentsProp} };\nexport default __webs_component_def;`;
           } else {
             finalScript = scriptContent.replace(
               /(export default\s*\{)/,
               `$1 ${injectedProps},`,
             );
+            finalScript = finalScript.replace(
+              /export default (\{[\s\S]*\});?/,
+              'const __webs_component_def = $1; export default __webs_component_def;',
+            );
           }
 
-          if (!isGlobalComponent) {
-            if (finalScript.includes('components:')) {
-              finalScript = finalScript.replace(
-                /(components\s*:\s*\{)/,
-                '$1 ...(__globalComponents || {}),',
-              );
-            } else {
-              finalScript = finalScript.replace(
-                /(export default\s*\{)/,
-                '$1 components: __globalComponents || {},',
-              );
-            }
-          }
+          const hmrCode = `
+          if (import.meta.hot) {
+            import.meta.hot.accept((newModule) => {
+              if (newModule && window.__WEBS_HMR_UPDATE__) {
+                window.__WEBS_HMR_UPDATE__(__webs_component_def, newModule.default);
+              }
+            });
+          }`;
 
-          const finalContents = registryImport + finalScript;
+          const finalContents = registryImport + finalScript + hmrCode;
 
           return {
             contents: finalContents,

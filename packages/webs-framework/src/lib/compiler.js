@@ -621,12 +621,16 @@ export class Compiler {
   }
 }
 
-const compileCache = new WeakMap();
+export const compileCache = new WeakMap();
 
 export function compile(componentDef, options = null) {
   if (compileCache.has(componentDef)) {
+    console.log(`[Compiler] Cache HIT for component: ${componentDef.name}`);
     return compileCache.get(componentDef);
   }
+  console.log(
+    `[Compiler] Cache MISS for component: ${componentDef.name}. Compiling...`,
+  );
 
   let templateContent = componentDef.template;
   if (typeof templateContent === 'function') {
