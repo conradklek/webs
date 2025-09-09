@@ -3,7 +3,6 @@ import {
   createRenderer,
   createVnode,
   onPropsReceived,
-  hmrRegistry,
 } from './renderer.js';
 import { db, fs, syncEngine } from './sync.js';
 import { ai } from './ai/ai.service.js';
@@ -24,6 +23,7 @@ export * from './renderer';
 let appInstance = null;
 let componentManifestInstance = null;
 const prefetchCache = new Map();
+let sourceToComponentMap = null;
 
 export const route = ref({ path: '/' });
 
@@ -39,7 +39,7 @@ async function performNavigation(
       prefetchCache.delete(url.href);
       logger.debug('Used prefetched data for navigation.');
     } else {
-      logger.debug('Fetching navigation data from server...');
+      logger.debug('Fetching navigation data from server... ');
       const response = await fetch(url.pathname + url.search, {
         headers: { 'X-Webs-Navigate': 'true' },
       });
@@ -80,6 +80,9 @@ async function performNavigation(
     const newVnode = createVnode(newComponentDef, newProps);
     newVnode.appContext = appInstance._context;
 
+    route.value.path = url.pathname;
+    session.setUser(data.user);
+
     logger.log('Patching DOM with new component vnode...');
     appInstance._context.patch(oldVnode, newVnode, appInstance._container);
     appInstance._vnode = newVnode;
@@ -98,8 +101,6 @@ async function performNavigation(
       componentState: data.componentState,
     };
     logger.log('Updated window.__WEBS_STATE__', window.__WEBS_STATE__);
-
-    session.setUser(data.user);
   } catch (err) {
     logger.error(
       'Error during client-side navigation, falling back to full page reload.',
@@ -255,6 +256,7 @@ export const createApp = (() => {
         return rootInstance;
       },
     };
+    appInstance = app;
     return app;
   };
 })();
@@ -264,15 +266,9 @@ function connectToHmrServer() {
   const url = `${protocol}//${window.location.host}/api/hmr`;
   const hmrSocket = new WebSocket(url);
 
-  hmrSocket.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    logger.log('HMR message received from server:', message);
-    if (message.type === 'reload') {
-      logger.log(
-        `[${new Date().toISOString()}] HMR 'reload' signal received. Reloading page.`,
-      );
-      window.location.reload();
-    }
+  hmrSocket.onmessage = async (event) => {
+    logger.log('HMR message received from server, forcing reload.');
+    window.location.reload();
   };
 
   hmrSocket.onopen = () => {
@@ -290,14 +286,10 @@ function connectToHmrServer() {
 }
 
 export async function hydrate(componentManifest, dbConfig = null) {
-  logger.log('Starting client-side hydration...');
+  logger.log('Starting client-side hydration... ');
   if (typeof window === 'undefined') {
     logger.log('Not in a browser environment. Aborting hydration.');
     return;
-  }
-
-  if (process.env.NODE_ENV !== 'production') {
-    initDevTools();
   }
 
   const websState = deserializeState(window.__WEBS_STATE__ || {});
@@ -311,6 +303,14 @@ export async function hydrate(componentManifest, dbConfig = null) {
     window.__WEBS_DB_CONFIG__ = dbConfig;
   } else {
     logger.log('No database configuration provided.');
+  }
+
+  if (websState.sourceToComponentMap) {
+    sourceToComponentMap = websState.sourceToComponentMap;
+    logger.log(
+      'Source-to-component mapping loaded from server state.',
+      sourceToComponentMap,
+    );
   }
 
   logger.log('Starting sync engine...');
@@ -338,86 +338,75 @@ export async function hydrate(componentManifest, dbConfig = null) {
   if (process.env.NODE_ENV !== 'production') {
     logger.log('Development mode detected. Initializing HMR connection...');
     connectToHmrServer();
+  }
 
-    window.__WEBS_HMR_UPDATE__ = (oldDef, newDef) => {
-      logger.log('HMR update hook fired for component:', oldDef.name);
+  const startHydrationProcess = () => {
+    const root = document.getElementById('root');
+    if (!root) {
+      logger.error('Root element #root not found. Aborting hydration.');
+      return;
+    }
 
-      const instances = hmrRegistry.get(oldDef);
-      if (!instances) {
-        logger.warn(
-          'No active instances found for HMR update. Forcing full reload.',
-        );
-        window.location.reload();
-        return;
-      }
+    const { componentName, user = {}, params, componentState } = websState;
+    if (!componentName) {
+      logger.error(
+        'No componentName found in __WEBS_STATE__. Aborting hydration.',
+      );
+      return;
+    }
+    logger.log(`Root component to hydrate: ${componentName}`);
 
-      compileCache.delete(oldDef);
-      hmrRegistry.delete(oldDef);
-      hmrRegistry.set(newDef, instances);
+    componentManifestInstance = componentManifest;
+    const componentLoader = componentManifest.get(componentName);
+    if (!componentLoader) {
+      logger.error(
+        `Component loader for "${componentName}" not found in manifest.`,
+      );
+      return;
+    }
 
-      instances.forEach((instance) => {
+    componentLoader()
+      .then((componentModule) => {
+        const rootComponent = componentModule.default;
+        if (!rootComponent) {
+          logger.error(
+            `Module for "${componentName}" loaded, but it has no default export.`,
+          );
+          return;
+        }
+
+        const props = { params, initialState: componentState || {}, user };
         logger.log(
-          `- HMR: Updating instance #${instance.uid} of <${instance.type.name}>`,
+          'Creating app instance with props:',
+          JSON.parse(JSON.stringify(props)),
         );
-        instance.type = newDef;
-        instance.render = compile(newDef, {
-          globalComponents: instance.appContext.components,
-        });
-        instance.update();
+
+        const app = createApp(
+          rootComponent,
+          props,
+          rootComponent.components || {},
+        );
+        app.mount(root);
+        logger.log('App mounted successfully.');
+
+        if (window.__WEBS_DEVELOPER__) {
+          initDevTools();
+          window.__WEBS_DEVELOPER__.registerApp(appInstance);
+        }
+
+        session.setUser(websState.user);
+        route.value.path = window.location.pathname;
+      })
+      .catch((err) => {
+        logger.error('Failed to load component for hydration:', err);
       });
-      logger.log('HMR update process complete for', oldDef.name);
-    };
+  };
+
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', startHydrationProcess);
+  } else {
+    setTimeout(startHydrationProcess, 0);
   }
-
-  const root = document.getElementById('root');
-  if (!root) {
-    logger.error('Root element #root not found. Aborting hydration.');
-    return;
-  }
-
-  const { componentName, user = {}, params, componentState } = websState;
-  if (!componentName) {
-    logger.error(
-      'No componentName found in __WEBS_STATE__. Aborting hydration.',
-    );
-    return;
-  }
-  logger.log(`Root component to hydrate: ${componentName}`);
-
-  componentManifestInstance = componentManifest;
-  const componentLoader = componentManifest.get(componentName);
-  if (!componentLoader) {
-    logger.error(
-      `Component loader for "${componentName}" not found in manifest.`,
-    );
-    return;
-  }
-
-  const componentModule = await componentLoader();
-  const rootComponent = componentModule.default;
-  if (!rootComponent) {
-    logger.error(
-      `Module for "${componentName}" loaded, but it has no default export.`,
-    );
-    return;
-  }
-
-  const props = { params, initialState: componentState || {}, user };
-  logger.log(
-    'Creating app instance with props:',
-    JSON.parse(JSON.stringify(props)),
-  );
-
-  const app = createApp(rootComponent, props, rootComponent.components || {});
-  app.mount(root);
-  logger.log('App mounted successfully.');
-
-  if (window.__WEBS_DEVELOPER__) {
-    window.__WEBS_DEVELOPER__.registerApp(appInstance);
-  }
-
-  session.setUser(websState.user);
-  route.value.path = window.location.pathname;
 }
 
 function installNavigationHandler(app) {
@@ -476,7 +465,6 @@ function installNavigationHandler(app) {
 
   window.addEventListener('popstate', () => {
     const url = new URL(window.location.href);
-    route.value.path = url.pathname;
     performNavigation(url, { isPopState: true, fromClick: false });
   });
 }
@@ -524,9 +512,9 @@ export function table(tableName, initialData = []) {
   const table = db(tableName);
   if (typeof window === 'undefined') {
     const mock = state({ data: initialData, isLoading: false, error: null });
-    mock.hydrate = async () => {};
-    mock.put = async () => {};
-    mock.destroy = async () => {};
+    mock.hydrate = async () => { };
+    mock.put = async () => { };
+    mock.destroy = async () => { };
     return mock;
   }
 

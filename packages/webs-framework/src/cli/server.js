@@ -1,7 +1,7 @@
 import { h, renderToString } from '../lib/renderer.js';
-import { basename, join } from 'path';
+import { basename, join, resolve, extname } from 'path';
 import { createFileSystemForUser } from '../lib/fs.js';
-import { stat, exists } from 'fs/promises';
+import { stat, exists, mkdir } from 'fs/promises';
 import {
   getUserFromSession,
   registerUser,
@@ -41,6 +41,7 @@ function renderHtmlShell({ appHtml, websState, manifest, title }) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${title}</title>
+    <link rel="stylesheet" href="tailwindcss" />
     ${cssPath ? `<link rel="stylesheet" href="${cssPath}">` : ''}
 </head>
 <body>
@@ -75,7 +76,7 @@ async function executePrefetch(routeDefinition, context) {
 async function handleDataRequest(req, routeDefinition, context) {
   log(`Handling data request for route '${req.url}'`);
   const { db, user, params } = req;
-  const { manifest } = context;
+  const { manifest, sourceToComponentMap } = context;
   const fs = user ? createFileSystemForUser(user.id, db) : null;
 
   const componentState = await executePrefetch(routeDefinition, {
@@ -92,6 +93,7 @@ async function handleDataRequest(req, routeDefinition, context) {
     componentName: routeDefinition.componentName,
     title: routeDefinition.component.name || 'Webs App',
     swPath: manifest.sw ? `/${basename(manifest.sw)}` : null,
+    sourceToComponentMap,
   };
   log('Sending JSON response for data request:', websState);
   return new Response(JSON.stringify(websState), {
@@ -101,7 +103,7 @@ async function handleDataRequest(req, routeDefinition, context) {
 
 async function handlePageRequest(req, routeDefinition, context) {
   log(`Handling page request for route '${req.url}'`);
-  const { manifest, globalComponents } = context;
+  const { manifest, globalComponents, sourceToComponentMap } = context;
   const { db, user, params } = req;
   const fs = user ? createFileSystemForUser(user.id, db) : null;
 
@@ -112,7 +114,8 @@ async function handlePageRequest(req, routeDefinition, context) {
     fs,
   });
 
-  const props = { user, params, initialState };
+  const { pathname } = new URL(req.url);
+  const props = { user, params, initialState, path: pathname };
   log('Props for SSR:', JSON.parse(JSON.stringify(props)));
 
   const vnode = h(routeDefinition.component, props);
@@ -128,6 +131,7 @@ async function handlePageRequest(req, routeDefinition, context) {
     componentState: componentState || initialState,
     componentName: routeDefinition.componentName,
     swPath: manifest.sw ? `/${basename(manifest.sw)}` : null,
+    sourceToComponentMap,
   };
   log(
     'Final websState to be embedded in HTML:',
@@ -175,6 +179,13 @@ export function createFetchHandler(context) {
     srcDir,
     isProd,
     syncActions,
+    builder,
+    websPlugin,
+    CWD,
+    TMP_COMPONENT_REGISTRY,
+    GUI_DIR,
+    TMPDIR,
+    sourceToComponentMap,
   } = context;
 
   const attachContext = authMiddleware(db, isProd);
@@ -185,12 +196,30 @@ export function createFetchHandler(context) {
     const { pathname } = url;
     log(`Received request for: ${pathname}`);
 
-    attachContext(req);
-
     if (pathname.includes('..')) {
       warn('Path traversal attempt detected.');
       return new Response('Forbidden', { status: 403 });
     }
+
+    const potentialFilePath = join(outdir, pathname.substring(1));
+    if (await exists(potentialFilePath)) {
+      const stats = await stat(potentialFilePath);
+      if (stats.isFile()) {
+        log(`Serving static file: ${potentialFilePath}`);
+        return new Response(Bun.file(potentialFilePath));
+      }
+    }
+
+    const potentialSrcPath = join(srcDir, pathname.substring(1));
+    if (!isProd && (await exists(potentialSrcPath))) {
+      const stats = await stat(potentialSrcPath);
+      if (stats.isFile()) {
+        log(`Serving dev source file: ${potentialSrcPath}`);
+        return new Response(Bun.file(potentialSrcPath));
+      }
+    }
+
+    attachContext(req);
 
     if (req.headers.get('upgrade') === 'websocket') {
       if (pathname === '/api/sync') {
@@ -217,24 +246,6 @@ export function createFetchHandler(context) {
         return ai.handleChatUpgrade(req);
       }
       return new Response('WebSocket endpoint not found', { status: 404 });
-    }
-
-    const potentialStaticPath = join(outdir, pathname.substring(1));
-    if (await exists(potentialStaticPath)) {
-      const stats = await stat(potentialStaticPath);
-      if (stats.isFile()) {
-        log(`Serving static file: ${potentialStaticPath}`);
-        return new Response(Bun.file(potentialStaticPath));
-      }
-    }
-
-    const potentialSrcPath = join(srcDir, pathname.substring(1));
-    if (!isProd && (await exists(potentialSrcPath))) {
-      const stats = await stat(potentialSrcPath);
-      if (stats.isFile()) {
-        log(`Serving dev source file: ${potentialSrcPath}`);
-        return new Response(Bun.file(potentialSrcPath));
-      }
     }
 
     if (pathname.startsWith('/api/ai/')) {
@@ -429,11 +440,15 @@ export function createFetchHandler(context) {
           return acc;
         }, {});
         const response = req.headers.get('X-Webs-Navigate')
-          ? await handleDataRequest(req, routeDefinition, { manifest })
+          ? await handleDataRequest(req, routeDefinition, {
+            manifest,
+            sourceToComponentMap,
+          })
           : await handlePageRequest(req, routeDefinition, {
-              manifest,
-              globalComponents,
-            });
+            manifest,
+            globalComponents,
+            sourceToComponentMap,
+          });
 
         const devSessionId = req.headers.get('X-Set-Dev-Session');
         if (devSessionId) {
@@ -451,7 +466,8 @@ export function createFetchHandler(context) {
 }
 
 export async function startServer(serverContext) {
-  const { db, dbConfig, isProd, port, SYNC_TOPIC, actionsPath } = serverContext;
+  const { db, dbConfig, isProd, port, SYNC_TOPIC, HMR_TOPIC, actionsPath } =
+    serverContext;
 
   let syncActions = {};
   if (await exists(actionsPath)) {
@@ -462,7 +478,6 @@ export async function startServer(serverContext) {
 
   const fetchHandler = createFetchHandler({ ...serverContext, syncActions });
 
-  const HMR_TOPIC = 'webs-hmr';
   let websocketHandler;
 
   log('Starting Webs server...');
@@ -526,33 +541,29 @@ export async function startServer(serverContext) {
               const fileContent = await fileBlob.arrayBuffer();
 
               const record = {
-                path: path,
+                path: filePath,
                 user_id: user.id,
-                content: Buffer.from(fileContent),
+                content: fileContent,
                 access: options?.access || 'private',
                 size: stats.size,
                 last_modified: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
               };
 
-              const result = syncActions.upsertFiles({ user }, record);
-              if (result?.broadcast) {
-                broadcastPayload = result.broadcast;
-              }
+              const result = syncActions.upsertFiles({ user: user }, record);
 
-              if (isTextFile(path)) {
-                const contentString = Buffer.from(data).toString('utf-8');
-                await serverContext.ai.indexFile(path, contentString, {
-                  userId: user.id,
-                });
+              if (result?.broadcast) {
+                server.publish(
+                  context.SYNC_TOPIC,
+                  JSON.stringify({ type: 'sync', data: result.broadcast }),
+                );
               }
+              log('FS write successful, broadcasting sync message.');
             } else if (type === 'fs:rm') {
               await fs.rm(path, options);
               broadcastPayload = syncActions.deleteFiles(
                 { user },
                 { path, user_id: user.id },
               ).broadcast;
-              await serverContext.ai.removeFileIndex(path, { userId: user.id });
             }
 
             ws.send(JSON.stringify({ type: 'ack', opId }));

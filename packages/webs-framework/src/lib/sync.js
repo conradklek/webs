@@ -1,232 +1,9 @@
 import { session } from './session.js';
-import { watch, state } from './engine.js';
+import { effect, state } from './engine.js';
 import { onUnmounted, onMounted } from './renderer.js';
 import { generateUUID, createLogger } from './shared.js';
 
 const logger = createLogger('[Sync]');
-
-const coreFS = {
-  readFile: (path) =>
-    db('files')
-      .get(path)
-      .then((file) => (file ? file.content : null)),
-
-  listDirectory: async (path) => {
-    logger.debug(`[FS] Listing directory: "${path}"`);
-    const normalizedPath = path.replace(/\/$/, '');
-    const prefix = normalizedPath ? `${normalizedPath}/` : '';
-    const allFiles = await db('files').getAllWithPrefix(prefix);
-    const directChildren = new Map();
-
-    for (const file of allFiles) {
-      const relativePath = file.path.substring(prefix.length);
-      const segments = relativePath.split('/');
-      const childName = segments[0];
-
-      if (!childName) continue;
-
-      if (!directChildren.has(childName)) {
-        const isDirectory = segments.length > 1;
-        directChildren.set(childName, {
-          name: childName,
-          isDirectory: isDirectory,
-          path: isDirectory ? `${prefix}${childName}` : file.path,
-        });
-      }
-    }
-    const result = Array.from(directChildren.values()).sort((a, b) =>
-      a.name.localeCompare(b.name),
-    );
-    logger.debug(`[FS] Directory listing for "${path}" result:`, result);
-    return result;
-  },
-
-  async createOperation(payload) {
-    if (!session.isLoggedIn) throw new Error('User not logged in.');
-    const op = { ...payload, opId: generateUUID() };
-    logger.log(`[FS] Creating operation:`, op);
-
-    await performTransaction(['files', 'outbox'], 'readwrite', (tx) => {
-      const filesStore = tx.objectStore('files');
-      const outboxStore = tx.objectStore('outbox');
-
-      if (op.type === 'fs:write') {
-        filesStore.put({
-          path: op.path,
-          content: op.data,
-          user_id: session.user.id,
-          access: op.options.access || 'private',
-          size: op.data?.length || 0,
-          last_modified: new Date().toISOString(),
-        });
-      } else if (op.type === 'fs:rm') {
-        const key =
-          typeof op.path === 'string'
-            ? { path: op.path, user_id: session.user.id }
-            : op.path;
-        filesStore.delete([key.path, key.user_id]);
-      }
-      outboxStore.put(op);
-    });
-
-    notify('files');
-    syncEngine.process();
-  },
-};
-
-export function fs(path = '') {
-  if (typeof window === 'undefined') {
-    const use = (initialData = null) => {
-      const s = state({
-        data: initialData,
-        isLoading: false,
-        error: null,
-      });
-      s.hydrate = async () => {};
-      s.write = async () => {};
-      s.rm = async () => {};
-      return s;
-    };
-    return {
-      read: () => Promise.resolve(null),
-      ls: () => Promise.resolve([]),
-      write: () => Promise.resolve(),
-      rm: () => Promise.resolve(),
-      use,
-    };
-  }
-
-  const isDirectoryOp =
-    typeof path === 'function' ? true : path === '' || path.endsWith('/');
-
-  const methods = {
-    read: () => {
-      if (isDirectoryOp) throw new Error('Cannot call .read() on a directory.');
-      const currentPath = typeof path === 'function' ? path() : path;
-      return coreFS.readFile(currentPath);
-    },
-    ls: () => {
-      if (!isDirectoryOp)
-        throw new Error(
-          'Can only call .ls() on a directory path (ending with "/").',
-        );
-      const currentPath = typeof path === 'function' ? path() : path;
-      return coreFS.listDirectory(currentPath);
-    },
-    write: (content, options = { access: 'private' }) => {
-      if (isDirectoryOp)
-        throw new Error('Cannot call .write() on a directory.');
-      const currentPath = typeof path === 'function' ? path() : path;
-      return coreFS.createOperation({
-        type: 'fs:write',
-        path: currentPath,
-        data: content,
-        options,
-      });
-    },
-    rm: (options = { access: 'private' }) => {
-      const currentPath = typeof path === 'function' ? path() : path;
-      return coreFS.createOperation({
-        type: 'fs:rm',
-        path: currentPath,
-        options,
-      });
-    },
-    use(initialData = null) {
-      const hasInitialData =
-        initialData && (!Array.isArray(initialData) || initialData.length > 0);
-      logger.log(
-        `[fs.use] Initializing for path: ${typeof path === 'function' ? path() : path}`,
-        { initialData, hasInitialData },
-      );
-
-      const s = state({
-        data: initialData,
-        isLoading: !hasInitialData,
-        error: null,
-      });
-
-      let unsubscribe = null;
-
-      const fetchData = async () => {
-        const currentDynamicPath = typeof path === 'function' ? path() : path;
-
-        const isDir =
-          Array.isArray(s.data) ||
-          currentDynamicPath === '' ||
-          currentDynamicPath.endsWith('/');
-
-        logger.log(`[fs.use] Fetching data for path: "${currentDynamicPath}"`);
-        try {
-          s.isLoading = true;
-          s.error = null;
-          const newData = isDir
-            ? await coreFS.listDirectory(currentDynamicPath)
-            : await coreFS.readFile(currentDynamicPath);
-          logger.log(
-            `[fs.use] Fetched data for "${currentDynamicPath}":`,
-            newData,
-          );
-          s.data = newData;
-        } catch (e) {
-          logger.error(
-            `[fs.use] Error fetching data for "${currentDynamicPath}":`,
-            e,
-          );
-          s.error = e.message;
-        } finally {
-          s.isLoading = false;
-        }
-      };
-
-      const setupSubscription = (skipInitialFetch = false) => {
-        if (unsubscribe) unsubscribe();
-        const currentDynamicPath = typeof path === 'function' ? path() : path;
-        logger.log(
-          `[fs.use] Setting up subscription for path: "${currentDynamicPath}"`,
-        );
-        unsubscribe = db('files').subscribe(fetchData);
-        if (!skipInitialFetch) {
-          fetchData();
-        }
-      };
-
-      onMounted(() => {
-        setupSubscription(hasInitialData);
-
-        if (typeof path === 'function') {
-          const stopWatch = watch(path, () => {
-            logger.log(
-              `[fs.use] Watched path changed to: "${path()}", re-subscribing.`,
-            );
-            setupSubscription(true);
-          });
-          onUnmounted(stopWatch);
-        }
-      });
-
-      onUnmounted(() => {
-        if (unsubscribe) {
-          logger.log(
-            `[fs.use] Unsubscribing for path: "${typeof path === 'function' ? path() : path}"`,
-          );
-          unsubscribe();
-        }
-      });
-
-      s.write = this.write;
-      s.rm = this.rm;
-
-      return s;
-    },
-  };
-
-  methods.write = methods.write.bind(methods);
-  methods.rm = methods.rm.bind(methods);
-  methods.use = methods.use.bind(methods);
-
-  return methods;
-}
 
 const DB_NAME = 'webs-local-db';
 let dbPromise = null;
@@ -466,6 +243,263 @@ export function performTransaction(tableNames, mode, action) {
   return coreDB.performTransaction(tableNames, mode, action);
 }
 
+function createSsrDbMock() {
+  const fn = () => Promise.resolve(null);
+  const empty = () => Promise.resolve([]);
+  return {
+    get: fn,
+    getAll: empty,
+    getAllWithPrefix: empty,
+    query: empty,
+    put: fn,
+    bulkPut: fn,
+    delete: fn,
+    subscribe: () => () => { },
+    clear: fn,
+  };
+}
+
+export function db(tableName) {
+  if (typeof window === 'undefined') {
+    return createSsrDbMock();
+  }
+  if (!tableName) throw new Error('db() requires a table name.');
+  return {
+    get: (key) => coreDB.get(tableName, key),
+    getAll: () => coreDB.getAll(tableName),
+    getAllWithPrefix: (prefix) => coreDB.getAllWithPrefix(tableName, prefix),
+    query: (indexName, query) => coreDB.query(tableName, indexName, query),
+    put: (record) => coreDB.put(tableName, record),
+    bulkPut: (records) => coreDB.bulkPut(tableName, records),
+    delete: (key) => coreDB.delete(tableName, key),
+    subscribe: (callback) => coreDB.subscribe(tableName, callback),
+    clear: () => coreDB.clear(tableName),
+  };
+}
+
+const coreFS = {
+  readFile: (path) =>
+    db('files')
+      .get(path)
+      .then((file) => (file ? file.content : null)),
+
+  listDirectory: async (path) => {
+    logger.debug(`[FS] Listing directory: "${path}"`);
+    const normalizedPath = path.replace(/\/$/, '');
+    const prefix = normalizedPath ? `${normalizedPath}/` : '';
+    const allFiles = await db('files').getAllWithPrefix(prefix);
+    const directChildren = new Map();
+
+    for (const file of allFiles) {
+      const relativePath = file.path.substring(prefix.length);
+      const segments = relativePath.split('/');
+      const childName = segments[0];
+
+      if (!childName) continue;
+
+      if (!directChildren.has(childName)) {
+        const isDirectory = segments.length > 1;
+        directChildren.set(childName, {
+          name: childName,
+          isDirectory: isDirectory,
+          path: isDirectory ? `${prefix}${childName}` : file.path,
+        });
+      }
+    }
+    const result = Array.from(directChildren.values()).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+    logger.debug(`[FS] Directory listing for "${path}" result:`, result);
+    return result;
+  },
+
+  async createOperation(payload) {
+    if (!session.isLoggedIn) throw new Error('User not logged in.');
+    const op = { ...payload, opId: generateUUID() };
+    logger.log(`[FS] Creating operation:`, op);
+
+    await performTransaction(['files', 'outbox'], 'readwrite', (tx) => {
+      const filesStore = tx.objectStore('files');
+      const outboxStore = tx.objectStore('outbox');
+
+      if (op.type === 'fs:write') {
+        filesStore.put({
+          path: op.path,
+          content: op.data,
+          user_id: session.user.id,
+          access: op.options.access || 'private',
+          size: op.data?.length || 0,
+          last_modified: new Date().toISOString(),
+        });
+      } else if (op.type === 'fs:rm') {
+        const key =
+          typeof op.path === 'string'
+            ? { path: op.path, user_id: session.user.id }
+            : op.path;
+        filesStore.delete([key.path, key.user_id]);
+      }
+      outboxStore.put(op);
+    });
+
+    notify('files');
+    syncEngine.process();
+  },
+};
+
+export function fs(path = '') {
+  if (typeof window === 'undefined') {
+    const use = (initialData = null) => {
+      const s = state({
+        data: initialData,
+        isLoading: false,
+        error: null,
+      });
+      s.hydrate = async () => { };
+      s.write = async () => { };
+      s.rm = async () => { };
+      return s;
+    };
+    return {
+      read: () => Promise.resolve(null),
+      ls: () => Promise.resolve([]),
+      write: () => Promise.resolve(),
+      rm: () => Promise.resolve(),
+      use,
+    };
+  }
+
+  const isDirectoryOp =
+    typeof path === 'function' ? true : path === '' || path.endsWith('/');
+
+  const methods = {
+    read: () => {
+      if (isDirectoryOp) throw new Error('Cannot call .read() on a directory.');
+      const currentPath = typeof path === 'function' ? path() : path;
+      return coreFS.readFile(currentPath);
+    },
+    ls: () => {
+      if (!isDirectoryOp)
+        throw new Error(
+          'Can only call .ls() on a directory path (ending with "/").',
+        );
+      const currentPath = typeof path === 'function' ? path() : path;
+      return coreFS.listDirectory(currentPath);
+    },
+    write: (content, options = { access: 'private' }) => {
+      if (isDirectoryOp)
+        throw new Error('Cannot call .write() on a directory.');
+      const currentPath = typeof path === 'function' ? path() : path;
+      return coreFS.createOperation({
+        type: 'fs:write',
+        path: currentPath,
+        data: content,
+        options,
+      });
+    },
+    rm: (options = { access: 'private' }) => {
+      const currentPath = typeof path === 'function' ? path() : path;
+      return coreFS.createOperation({
+        type: 'fs:rm',
+        path: currentPath,
+        options,
+      });
+    },
+    use(initialData = null) {
+      const hasInitialData =
+        initialData && (!Array.isArray(initialData) || initialData.length > 0);
+      logger.log(
+        `[fs.use] Initializing for path: ${typeof path === 'function' ? path() : path}`,
+        { initialData, hasInitialData },
+      );
+
+      const s = state({
+        data: initialData,
+        isLoading: !hasInitialData,
+        error: null,
+      });
+
+      let unsubscribe = null;
+
+      const fetchData = async () => {
+        const currentDynamicPath = typeof path === 'function' ? path() : path;
+
+        const isDir =
+          Array.isArray(s.data) ||
+          currentDynamicPath === '' ||
+          currentDynamicPath.endsWith('/');
+
+        logger.log(`[fs.use] Fetching data for path: "${currentDynamicPath}"`);
+        try {
+          s.isLoading = true;
+          s.error = null;
+          const newData = isDir
+            ? await coreFS.listDirectory(currentDynamicPath)
+            : await coreFS.readFile(currentDynamicPath);
+          logger.log(
+            `[fs.use] Fetched data for "${currentDynamicPath}":`,
+            newData,
+          );
+          s.data = newData;
+        } catch (e) {
+          logger.error(
+            `[fs.use] Error fetching data for "${currentDynamicPath}":`,
+            e,
+          );
+          s.error = e.message;
+        } finally {
+          s.isLoading = false;
+        }
+      };
+
+      const setupSubscription = (skipInitialFetch = false) => {
+        if (unsubscribe) unsubscribe();
+        const currentDynamicPath = typeof path === 'function' ? path() : path;
+        logger.log(
+          `[fs.use] Setting up subscription for path: "${currentDynamicPath}"`,
+        );
+        unsubscribe = db('files').subscribe(fetchData);
+        if (!skipInitialFetch) {
+          fetchData();
+        }
+      };
+
+      onMounted(() => {
+        setupSubscription(hasInitialData);
+
+        if (typeof path === 'function') {
+          const stopWatch = effect(path, () => {
+            logger.log(
+              `[fs.use] Watched path changed to: "${path()}", re-subscribing.`,
+            );
+            setupSubscription(true);
+          });
+          onUnmounted(stopWatch);
+        }
+      });
+
+      onUnmounted(() => {
+        if (unsubscribe) {
+          logger.log(
+            `[fs.use] Unsubscribing for path: "${typeof path === 'function' ? path() : path}"`,
+          );
+          unsubscribe();
+        }
+      });
+
+      s.write = this.write;
+      s.rm = this.rm;
+
+      return s;
+    },
+  };
+
+  methods.write = methods.write.bind(methods);
+  methods.rm = methods.rm.bind(methods);
+  methods.use = methods.use.bind(methods);
+
+  return methods;
+}
+
 function connectToSyncServer() {
   if (socket?.readyState === WebSocket.OPEN) return processOutbox();
   if (!isOnline) {
@@ -560,45 +594,11 @@ async function processOutbox() {
     });
 }
 
-function createSsrDbMock() {
-  const fn = () => Promise.resolve(null);
-  const empty = () => Promise.resolve([]);
-  return {
-    get: fn,
-    getAll: empty,
-    getAllWithPrefix: empty,
-    query: empty,
-    put: fn,
-    bulkPut: fn,
-    delete: fn,
-    subscribe: () => () => {},
-    clear: fn,
-  };
-}
-
-export function db(tableName) {
-  if (typeof window === 'undefined') {
-    return createSsrDbMock();
-  }
-  if (!tableName) throw new Error('db() requires a table name.');
-  return {
-    get: (key) => coreDB.get(tableName, key),
-    getAll: () => coreDB.getAll(tableName),
-    getAllWithPrefix: (prefix) => coreDB.getAllWithPrefix(tableName, prefix),
-    query: (indexName, query) => coreDB.query(tableName, indexName, query),
-    put: (record) => coreDB.put(tableName, record),
-    bulkPut: (records) => coreDB.bulkPut(tableName, records),
-    delete: (key) => coreDB.delete(tableName, key),
-    subscribe: (callback) => coreDB.subscribe(tableName, callback),
-    clear: () => coreDB.clear(tableName),
-  };
-}
-
 export const syncEngine = {
   start() {
     if (typeof window === 'undefined') return;
 
-    watch(
+    effect(
       () => session.user,
       (newUser, oldUser) => {
         if (newUser && !oldUser) {

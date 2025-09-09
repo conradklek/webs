@@ -83,7 +83,7 @@
         bind:value="newTodoContent"
         type="text"
         placeholder="What needs to be done?"
-        class="input"
+        class="w-full"
       />
       <button type="submit" class="btn btn-default btn-size-lg">Add</button>
     </form>

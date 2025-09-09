@@ -1,0 +1,90 @@
+<script>
+  import { route, computed } from '@conradklek/webs';
+
+  export default {
+    props: {
+      path: String,
+    },
+    setup(props) {
+      const breadcrumbs = computed(() => {
+        const currentPath = props.path || route.value.path || '/';
+        const segments = currentPath.split('/').filter(Boolean);
+
+        if (segments.length === 0) {
+          return [{ name: 'webs.site', href: '/', isLast: true }];
+        }
+
+        const trail = [
+          {
+            name: 'webs.site',
+            href: '/',
+            isLast: false,
+          },
+        ];
+
+        if (segments.length > 1) {
+          const parentPath = '/' + segments.slice(0, -1).join('/');
+          trail.push({
+            name: '..',
+            href: parentPath,
+            isLast: false,
+          });
+
+          const lastSegment = segments[segments.length - 1];
+          const name = (
+            lastSegment.charAt(0).toUpperCase() + lastSegment.slice(1)
+          ).replace(/-/g, ' ');
+
+          trail.push({
+            name: name,
+            href: currentPath,
+            isLast: true,
+          });
+        } else {
+          const segment = segments[0];
+          const name = (
+            segment.charAt(0).toUpperCase() + segment.slice(1)
+          ).replace(/-/g, ' ');
+
+          trail.push({
+            name: name,
+            href: `/${segment}`,
+            isLast: true,
+          });
+        }
+
+        return trail;
+      });
+
+      return { breadcrumbs };
+    },
+  };
+</script>
+
+<template>
+  <nav aria-label="breadcrumb">
+    <ol class="w-full leading-8 h-8 flex flex-row gap-1.5">
+      {#each breadcrumbs as crumb}
+      <li class="inline-flex items-center gap-1.5">
+        {#if crumb.isLast && !crumb.name === "webs.site"}
+        <span
+          role="link"
+          aria-disabled="true"
+          aria-current="page"
+          class="line-clamp-1 break-all"
+          >{{ crumb.name }}</span
+        >
+        {:else}
+        <a
+          :href="crumb.href"
+          class="underline hover:opacity-75 active:opacity-50"
+          >{{ crumb.name }}</a
+        >
+        {/if}
+      </li>
+      {#if !crumb.isLast}
+      <li role="presentation" aria-hidden="true" class="text-system">/</li>
+      {/if} {/each}
+    </ol>
+  </nav>
+</template>

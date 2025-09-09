@@ -1,6 +1,6 @@
 import { onUnmounted, onMounted } from '../renderer.js';
 import { session } from '../session.js';
-import { state, watch } from '../engine.js';
+import { state, effect } from '../engine.js';
 import { db } from '../sync.js';
 import { generateUUID } from '../shared.js';
 
@@ -118,7 +118,6 @@ function createAIService() {
   };
 
   const useChannel = (channelName) => {
-    // SSR Guard: Return a mock object on the server to prevent errors
     if (typeof window === 'undefined') {
       const mockState = state({
         messages: [],
@@ -151,7 +150,7 @@ function createAIService() {
     };
 
     const connect = () => {
-      if (ws) return; // Prevent multiple connections
+      if (ws) return;
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const url = `${protocol}//${window.location.host}/api/chat?channel=${encodeURIComponent(
         channelName,
@@ -188,7 +187,7 @@ function createAIService() {
 
       ws.onclose = () => {
         s.isConnected = false;
-        ws = null; // Clear the instance on close
+        ws = null;
       };
 
       ws.onerror = (err) => {
@@ -208,15 +207,13 @@ function createAIService() {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
-        // Optimistically update local state
         chatTable.put(message);
-        // Send to server
         ws.send(text);
       }
     };
 
     onMounted(() => {
-      const stopWatchingUser = watch(
+      const stopWatchingUser = effect(
         () => session.user,
         (user) => {
           if (user && !ws) {

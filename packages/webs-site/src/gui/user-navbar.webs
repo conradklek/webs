@@ -17,7 +17,7 @@
 </script>
 
 <template>
-  <div class="flex-1">
+  <div>
     <div class="w-full flex flex-row items-center justify-end gap-4">
       {#if !session.isLoggedIn}
       <nav class="contents">

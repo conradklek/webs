@@ -39,13 +39,18 @@ export default (options = {}) => ({
       async (args) => {
         try {
           const sourceCode = await Bun.file(args.path).text();
-          const componentName = basename(args.path, '.webs');
+          const relativePath = relative(root, args.path).replace(/\\/g, '/');
+          const componentName = relativePath.startsWith('src/')
+            ? relativePath.substring(4).replace('.webs', '')
+            : basename(args.path, '.webs');
 
           const scriptMatch = /<script[^>]*>(.*?)<\/script>/s.exec(sourceCode);
           const templateMatch = /<template>(.*?)<\/template>/s.exec(sourceCode);
+          const styleMatch = /<style>([\s\S]*?)<\/style>/s.exec(sourceCode);
 
           let scriptContent = scriptMatch ? scriptMatch[1].trim() : '';
           const templateContent = templateMatch ? templateMatch[1].trim() : '';
+          const styleContent = styleMatch ? styleMatch[1].trim() : '';
 
           scriptContent = scriptContent.replace(
             /from\s+['"](.+?)\.webs['"]/g,
@@ -81,8 +86,8 @@ export default (options = {}) => ({
           const templateProperty = `template: ${JSON.stringify(
             templateContent,
           )}`;
-          const injectedProps = `name: '${componentName}', ${templateProperty}`;
-
+          const styleProperty = `style: ${JSON.stringify(styleContent)}`;
+          const injectedProps = `name: '${componentName}', ${templateProperty}, ${styleProperty}`;
           let finalScript;
 
           if (!scriptContent.includes('export default')) {
@@ -103,10 +108,8 @@ export default (options = {}) => ({
 
           const hmrCode = `
           if (import.meta.hot) {
-            import.meta.hot.accept((newModule) => {
-              if (newModule && window.__WEBS_HMR_UPDATE__) {
-                window.__WEBS_HMR_UPDATE__(__webs_component_def, newModule.default);
-              }
+            import.meta.hot.accept(() => {
+              window.location.reload();
             });
           }`;
 

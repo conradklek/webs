@@ -78,8 +78,6 @@ export function generateRenderFn(ast) {
           )})`;
         case 'UnaryExpression':
           return `${expr.operator}${this.genExpr(expr.argument)}`;
-        case 'UpdateExpression':
-          return `(${this.genExpr(expr.argument)}${expr.operator})`;
         case 'MemberExpression': {
           const objectExpr = this.genExpr(expr.object);
           const propertyName = expr.property.name;
@@ -223,8 +221,8 @@ export function generateRenderFn(ast) {
             const child = ${childNodes}[0];
             if (child && !child.props) child.props = {};
             if (child && child.props) child.props.key = ${this.genExpr(
-              keyName,
-            )};
+            keyName,
+          )};
             return child;
           })()`;
 
@@ -621,44 +619,57 @@ export class Compiler {
   }
 }
 
-export const compileCache = new WeakMap();
+export const compileCache = new Map();
 
 export function compile(componentDef, options = null) {
-  if (compileCache.has(componentDef)) {
-    console.log(`[Compiler] Cache HIT for component: ${componentDef.name}`);
-    return compileCache.get(componentDef);
+  if (compileCache.has(componentDef.name)) {
+    return compileCache.get(componentDef.name);
   }
-  console.log(
-    `[Compiler] Cache MISS for component: ${componentDef.name}. Compiling...`,
-  );
 
-  let templateContent = componentDef.template;
-  if (typeof templateContent === 'function') {
-    const htmlTagFn = (strings, ...values) => {
-      let result = '';
-      strings.forEach((string, i) => {
-        result += string;
-        if (i < values.length) {
-          const value = values[i];
-          if (typeof value === 'object' && value !== null) {
-            result += JSON.stringify(value);
-          } else {
-            result += String(value);
+  let renderFn;
+  if (typeof componentDef.render === 'function') {
+    renderFn = componentDef.render;
+  } else {
+    let templateContent = componentDef.template;
+    if (typeof templateContent === 'function') {
+      const htmlTagFn = (strings, ...values) => {
+        let result = '';
+        strings.forEach((string, i) => {
+          result += string;
+          if (i < values.length) {
+            const value = values[i];
+            if (typeof value === 'object' && value !== null) {
+              result += JSON.stringify(value);
+            } else {
+              result += String(value);
+            }
           }
-        }
-      });
-      return result;
-    };
-    templateContent = templateContent(htmlTagFn, {});
+        });
+        return result;
+      };
+      templateContent = templateContent(htmlTagFn, {});
+    }
+
+    if (typeof templateContent !== 'string') {
+      renderFn = () => Webs.h(Webs.Comment, null, 'Component missing template');
+    } else {
+      const finalComponentDef = { ...componentDef, template: templateContent };
+      const compiler = new Compiler(finalComponentDef, options);
+      const { fn, source } = generateRenderFn(
+        compiler._transformNode(compiler.parseHtml(finalComponentDef.template)),
+      );
+
+      if (devtools) {
+        devtools.events.emit('component:compiled', {
+          name: finalComponentDef.name,
+          template: finalComponentDef.template,
+          source: source,
+        });
+      }
+      renderFn = fn;
+    }
   }
 
-  if (typeof templateContent !== 'string') {
-    return () => Webs.h(Webs.Comment, null, 'Component missing template');
-  }
-
-  const finalComponentDef = { ...componentDef, template: templateContent };
-  const compiler = new Compiler(finalComponentDef, options);
-  const renderFn = compiler.compile();
-  compileCache.set(componentDef, renderFn);
+  compileCache.set(componentDef.name, renderFn);
   return renderFn;
 }

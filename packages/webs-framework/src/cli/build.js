@@ -27,6 +27,7 @@ const config = {
   TMP_APP_CSS: resolve(userProjectDir, '.webs/app.css'),
   SRC_DIR: resolve(userProjectDir, 'src'),
   APP_DIR: resolve(userProjectDir, 'src/app'),
+  PUB_DIR: resolve(userProjectDir, 'src/pub'),
   GUI_DIR: resolve(userProjectDir, 'src/gui'),
   LIB_DIR: resolve(FRAMEWORK_DIR, '../lib'),
   USER_FILES_ROOT: resolve(userProjectDir, '.webs/files'),
@@ -34,7 +35,8 @@ const config = {
   TMP_COMPONENT_REGISTRY: resolve(userProjectDir, '.webs/registry.js'),
 };
 
-async function compileWebsFile(filePath) {
+async function compileWebsFile(filePath, componentName) {
+  console.log(`[Build] Compiling '${filePath}' as '${componentName}'`);
   const sourceCode = await Bun.file(filePath).text();
   const scriptMatch = /<script[^>]*>(.*?)<\/script>/s.exec(sourceCode);
   const templateMatch = /<template>(.*?)<\/template>/s.exec(sourceCode);
@@ -43,7 +45,6 @@ async function compileWebsFile(filePath) {
   let scriptContent = scriptMatch ? scriptMatch[1].trim() : '';
   const templateContent = templateMatch ? templateMatch[1].trim() : '';
   const styleContent = styleMatch ? styleMatch[1].trim() : '';
-  const componentName = basename(filePath, '.webs');
 
   const tempFileDir = dirname(
     resolve(config.TMP_COMPILED_DIR, relative(config.SRC_DIR, filePath)),
@@ -52,11 +53,14 @@ async function compileWebsFile(filePath) {
     /import\s+['"](\..*?\.css)['"]/g,
     (match, cssPath) => {
       const absoluteCssPath = resolve(dirname(filePath), cssPath);
-      let relativePathFromTemp = relative(tempFileDir, absoluteCssPath);
+      let relativePathFromTemp = relative(tempFileDir, absoluteCssPath).replace(
+        /\\/g,
+        '/',
+      );
       if (!relativePathFromTemp.startsWith('.')) {
         relativePathFromTemp = './' + relativePathFromTemp;
       }
-      return `import '${relativePathFromTemp.replace(/\\/g, '/')}';`;
+      return `import '${relativePathFromTemp}';`;
     },
   );
 
@@ -111,26 +115,35 @@ async function compileWebsFile(filePath) {
       );
     }
   }
-
-  return { js: registryImport + finalScript, css: styleContent };
+  const hmrCode = `
+          if (import.meta.hot) {
+            import.meta.hot.accept(() => {
+              window.location.reload();
+            });
+          }`;
+  return { js: registryImport + finalScript + hmrCode, css: styleContent };
 }
 
-async function manualCompileAllWebsFiles() {
-  console.log('[Build] Stage 1: Starting manual .webs compilation...');
+async function prepareBuildFiles() {
+  console.log('[Build] Stage 1: Starting file compilation...');
   await ensureDir(config.TMP_COMPILED_DIR);
-  const glob = new Bun.Glob('**/*.webs');
+  const websGlob = new Bun.Glob('**/*.webs');
+  const cssGlob = new Bun.Glob('**/*.css');
   const sourceEntrypoints = [];
+  const publicCssEntrypoints = [];
   const pageEntrypoints = [];
-  let allCss = '';
 
-  for await (const file of glob.scan(config.SRC_DIR)) {
+  let allWebsCss = '';
+  for await (const file of websGlob.scan(config.SRC_DIR)) {
     const fullPath = join(config.SRC_DIR, file);
     sourceEntrypoints.push(fullPath);
 
-    const { js, css } = await compileWebsFile(fullPath);
-    if (css) allCss += css;
-
     const relativePath = fullPath.substring(config.SRC_DIR.length + 1);
+    const componentName = relativePath.replace('.webs', '');
+
+    const { js, css } = await compileWebsFile(fullPath, componentName);
+    if (css) allWebsCss += css;
+
     const outPath = resolve(
       config.TMP_COMPILED_DIR,
       relativePath.replace('.webs', '.js'),
@@ -143,9 +156,22 @@ async function manualCompileAllWebsFiles() {
     await ensureDir(dirname(outPath));
     await writeFile(outPath, js);
   }
-  await writeFile(config.TMP_APP_CSS, allCss);
-  console.log('[Build] Stage 1: Manual .webs compilation complete.');
-  return { sourceEntrypoints, pageEntrypoints };
+
+  await writeFile(config.TMP_APP_CSS, allWebsCss);
+
+  if (await exists(config.PUB_DIR)) {
+    console.log(
+      '[Build] Found src/pub directory. Adding CSS files as build entrypoints...',
+    );
+    for await (const file of cssGlob.scan(config.PUB_DIR)) {
+      const fullPath = join(config.PUB_DIR, file);
+      publicCssEntrypoints.push(fullPath);
+      console.log(`[Build] Added public CSS file: ${fullPath}`);
+    }
+  }
+
+  console.log('[Build] Stage 1: File compilation complete.');
+  return { sourceEntrypoints, pageEntrypoints, publicCssEntrypoints };
 }
 
 async function ensureDir(dirPath) {
@@ -182,8 +208,8 @@ async function generateComponentRegistry() {
     if (!relativePath.startsWith('.')) relativePath = './' + relativePath;
 
     imports.push(`import ${pascalName} from '${relativePath}';`);
-    exports.push(`  '${componentName}': ${pascalName}`);
-    exports.push(`  ...(${pascalName} ? ${pascalName}.components || {} : {})`);
+    exports.push(`  '${componentName}': ${pascalName}`);
+    exports.push(`  ...(${pascalName} ? ${pascalName}.components || {} : {})`);
   }
 
   const content = `${imports.join(
@@ -301,6 +327,10 @@ async function prepareClientEntrypoint(
       .replace('.webs', '');
     let relPath = relative(appJsDir, fullPath).replace(/\\/g, '/');
     if (!relPath.startsWith('.')) relPath = './' + relPath;
+
+    console.log(
+      `[Build] Adding client entry for component: '${componentName}'`,
+    );
     return `['${componentName}', () => import('${relPath}')]`;
   });
 
@@ -308,6 +338,8 @@ async function prepareClientEntrypoint(
     ({ name, path }) => {
       let relPath = relative(appJsDir, path).replace(/\\/g, '/');
       if (!relPath.startsWith('.')) relPath = './' + relPath;
+
+      console.log(`[Build] Adding client entry for layout wrapper: '${name}'`);
       return `['${name}', () => import('${relPath}')]`;
     },
   );
@@ -317,17 +349,13 @@ async function prepareClientEntrypoint(
     ...layoutWrapperLoaderEntries,
   ];
 
-  let relCssPath = relative(appJsDir, config.TMP_APP_CSS).replace(/\\/g, '/');
-  if (!relCssPath.startsWith('.')) relCssPath = './' + relCssPath;
-
   const entrypointContent = `
     import { hydrate } from '@conradklek/webs';
-    import '${relCssPath}';
     const dbConfig = ${JSON.stringify({
-      version: dbConfig.version,
-      clientTables: dbConfig.clientTables,
-    })};
-    const componentLoaders = new Map([${allLoaderEntries.join(',\n  ')}]);
+    version: dbConfig.version,
+    clientTables: dbConfig.clientTables,
+  })};
+    const componentLoaders = new Map([${allLoaderEntries.join(',\n    ')}]);
     hydrate(componentLoaders, dbConfig);
   `;
   await writeFile(config.TMP_APP_JS, entrypointContent);
@@ -336,6 +364,7 @@ async function prepareClientEntrypoint(
 async function buildClientBundle(
   sourceEntrypoints,
   layoutWrapperEntrypoints,
+  publicCssEntrypoints,
   dbConfig,
 ) {
   console.log('[Build] Stage 2: Starting client bundle...');
@@ -346,16 +375,12 @@ async function buildClientBundle(
   );
 
   const clientBuildResult = await Bun.build({
-    entrypoints: [config.TMP_APP_JS],
+    entrypoints: [config.TMP_APP_JS, ...publicCssEntrypoints],
     outdir: config.OUTDIR,
     target: 'browser',
     splitting: true,
     minify: config.IS_PROD,
-    naming: {
-      entry: '[name].[ext]',
-      chunk: '[name]-[hash].[ext]',
-      asset: '[name]-[hash].[ext]',
-    },
+    naming: config.IS_PROD ? '[name]-[hash].[ext]' : '[name].[ext]',
     plugins: [
       websPlugin({
         root: config.CWD,
@@ -401,10 +426,8 @@ async function generateServiceWorker(buildOutputs) {
       .filter((entry) => !entry.url.includes('[...'))
       .concat({ url: '/' }),
   );
-
-  const finalSwContent = `const IS_PROD = ${
-    config.IS_PROD
-  };\nself.__WEBS_MANIFEST = ${manifestForSw};\n\n${swTemplate}`;
+  const finalSwContent = `const IS_PROD = ${config.IS_PROD
+    };\nself.__WEBS_MANIFEST = ${manifestForSw};\n\n${swTemplate}`;
 
   const swOutputPath = join(config.OUTDIR, 'sw.js');
   await writeFile(swOutputPath, finalSwContent);
@@ -429,6 +452,8 @@ async function generateRoutes(pageEntrypoints) {
   await ensureDir(config.TMP_WRAPPERS_DIR);
   const routeDefinitions = [];
   const layoutWrapperEntrypoints = [];
+  const sourceToComponentMap = {};
+  const layoutWrapperMap = {};
 
   for (const {
     source: sourcePagePath,
@@ -438,17 +463,22 @@ async function generateRoutes(pageEntrypoints) {
       /\\/g,
       '/',
     );
-    const componentName = componentPath.replace('.webs', '');
+    const componentName = `app/${componentPath.replace('.webs', '')}`;
+
+    sourceToComponentMap[
+      relative(config.SRC_DIR, sourcePagePath).replace(/\\/g, '/')
+    ] = componentName;
 
     if (basename(componentName) === 'layout') continue;
 
     const mod = await import(compiledPagePath);
     const layouts = await findLayoutsForPage(sourcePagePath);
     let finalComponent = mod.default;
-    let finalComponentName = `app/${componentName}`;
+    let finalComponentName = componentName;
 
     if (layouts.length > 0) {
       finalComponentName = `layout/${componentName.replace(/\//g, '_')}`;
+      layoutWrapperMap[componentName] = finalComponentName;
       const wrapperPath = join(
         config.TMP_WRAPPERS_DIR,
         `${finalComponentName.split('/')[1]}.js`,
@@ -491,10 +521,10 @@ async function generateRoutes(pageEntrypoints) {
                     render() {
                         const pageNode = h(PageComponent, { ...this.$props });
                         return ${layouts.reduceRight(
-                          (acc, _, i) =>
-                            `h(Layout${i}, { ...this.$props }, { default: () => ${acc} })`,
-                          'pageNode',
-                        )};
+        (acc, _, i) =>
+          `h(Layout${i}, { ...this.$props }, { default: () => ${acc} })`,
+        'pageNode',
+      )};
                     }
                 };
             `;
@@ -536,7 +566,7 @@ async function generateRoutes(pageEntrypoints) {
   const appRoutes = Object.fromEntries(
     routeDefinitions.map((r) => [r.path, r.definition]),
   );
-  return { appRoutes, layoutWrapperEntrypoints };
+  return { appRoutes, layoutWrapperEntrypoints, sourceToComponentMap };
 }
 
 async function generateActionsFile() {
@@ -564,8 +594,8 @@ async function main() {
   await ai.init();
   console.log('[Build] AI module initialized.');
 
-  const { sourceEntrypoints, pageEntrypoints } =
-    await manualCompileAllWebsFiles();
+  const { sourceEntrypoints, pageEntrypoints, publicCssEntrypoints } =
+    await prepareBuildFiles();
 
   await generateComponentRegistry();
   const { default: globalComponents } = await import(
@@ -573,6 +603,7 @@ async function main() {
   );
 
   const SYNC_TOPIC = 'webs-sync';
+  const HMR_TOPIC = 'webs-hmr';
   const db = await createDatabaseAndActions(
     Database,
     dbConfig,
@@ -719,23 +750,29 @@ async function main() {
     }
   }
 
-  let { appRoutes, layoutWrapperEntrypoints } =
+  let { appRoutes, layoutWrapperEntrypoints, sourceToComponentMap } =
     await generateRoutes(pageEntrypoints);
 
   let buildOutputs = await buildClientBundle(
     sourceEntrypoints,
     layoutWrapperEntrypoints,
+    publicCssEntrypoints,
     dbConfig,
   );
   if (!buildOutputs && config.IS_PROD) {
     process.exit(1);
   }
 
+  const mainCssOutput = buildOutputs.find((o) => o.path.endsWith('app.css'));
+  const publicCssOutput = buildOutputs.find(
+    (o) => o.path.startsWith('pub/') && o.path.endsWith('.css'),
+  );
+
   let manifest = {
     js: buildOutputs.find(
       (o) => o.kind === 'entry-point' && o.path.endsWith('.js'),
     )?.path,
-    css: buildOutputs.find((o) => o.path.endsWith('.css'))?.path,
+    css: publicCssOutput?.path || mainCssOutput?.path,
   };
 
   const swPath = await generateServiceWorker(buildOutputs);
@@ -753,15 +790,22 @@ async function main() {
     srcDir: config.SRC_DIR,
     isProd: config.IS_PROD,
     port: config.PORT,
-    SYNC_TOPIC,
+    SYNC_TOPIC: 'webs-sync',
+    HMR_TOPIC: 'webs-hmr',
     actionsPath: config.TMP_GENERATED_ACTIONS,
     globalComponents,
+    builder: Bun,
+    websPlugin: websPlugin,
+    CWD: config.CWD,
+    TMP_COMPONENT_REGISTRY: config.TMP_COMPONENT_REGISTRY,
+    GUI_DIR: config.GUI_DIR,
+    TMPDIR: config.TMPDIR,
+    sourceToComponentMap,
   };
 
   const server = await startServer(serverContext);
 
   if (!config.IS_PROD) {
-    const HMR_TOPIC = 'webs-hmr';
     console.log(`[Build] Watching for file changes in: ${config.SRC_DIR}`);
     let hmrDebounceTimer;
 
@@ -773,24 +817,35 @@ async function main() {
             `[Build] File change detected: ${filename}. Rebuilding...`,
           );
           try {
-            const { sourceEntrypoints: newSource, pageEntrypoints: newPages } =
-              await manualCompileAllWebsFiles();
+            const {
+              sourceEntrypoints: newSource,
+              pageEntrypoints: newPages,
+              publicCssEntrypoints: newPublicCss,
+            } = await prepareBuildFiles();
 
-            ({ appRoutes, layoutWrapperEntrypoints } =
+            ({ appRoutes, layoutWrapperEntrypoints, sourceToComponentMap } =
               await generateRoutes(newPages));
 
             const newBuildOutputs = await buildClientBundle(
               newSource,
               layoutWrapperEntrypoints,
+              newPublicCss,
               dbConfig,
             );
 
             if (newBuildOutputs) {
+              const newMainCssOutput = newBuildOutputs.find((o) =>
+                o.path.endsWith('app.css'),
+              );
+              const newPublicCssOutput = newBuildOutputs.find(
+                (o) => o.path.startsWith('pub/') && o.path.endsWith('.css'),
+              );
+
               manifest = {
                 js: newBuildOutputs.find(
                   (o) => o.kind === 'entry-point' && o.path.endsWith('.js'),
                 )?.path,
-                css: newBuildOutputs.find((o) => o.path.endsWith('.css'))?.path,
+                css: newPublicCssOutput?.path || newMainCssOutput?.path,
                 sw:
                   (await generateServiceWorker(newBuildOutputs)) || manifest.sw,
               };
@@ -799,6 +854,7 @@ async function main() {
                 ...serverContext,
                 manifest,
                 appRoutes,
+                sourceToComponentMap,
               };
 
               const newFetchHandler = createFetchHandler(newServerContext);
@@ -810,7 +866,14 @@ async function main() {
               console.log(
                 '[Build] Rebuild complete. Sending HMR reload message.',
               );
-              server.publish(HMR_TOPIC, JSON.stringify({ type: 'reload' }));
+              const relativePath = relative(
+                config.SRC_DIR,
+                join(config.SRC_DIR, filename),
+              ).replace(/\\/g, '/');
+              server.publish(
+                HMR_TOPIC,
+                JSON.stringify({ type: 'update', file: relativePath }),
+              );
             } else {
               console.error('[Build] Rebuild failed. HMR message not sent.');
             }

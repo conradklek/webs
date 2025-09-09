@@ -2,7 +2,7 @@
   import {
     fs,
     state,
-    watch,
+    effect,
     onUnmounted,
     onMounted,
     db,
@@ -28,7 +28,7 @@
         editorRef.value?.focus();
       });
       let saveTimeout;
-      watch(
+      effect(
         () => localContent.value,
         (newValue) => {
           if (typeof window === 'undefined') return;

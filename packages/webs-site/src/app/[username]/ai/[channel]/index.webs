@@ -1,5 +1,6 @@
 <script>
-  import { state, ai, onMounted, watch } from '@conradklek/webs';
+  import { state, ai } from '@conradklek/webs';
+
   export default {
     props: {
       params: Object,

@@ -1,4 +1,4 @@
-import { watch, isRef } from './engine.js';
+import { effect, isRef } from './engine.js';
 import { voidElements } from './parser.js';
 import { compile, compileCache } from './compiler.js';
 import {
@@ -11,9 +11,6 @@ import {
 
 const logger = createLogger('[Renderer]');
 const devtools = typeof window !== 'undefined' && window.__WEBS_DEVELOPER__;
-
-export const hmrRegistry =
-  typeof window !== 'undefined' ? new Map() : undefined;
 
 let instanceIdCounter = 0;
 
@@ -386,7 +383,7 @@ export function createRenderer(options) {
       isHydrating,
     ));
 
-    const runner = watch(
+    const runner = effect(
       () => {
         instanceStack.push(instance);
         currentInstance = instance;
@@ -632,8 +629,8 @@ export function createRenderer(options) {
         devtools.events.emit('component:removed', { uid: vnode.component.uid });
       }
 
-      if (vnode.component.update && vnode.component.update.watch) {
-        vnode.component.update.watch.stop();
+      if (vnode.component.update && vnode.component.update.effect) {
+        vnode.component.update.effect.stop();
       }
       vnode.component.hooks.onUnmounted?.forEach((h) =>
         h.call(vnode.component.ctx),
@@ -665,7 +662,16 @@ export function createRenderer(options) {
       patch(null, vnode, container);
       return vnode.component;
     }
-    hydrateNode(vnode, container.firstChild, container, null);
+    const rootDomNode = skipNonEssentialNodes(container.firstChild);
+    if (!rootDomNode) {
+      logger.warn(
+        'Hydration container contains no visible DOM nodes. Falling back to patch.',
+      );
+      patch(null, vnode, container);
+      return vnode.component;
+    }
+
+    hydrateNode(vnode, rootDomNode, container, null);
     logger.log('Hydration complete.');
     return vnode.component;
   };
@@ -687,7 +693,6 @@ export function createRenderer(options) {
       logger.debug('- HydrateNode: VNode is null, returning current DOM node.');
       return domNode;
     }
-
     if (isObject(vnode.type)) {
       logger.debug(`- Hydrating Component VNode: <${vnode.type.name}>`);
       vnode.el = domNode;
@@ -913,20 +918,6 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
     lastEl: null,
   };
 
-  if (import.meta.hot) {
-    const componentDef = instance.type;
-    if (!hmrRegistry.has(componentDef)) {
-      hmrRegistry.set(componentDef, new Set());
-    }
-    hmrRegistry.get(componentDef).add(instance);
-    onUnmounted(() => {
-      const instances = hmrRegistry.get(componentDef);
-      if (instances) {
-        instances.delete(instance);
-      }
-    });
-  }
-
   const { props: propsOptions, setup } = instance.type;
   const vnodeProps = vnode.props || {};
   const resolvedProps = {};
@@ -1064,15 +1055,9 @@ function createComponent(vnode, parent, isSsr = false, _isHydrating = false) {
     },
   );
 
-  if (instance.type.render) {
-    instance.render = instance.type.render;
-  } else if (instance.type.template) {
-    instance.render = compile(instance.type, {
-      globalComponents: instance.appContext.components,
-    });
-  } else {
-    instance.render = () => createVnode(Comment, null, 'no template');
-  }
+  instance.render = compile(instance.type, {
+    globalComponents: instance.appContext.components,
+  });
 
   return instance;
 }
@@ -1311,10 +1296,10 @@ function renderProps(props) {
     } else if (key === 'style') {
       const styleString = isObject(value)
         ? Object.entries(value)
-            .map(
-              ([k, v]) => `${k.replace(/([A-Z])/g, '-$1').toLowerCase()}:${v}`,
-            )
-            .join(';')
+          .map(
+            ([k, v]) => `${k.replace(/([A-Z])/g, '-$1').toLowerCase()}:${v}`,
+          )
+          .join(';')
         : value;
       result += ` style="${escapeHtml(styleString)}"`;
     } else if (typeof value === 'boolean') {

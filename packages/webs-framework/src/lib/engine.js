@@ -2,7 +2,7 @@ import { isObject } from './shared.js';
 
 let activeEffect = null;
 
-const watchStack = [];
+const effectStack = [];
 const targetMap = new WeakMap();
 const proxyMap = new WeakMap();
 
@@ -56,16 +56,16 @@ function createReactiveEffect(fn, scheduler) {
     deps: [],
     run() {
       if (!effect.active) return effect.fn();
-      if (watchStack.includes(effect)) return;
+      if (effectStack.includes(effect)) return;
 
       cleanup(effect);
       try {
-        watchStack.push(effect);
+        effectStack.push(effect);
         activeEffect = effect;
         return effect.fn();
       } finally {
-        watchStack.pop();
-        activeEffect = watchStack[watchStack.length - 1];
+        effectStack.pop();
+        activeEffect = effectStack[effectStack.length - 1];
       }
     },
     stop() {
@@ -131,7 +131,7 @@ export function state(initialValue) {
   return createRef(initialValue);
 }
 
-export function watch(source, cbOrOptions, options) {
+export function effect(source, cbOrOptions, options) {
   let getter = source;
   let cb = null;
   let scheduler = null;
@@ -159,7 +159,7 @@ export function watch(source, cbOrOptions, options) {
   oldValue = effect.run();
 
   const runner = effect.run.bind(effect);
-  runner.watch = effect;
+  runner.effect = effect;
   return runner;
 }
 
@@ -251,7 +251,7 @@ const arrayHandlers = {
   get(target, key, receiver) {
     const mutationMethods = ['push', 'pop', 'shift', 'unshift', 'splice'];
     if (mutationMethods.includes(key)) {
-      return function (...args) {
+      return function(...args) {
         const result = Array.prototype[key].apply(target, args);
         trigger(target, 'length');
         return result;

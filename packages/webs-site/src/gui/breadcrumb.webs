@@ -20,9 +20,15 @@
   };
 
   export const BreadcrumbLink = {
+    props: {
+      href: String,
+    },
     template(html) {
       return html`
-        <a class="text-hyperlink underline hover:opacity-75 active:opacity-50">
+        <a
+          :href="href"
+          class="text-hyperlink underline hover:opacity-75 active:opacity-50"
+        >
           <slot></slot>
         </a>
       `;
