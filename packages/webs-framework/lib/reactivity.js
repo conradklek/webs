@@ -251,7 +251,7 @@ const arrayHandlers = {
   get(target, key, receiver) {
     const mutationMethods = ['push', 'pop', 'shift', 'unshift', 'splice'];
     if (mutationMethods.includes(key)) {
-      return function(...args) {
+      return function (...args) {
         const result = Array.prototype[key].apply(target, args);
         trigger(target, 'length');
         return result;

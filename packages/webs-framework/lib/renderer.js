@@ -1,5 +1,4 @@
-import { effect, isRef } from './engine.js';
-import { voidElements } from './parser.js';
+import { effect, isRef } from './reactivity.js';
 import { compile, compileCache } from './compiler.js';
 import {
   isObject,
@@ -7,6 +6,7 @@ import {
   isFunction,
   normalizeClass,
   createLogger,
+  voidElements,
 } from './shared.js';
 
 const logger = createLogger('[Renderer]');
@@ -1296,10 +1296,10 @@ function renderProps(props) {
     } else if (key === 'style') {
       const styleString = isObject(value)
         ? Object.entries(value)
-          .map(
-            ([k, v]) => `${k.replace(/([A-Z])/g, '-$1').toLowerCase()}:${v}`,
-          )
-          .join(';')
+            .map(
+              ([k, v]) => `${k.replace(/([A-Z])/g, '-$1').toLowerCase()}:${v}`,
+            )
+            .join(';')
         : value;
       result += ` style="${escapeHtml(styleString)}"`;
     } else if (typeof value === 'boolean') {

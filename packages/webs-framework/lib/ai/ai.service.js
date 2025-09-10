@@ -1,7 +1,7 @@
 import { onUnmounted, onMounted } from '../renderer.js';
 import { session } from '../session.js';
-import { state, effect } from '../engine.js';
-import { db } from '../sync.js';
+import { state, effect } from '../reactivity.js';
+import { db } from '../sync-engine.js';
 import { generateUUID } from '../shared.js';
 
 let aiServiceInstance;

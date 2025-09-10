@@ -1,4 +1,4 @@
-import { store } from './engine.js';
+import { store } from './reactivity.js';
 import { createLogger } from './shared.js';
 
 const logger = createLogger('[Session]');

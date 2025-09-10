@@ -4,19 +4,19 @@ import {
   createVnode,
   onPropsReceived,
 } from './renderer.js';
-import { db, fs, syncEngine } from './sync.js';
+import { db, fs, syncEngine } from './sync-engine.js';
 import { ai } from './ai/ai.service.js';
-import { state, ref } from './engine.js';
+import { state, ref } from './reactivity.js';
 import { session } from './session.js';
 import { normalizeClass, createLogger } from './shared.js';
-import { initDevTools } from './dev.js';
+import { initDevTools } from './developer.js';
 import { compile, compileCache } from './compiler.js';
 
 const logger = createLogger('[Runtime]');
 
 export { session, db, fs, syncEngine, ai };
 
-export * from './engine';
+export * from './reactivity.js';
 export * from './compiler';
 export * from './renderer';
 
@@ -512,9 +512,9 @@ export function table(tableName, initialData = []) {
   const table = db(tableName);
   if (typeof window === 'undefined') {
     const mock = state({ data: initialData, isLoading: false, error: null });
-    mock.hydrate = async () => { };
-    mock.put = async () => { };
-    mock.destroy = async () => { };
+    mock.hydrate = async () => {};
+    mock.put = async () => {};
+    mock.destroy = async () => {};
     return mock;
   }
 

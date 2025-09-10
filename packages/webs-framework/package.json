@@ -1,7 +1,7 @@
 {
   "name": "@conradklek/webs",
   "author": "Conrad Klek",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "type": "module",
   "description": "A web framework",
   "license": "MIT",
@@ -18,15 +18,15 @@
     "webs"
   ],
   "bin": {
-    "webs": "src/cli/build.js"
+    "webs": "lib/main.js"
   },
   "files": [
-    "src/"
+    "lib/"
   ],
   "exports": {
-    ".": "./src/lib/runtime.js",
-    "./server": "./src/cli/server.js",
-    "./plugin": "./src/cli/plugin.js"
+    ".": "./lib/runtime.js",
+    "./server": "./lib/server.js",
+    "./plugin": "./lib/plugin.js"
   },
   "scripts": {
     "dev": "NODE_ENV=development webs",

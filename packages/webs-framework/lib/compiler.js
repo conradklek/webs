@@ -1,4 +1,5 @@
-import { parseHtml, parseJs, tokenizeJs } from './parser.js';
+import { parseHtml } from './parser.js';
+import { parseJs, tokenizeJs } from './evaluator.js';
 import * as Webs from './renderer.js';
 
 const devtools = typeof window !== 'undefined' && window.__WEBS_DEVELOPER__;
@@ -221,8 +222,8 @@ export function generateRenderFn(ast) {
             const child = ${childNodes}[0];
             if (child && !child.props) child.props = {};
             if (child && child.props) child.props.key = ${this.genExpr(
-            keyName,
-          )};
+              keyName,
+            )};
             return child;
           })()`;
 
