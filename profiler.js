@@ -390,6 +390,7 @@ function printTestAnalysis(analysis) {
 }
 
 const OUTPUT_FILE = 'webs.lock.txt';
+const TEST_RESULTS_FILE = 'webs.test.txt';
 
 /**
  * Gathers all source code from the input directory into a structured object.
@@ -514,34 +515,32 @@ function generateTestReport(analysis) {
 }
 
 /**
+ * Saves the test report to a separate file.
+ * @param {object} testAnalysis - The analysis result from runTests.
+ */
+async function saveTestReport(testAnalysis) {
+  try {
+    const reportContent = generateTestReport(testAnalysis);
+    await Bun.write(TEST_RESULTS_FILE, reportContent);
+  } catch (error) {
+    log.error('An error occurred while saving the test report:');
+    console.error(error);
+  }
+}
+
+/**
  * Assembles the final lockfile from analysis reports.
  */
-async function assembleLockfile(
-  typeAnalysis,
-  tree,
-  source,
-  formatAnalysis,
-  testAnalysis,
-) {
+async function assembleLockfile(tree, source) {
   try {
     const now = new Date().toISOString();
     let fileContent = `// webs.lock.txt - Generated at ${now}\n\n`;
 
-    fileContent += '================\n';
-    fileContent += '== METADATA ==\n';
-    fileContent += '================\n\n';
+    fileContent += '// FRAMEWORK\n';
 
     fileContent += generateTreeReport(tree);
-    fileContent += '\n';
-    fileContent += generateFormatReport(formatAnalysis);
-    fileContent += '\n';
-    fileContent += generateTestReport(testAnalysis);
-    fileContent += '\n';
-    fileContent += generateTypeAnalysisReport(typeAnalysis);
 
-    fileContent += '\n==================\n';
-    fileContent += '== SOURCE FILES ==\n';
-    fileContent += '==================\n\n';
+    fileContent += '// SOURCE\n';
 
     for (const [path, content] of Object.entries(source)) {
       fileContent += `// FILE: ${path}\n`;
@@ -623,6 +622,10 @@ async function runProfiler() {
   );
   printTestAnalysis(testAnalysis);
 
+  await runTaskWithSpinner('Saving Test Results', () =>
+    saveTestReport(testAnalysis),
+  );
+
   const { result: typeAnalysis } = await runTaskWithSpinner(
     'Checking for Type Errors',
     checkTypes,
@@ -635,13 +638,7 @@ async function runProfiler() {
   );
 
   await runTaskWithSpinner('Generating Lockfile', () =>
-    assembleLockfile(
-      typeAnalysis,
-      projectAnalysis.tree,
-      source,
-      formatAnalysis,
-      testAnalysis,
-    ),
+    assembleLockfile(projectAnalysis.tree, source),
   );
 
   log.reportBottom();

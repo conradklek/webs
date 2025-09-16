@@ -8,6 +8,7 @@ bun.lock
 .webs
 dist
 webs.lock.txt
+webs.test.txt
 
 # Log files
 *.log
