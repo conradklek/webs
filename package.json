@@ -21,7 +21,8 @@
     "webs": "lib/build/cli.js"
   },
   "files": [
-    "lib/"
+    "lib/",
+    "profiler.js"
   ],
   "exports": {
     ".": "./lib/client/runtime.js",
