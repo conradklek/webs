@@ -9,7 +9,7 @@ A web framework.
 ```html
 <!-- src/gui/counter.webs -->
 <script>
-  import { state } from "@conradklek/webs";
+  import { state } from '@conradklek/webs';
 
   export default {
     setup() {

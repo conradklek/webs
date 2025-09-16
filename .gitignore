@@ -5,11 +5,9 @@ node_modules
 bun.lockb
 bun.lock
 
-# Demo app build output and database
+.webs
 dist
-webs.db
-webs.db-shm
-webs.db-wal
+webs.lock.txt
 
 # Log files
 *.log

@@ -1,12 +1,65 @@
 {
-  "name": "webs",
-  "private": true,
-  "workspaces": [
-    "packages/*"
+  "name": "@conradklek/webs",
+  "author": "Conrad Klek",
+  "version": "0.4.0",
+  "type": "module",
+  "description": "A web framework",
+  "license": "MIT",
+  "homepage": "https://github.com/conradklek/webs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/conradklek/webs.git"
+  },
+  "keywords": [
+    "javascript",
+    "framework",
+    "frontend",
+    "backend",
+    "webs"
   ],
+  "bin": {
+    "webs": "lib/build/cli.js"
+  },
+  "files": [
+    "lib/"
+  ],
+  "exports": {
+    ".": "./lib/client/runtime.js",
+    "./plugin": "./lib/build/plugin.js",
+    "./server": "./lib/server/server.js",
+    "./ai": "./lib/ai/ai.client.js",
+    "./core": "./lib/core/core.js",
+    "./lifecycle": "./lib/core/lifecycle.js",
+    "./reactivity": "./lib/core/reactivity.js",
+    "./compiler": "./lib/renderer/compiler.js",
+    "./vdom": "./lib/core/vdom.js",
+    "./logger": "./lib/core/logger.js",
+    "./utils/common": "./lib/utils/common.js",
+    "./utils/dom": "./lib/utils/dom.js",
+    "./utils/lang": "./lib/utils/lang.js"
+  },
+  "scripts": {
+    "dev": "NODE_ENV=development bun run lib/build/cli.js",
+    "start": "NODE_ENV=production bun run lib/build/cli.js",
+    "format": "prettier --write .",
+    "check:types": "tsc --noEmit",
+    "check:tests": "bun test .",
+    "view:source": "bun run profiler.js"
+  },
+  "dependencies": {
+    "ollama": "^0.5.18",
+    "sqlite-vec": "^0.1.7-alpha.2"
+  },
+  "peerDependencies": {
+    "tailwindcss": "^4.1.13"
+  },
   "devDependencies": {
+    "@types/bun": "^1.2.22",
+    "bun-plugin-tailwind": "^0.0.15",
+    "typescript": "^5.9.2",
     "eslint": "^9.35.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-prettier": "^5.5.4"
+    "eslint-plugin-prettier": "^5.5.4",
+    "prettier": "^3.6.2"
   }
 }

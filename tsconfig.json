@@ -3,13 +3,26 @@
     "target": "esnext",
     "module": "esnext",
     "moduleResolution": "bundler",
-    "allowJs": true,
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@conradklek/webs": ["./packages/webs-framework"]
-    }
+      "@conradklek/webs": ["."]
+    },
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "types": ["bun"]
   },
-  "include": ["packages/**/*", "../Documents/pub"]
+  "include": ["lib", "src"],
+  "exclude": ["**/*.test.ts", "**/*.test.js"]
 }
-
