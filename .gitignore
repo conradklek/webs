@@ -7,8 +7,9 @@ bun.lock
 
 .webs
 dist
-webs.lock.txt
-webs.test.txt
+webs.header.txt
+webs.source.txt
+webs.vector.db
 
 # Log files
 *.log
@@ -18,6 +19,7 @@ yarn-error.log*
 
 # Temporary Files
 .webs
+.webs-embed.lock.json
 
 # OS-generated files
 .DS_Store

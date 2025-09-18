@@ -1,9 +1,3 @@
 <template>
-  <div class="flex-1 flex flex-col items-start justify-start gap-4">
-    <ul class="list-disc pl-8 space-y-1">
-      <li>
-        <a href="/components" class="link">Components</a>
-      </li>
-    </ul>
-  </div>
+  <div class="flex-1 flex flex-col items-start justify-start gap-4"></div>
 </template>
