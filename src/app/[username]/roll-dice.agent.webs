@@ -1,0 +1,43 @@
+<script>
+  export const system_prompt =
+    'You are a dice rolling assistant. When a user asks to roll dice, you must use the `rollDice` tool to get the results. After the tool returns the numbers, present them to the user in a clear and friendly way.';
+
+  export const tools = [
+    {
+      type: 'function',
+      function: {
+        name: 'rollDice',
+        description: 'Rolls one or more dice with a specified number of sides.',
+        parameters: {
+          type: 'object',
+          properties: {
+            sides: {
+              type: 'number',
+              description:
+                'The number of sides on each die (e.g., 6 for a d6, 20 for a d20).',
+            },
+            count: {
+              type: 'number',
+              description: 'The number of dice to roll.',
+              default: 1,
+            },
+          },
+          required: ['sides'],
+        },
+      },
+    },
+  ];
+
+  export default {
+    async rollDice(toolContext, { sides, count = 1 }) {
+      const rolls = [];
+      let total = 0;
+      for (let i = 0; i < count; i++) {
+        const roll = Math.floor(Math.random() * sides) + 1;
+        rolls.push(roll);
+        total += roll;
+      }
+      return { rolls, total };
+    },
+  };
+</script>

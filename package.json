@@ -1,7 +1,7 @@
 {
   "name": "@conradklek/webs",
   "author": "Conrad Klek",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "description": "A web framework",
   "license": "MIT",
@@ -18,46 +18,40 @@
     "webs"
   ],
   "bin": {
-    "webs": "lib/build/cli.js"
+    "webs": "cli/cli.js"
   },
   "files": [
     "lib/",
-    "src/"
+    "src/",
+    "cli/",
+    "test/"
   ],
   "exports": {
     ".": "./lib/client/runtime.js",
-    "./plugin": "./lib/build/plugin.js",
     "./server": "./lib/server/server.js",
-    "./ai": "./lib/ai/ai.client.js",
-    "./core": "./lib/core/core.js",
+    "./ai": "./lib/client/ai.client.js",
+    "./core": "./lib/engine/core.js",
     "./hooks": "./lib/client/hooks.js",
-    "./lifecycle": "./lib/core/lifecycle.js",
-    "./reactivity": "./lib/core/reactivity.js",
-    "./compiler": "./lib/renderer/compiler.js",
+    "./lifecycle": "./lib/engine/component.js",
+    "./reactivity": "./lib/engine/reactivity.js",
+    "./compiler": "./lib/engine/compiler.js",
     "./session": "./lib/client/session.js",
-    "./vdom": "./lib/core/vdom.js",
-    "./logger": "./lib/developer/logger.js",
-    "./utils/common": "./lib/utils/common.js",
-    "./utils/dom": "./lib/utils/dom.js",
-    "./utils/lang": "./lib/utils/lang.js"
+    "./vdom": "./lib/engine/vdom.js",
+    "./logger": "./lib/shared/logger.js",
+    "./utils/shared": "./lib/shared/utils.js"
   },
   "scripts": {
-    "dev": "NODE_ENV=development bun run lib/build/cli.js dev",
-    "start": "NODE_ENV=production bun run lib/build/cli.js start",
+    "dev": "NODE_ENV=development bun run cli/cli.js dev",
+    "start": "NODE_ENV=production bun run cli/cli.js start",
     "format": "prettier --write .",
     "check:types": "tsc --noEmit",
     "check:tests": "bun test .",
-    "inspect": "bun run lib/build/cli.js inspect",
-    "inspect:lib": "bun run lib/build/cli.js inspect --target lib",
-    "shell": "bun run lib/build/cli.js shell",
-    "shell:lib": "bun run lib/build/cli.js shell --target lib",
-    "grep": "bun run lib/build/cli.js grep",
-    "analyze": "bun run lib/build/cli.js analyze",
-    "analyze:lib": "bun run lib/build/cli.js analyze --target lib",
-    "lock": "bun run lib/build/cli.js lock",
-    "lock:lib": "bun run lib/build/cli.js lock --target lib",
-    "ai": "bun run lib/build/cli.js ai",
-    "ai:lib": "bun run lib/build/cli.js ai --target lib"
+    "inspect": "bun run cli/cli.js inspect",
+    "shell": "bun run cli/cli.js shell",
+    "grep": "bun run cli/cli.js grep",
+    "analyze": "bun run cli/cli.js analyze",
+    "lock": "bun run cli/cli.js lock",
+    "ai": "bun run cli/cli.js ai"
   },
   "dependencies": {
     "ollama": "^0.5.18",
@@ -69,7 +63,7 @@
   "devDependencies": {
     "@types/bun": "^1.2.22",
     "bun-plugin-tailwind": "^0.0.15",
-    "eslint": "^9.35.0",
+    "eslint": "^9.36.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "prettier": "^3.6.2",
