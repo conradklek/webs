@@ -929,33 +929,82 @@ This command orchestrates a production-ready build process:
 
 The output of the build process is placed in the `/dist` directory, which can be deployed to any static hosting provider or run on your own server.
 
-## Command-Line Interface Reference
+# Native C Modules
 
-The `webs` CLI is your toolkit for managing, analyzing, and deploying your application.
+For performance-critical server-side logic, Webs allows you to write and call native C functions directly from your components. Leveraging Bun's `cc` API, the framework automatically compiles your C code on the fly and makes the functions available to your server actions, enabling a powerful way to accelerate computationally intensive tasks.
 
-### Core Commands
+This feature is ideal for tasks like complex calculations, data processing, or interacting with C libraries, all without leaving the comfort of your component file.
 
-- `webs dev`
-  Starts the development server and interactive shell.
+### How It Works
 
-- `webs start`
-  Builds the application for production and starts the production server.
+The framework's build process detects native C modules through a special import convention.
 
-### Project Analysis & Inspection
+1.  **Create a C source file** alongside your `.webs` component.
+2.  **Import the C file** in your component's `<script>` block, appending `?native` to the import path. This signals to the compiler that this is a native module.
+3.  **Export a `symbols` object**. This object defines the function signatures for your C code, telling the JavaScript runtime how to call the native functions and what types to expect for arguments and return values. The structure follows the `bun:ffi` specification.
+4.  **Access compiled functions**. The compiled native functions are injected into the context object of your server-side actions (`prefetch`, `post`, etc.) under the `cc` property.
 
-- `webs inspect`
-  Scans the project and prints a detailed report of all discovered pages, API routes, reusable UI components, and AI agents. Essential for understanding the application's surface area.
+### Example: High-Performance Math
 
-- `webs analyze`
-  Executes the project's test suite via Bun's test runner and performs a TypeScript type check, providing a consolidated analysis report.
+Let's create a component that offloads an addition operation to a native C function.
 
-- `webs grep <pattern>`
-  Performs a recursive search for a text pattern within the project's source files.
+**1. C Source File**
 
-### Documentation & AI Context
+First, create the C file with the function you want to call.
 
-- `webs docs`
-  Parses all JSDoc comments within the source code and generates a structured `api-docs.json` file, useful for building automated API documentation.
+**`src/app/fast-math.c`**
 
-- `webs lock`
-  Creates a `webs.lock.txt` file in the project root. This file contains a complete snapshot of your project's file structure and the full source code of every file. It is an invaluable tool for providing complete and accurate context to a Large Language Model (LLM) for debugging, analysis, or feature development.
+```c
+// A simple function that adds two integers.
+int add(int a, int b) {
+  return a + b;
+}
+```
+
+**2. Webs Component**
+
+Next, create the `.webs` component that will import and use this C function.
+
+**`src/app/calculator.webs`**
+
+```html
+<script>
+  // Import the C source file with the `?native` suffix.
+  import source from './fast-math.c?native';
+
+  // Export the symbol definitions for the C functions.
+  // This must match the function signatures in the .c file.
+  export const symbols = {
+    add: {
+      args: ['int', 'int'],
+      returns: 'int',
+    },
+  };
+
+  export const actions = {
+    // The compiled 'add' function is now available on the `cc` object.
+    async prefetch({ cc }) {
+      const result = cc.add(10, 32); // Calls the native C code!
+      console.log('The answer from C is:', result); // -> 42
+      return { result };
+    },
+  };
+
+  export default {
+    props: {
+      initialState: { default: () => ({}) },
+    },
+    setup(props) {
+      const result = props.initialState.result;
+      return { result };
+    },
+  };
+</script>
+
+<template>
+  <h1>Native C Calculation</h1>
+  <p>The result from our C function is: {{ result }}</p>
+</template>
+```
+
+When you navigate to the `/calculator` route, the `prefetch` action will execute on the server, call the compiled C `add` function, and pass the result to the component for rendering. This seamless integration allows you to drop down to C for performance-critical code paths without adding complexity to your project setup.

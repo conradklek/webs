@@ -1,7 +1,7 @@
 {
   "name": "@conradklek/webs",
   "author": "Conrad Klek",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "type": "module",
   "description": "A web framework",
   "license": "MIT",
@@ -18,12 +18,10 @@
     "webs"
   ],
   "bin": {
-    "webs": "cli/cli.js"
+    "webs": "lib/server/cli.js"
   },
   "files": [
     "lib/",
-    "src/",
-    "cli/",
     "test/"
   ],
   "exports": {
@@ -41,17 +39,17 @@
     "./utils/shared": "./lib/shared/utils.js"
   },
   "scripts": {
-    "dev": "NODE_ENV=development bun run cli/cli.js dev",
-    "start": "NODE_ENV=production bun run cli/cli.js start",
+    "dev": "NODE_ENV=development bun run lib/server/cli.js dev",
+    "start": "NODE_ENV=production bun run lib/server/cli.js start",
     "format": "prettier --write .",
     "check:types": "tsc --noEmit",
     "check:tests": "bun test .",
-    "inspect": "bun run cli/cli.js inspect",
-    "shell": "bun run cli/cli.js shell",
-    "grep": "bun run cli/cli.js grep",
-    "analyze": "bun run cli/cli.js analyze",
-    "lock": "bun run cli/cli.js lock",
-    "ai": "bun run cli/cli.js ai"
+    "inspect": "bun run lib/server/cli.js inspect",
+    "shell": "bun run lib/server/cli.js shell",
+    "grep": "bun run lib/server/cli.js grep",
+    "analyze": "bun run lib/server/cli.js analyze",
+    "lock": "bun run lib/server/cli.js lock",
+    "ai": "bun run lib/server/cli.js ai"
   },
   "dependencies": {
     "ollama": "^0.5.18",

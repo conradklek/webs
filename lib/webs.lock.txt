@@ -19,20 +19,29 @@
 │  ├─ ssr.js
 │  ├─ template-parser.js
 │  └─ vdom.js
+├─ native
+│  ├─ webs_json.c
+│  ├─ webs_json.h
+│  └─ webs_json.symbols.js
 ├─ server
 │  ├─ ai.server.js
 │  ├─ api.js
 │  ├─ authentication.js
+│  ├─ bundler.js
+│  ├─ cli.js
 │  ├─ db.server.js
 │  ├─ fs.server.js
+│  ├─ profiler.js
 │  ├─ router.js
 │  ├─ server-config.js
 │  ├─ server-setup.js
-│  └─ server.js
-└─ shared
-   ├─ devtools.js
-   ├─ logger.js
-   └─ utils.js
+│  ├─ server.js
+│  └─ shell.js
+├─ shared
+│  ├─ devtools.js
+│  ├─ logger.js
+│  └─ utils.js
+└─ webs.lock.txt
 
 ========== SOURCE FILES ==========
 
@@ -7498,6 +7507,213 @@ export function h(type, propsOrChildren, ...childrenArgs) {
 
 ---------- END: engine/vdom.js ----------
 
+---------- START: native/webs_json.c ----------
+#include <node/node_api.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define WEBS_JSON_IMPL
+#include "./webs_json.h"
+
+napi_value webs_json_parse(napi_env env, const char* json_string) {
+    webs_json_Reader reader = webs_json_reader((char*)json_string, strlen(json_string));
+    webs_json_Value root_object = webs_json_read(&reader);
+
+    if (root_object.type != WEBS_JSON_OBJECT) {
+        napi_throw_error(env, NULL, "Expected the root of the JSON to be an object.");
+        return NULL;
+    }
+
+    napi_value result_js_object;
+    napi_create_object(env, &result_js_object);
+
+    webs_json_Value current_key, current_value;
+    while (webs_json_iter_object(&reader, root_object, &current_key, &current_value)) {
+        if (current_value.type == WEBS_JSON_NUMBER) {
+            int int_val = atoi(current_value.start);
+            napi_value js_num;
+            napi_create_int32(env, int_val, &js_num);
+            napi_set_named_property(env, result_js_object, current_key.start, js_num);
+
+        } else if (current_value.type == WEBS_JSON_STRING) {
+            napi_value js_str;
+            size_t str_length = current_value.end - current_value.start;
+            napi_create_string_utf8(env, current_value.start, str_length, &js_str);
+            napi_set_named_property(env, result_js_object, current_key.start, js_str);
+        }
+    }
+
+    if (reader.error) {
+        napi_throw_error(env, NULL, reader.error);
+        return NULL;
+    }
+
+    return result_js_object;
+}
+
+
+---------- END: native/webs_json.c ----------
+
+---------- START: native/webs_json.h ----------
+#ifndef WEBS_JSON_H
+#define WEBS_JSON_H
+
+#include <stddef.h>
+#include <stdbool.h>
+
+typedef struct {
+    char *data, *cur, *end;
+    int depth;
+    char *error;
+} webs_json_Reader;
+
+typedef struct {
+    int type;
+    char *start, *end;
+    int depth;
+} webs_json_Value;
+
+enum { WEBS_JSON_ERROR, WEBS_JSON_END, WEBS_JSON_ARRAY, WEBS_JSON_OBJECT, WEBS_JSON_NUMBER, WEBS_JSON_STRING, WEBS_JSON_BOOL, WEBS_JSON_NULL };
+
+webs_json_Reader webs_json_reader(char *data, size_t len);
+webs_json_Value webs_json_read(webs_json_Reader *r);
+bool webs_json_iter_array(webs_json_Reader *r, webs_json_Value arr, webs_json_Value *val);
+bool webs_json_iter_object(webs_json_Reader *r, webs_json_Value obj, webs_json_Value *key, webs_json_Value *val);
+void webs_json_location(webs_json_Reader *r, int *line, int *col);
+
+#endif
+
+#ifdef WEBS_JSON_IMPL
+
+webs_json_Reader webs_json_reader(char *data, size_t len) {
+    return (webs_json_Reader){ .data = data, .cur = data, .end = data + len };
+}
+
+static bool webs_json__is_number_cont(char c) {
+    return (c >= '0' && c <= '9')
+        ||  c == 'e' || c == 'E' || c == '.' || c == '-' || c == '+';
+}
+
+static bool webs_json__is_string(char *cur, char *end, char *expect) {
+    while (*expect) {
+        if (cur == end || *cur != *expect) {
+            return false;
+        }
+        expect++, cur++;
+    }
+    return true;
+}
+
+webs_json_Value webs_json_read(webs_json_Reader *r) {
+    webs_json_Value res;
+top:
+    if (r->error) { return (webs_json_Value){ .type = WEBS_JSON_ERROR, .start = r->cur, .end = r->cur }; }
+    if (r->cur == r->end) { r->error = "unexpected eof"; goto top; }
+    res.start = r->cur;
+
+    switch (*r->cur) {
+    case ' ': case '\n': case '\r': case '\t': case '\v':
+    case ':': case ',':
+        r->cur++;
+        goto top;
+
+    case '-': case '0': case '1': case '2': case '3': case '4':
+    case '5': case '6': case '7': case '8': case '9':
+        res.type = WEBS_JSON_NUMBER;
+        while (r->cur != r->end && webs_json__is_number_cont(*r->cur)) { r->cur++; }
+        break;
+
+    case '"':
+        res.type = WEBS_JSON_STRING;
+        res.start = ++r->cur;
+        for (;;) {
+            if ( r->cur == r->end) { r->error = "unclosed string"; goto top; }
+            if (*r->cur == '"') { break; }
+            if (*r->cur == '\\') { r->cur++; }
+            if ( r->cur != r->end) { r->cur++; }
+        }
+        res.end = r->cur++;
+        return res;
+
+    case '{': case '[':
+        res.type = (*r->cur == '{') ? WEBS_JSON_OBJECT : WEBS_JSON_ARRAY;
+        res.depth = ++r->depth;
+        r->cur++;
+        break;
+
+    case '}': case ']':
+        res.type = WEBS_JSON_END;
+        if (--r->depth < 0) {
+            r->error = (*r->cur == '}') ? "stray '}'" : "stray ']'";
+            goto top;
+        }
+        r->cur++;
+        break;
+
+    case 'n': case 't': case 'f':
+        res.type = (*r->cur == 'n') ? WEBS_JSON_NULL : WEBS_JSON_BOOL;
+        if (webs_json__is_string(r->cur, r->end,  "null")) { r->cur += 4; break; }
+        if (webs_json__is_string(r->cur, r->end,  "true")) { r->cur += 4; break; }
+        if (webs_json__is_string(r->cur, r->end, "false")) { r->cur += 5; break; }
+
+    default:
+        r->error = "unknown token";
+        goto top;
+    }
+    res.end = r->cur;
+    return res;
+}
+
+static void webs_json__discard_until(webs_json_Reader *r, int depth) {
+    webs_json_Value val;
+    val.type = WEBS_JSON_NULL;
+    while (r->depth != depth && val.type != WEBS_JSON_ERROR) {
+        val = webs_json_read(r);
+    }
+}
+
+bool webs_json_iter_array(webs_json_Reader *r, webs_json_Value arr, webs_json_Value *val) {
+    webs_json__discard_until(r, arr.depth);
+    *val = webs_json_read(r);
+    if (val->type == WEBS_JSON_ERROR || val->type == WEBS_JSON_END) { return false; }
+    return true;
+}
+
+bool webs_json_iter_object(webs_json_Reader *r, webs_json_Value obj, webs_json_Value *key, webs_json_Value *val) {
+    webs_json__discard_until(r, obj.depth);
+    *key = webs_json_read(r);
+    if (key->type == WEBS_JSON_ERROR || key->type == WEBS_JSON_END) { return false; }
+    *val = webs_json_read(r);
+    if (val->type == WEBS_JSON_END)   { r->error = "unexpected object end"; return false; }
+    if (val->type == WEBS_JSON_ERROR) { return false; }
+    return true;
+}
+
+void webs_json_location(webs_json_Reader *r, int *line, int *col) {
+    int ln = 1, cl = 1;
+    for (char *p = r->data; p != r->cur; p++) {
+        if (*p == '\n') { ln++; cl = 0; }
+        cl++;
+    }
+    *line = ln;
+    *col = cl;
+}
+
+#endif
+
+
+---------- END: native/webs_json.h ----------
+
+---------- START: native/webs_json.symbols.js ----------
+export const symbols = {
+  webs_json_parse: {
+    args: ['napi_env', 'cstring'],
+    returns: 'napi_value',
+  },
+};
+
+---------- END: native/webs_json.symbols.js ----------
+
 ---------- START: server/ai.server.js ----------
 import { generateUUID } from '../shared/utils.js';
 import { Ollama } from 'ollama';
@@ -9487,6 +9703,1176 @@ export async function logoutUser(req, db) {
 
 ---------- END: server/authentication.js ----------
 
+---------- START: server/bundler.js ----------
+#!/usr/bin/env bun
+
+/**
+ * @typedef {import('./server-config.js').Config} Config
+ * @typedef {import('bun').BuildOutput} BuildOutput
+ */
+
+/**
+ * Database configuration specifically for the client-side bundle.
+ * @typedef {object} DbConfigForClient
+ * @property {number} version - The database schema version.
+ * @property {any[]} clientTables - An array of table schemas for the client-side database.
+ */
+
+/**
+ * Represents a layout wrapper component entrypoint.
+ * @typedef {object} LayoutWrapperEntrypoint
+ * @property {string} name - The unique name of the layout wrapper.
+ * @property {string} path - The path to the generated layout wrapper file.
+ */
+import { writeFile } from 'fs/promises';
+import { join, relative, dirname, resolve, basename } from 'path';
+import { createLogger } from '../shared/logger.js';
+import bunPluginTailwind from 'bun-plugin-tailwind';
+
+const logger = createLogger('[Bundler]');
+
+/**
+ * Prepares the main client-side entrypoint file.
+ * @param {string[]} sourceEntrypoints - Array of paths to .webs source files.
+ * @param {LayoutWrapperEntrypoint[]} layoutWrapperEntrypoints - Array of layout wrapper objects.
+ * @param {DbConfigForClient} dbConfig - The database configuration.
+ * @param {Config} config - The global server configuration.
+ * @returns {Promise<void>}
+ */
+async function prepareClientEntrypoint(
+  sourceEntrypoints,
+  layoutWrapperEntrypoints,
+  dbConfig,
+  config,
+) {
+  const appJsDir = dirname(config.TMP_APP_JS);
+
+  const sourceLoaderEntries = sourceEntrypoints.map((fullPath) => {
+    const componentName = relative(config.SRC_DIR, fullPath)
+      .replace(/\\/g, '/')
+      .replace('.webs', '');
+
+    const compiledPath = resolve(
+      config.TMP_COMPILED_DIR,
+      relative(config.SRC_DIR, fullPath).replace('.webs', '.js'),
+    );
+    let relPath = relative(appJsDir, compiledPath).replace(/\\/g, '/');
+
+    if (!relPath.startsWith('.')) relPath = './' + relPath;
+
+    logger.debug(
+      `Adding client entry for component: '${componentName}' -> '${relPath}'`,
+    );
+    return `['${componentName}', () => import('${relPath}')]`;
+  });
+
+  const layoutWrapperLoaderEntries = layoutWrapperEntrypoints.map(
+    ({ name, path }) => {
+      let relPath = relative(appJsDir, path).replace(/\\/g, '/');
+      if (!relPath.startsWith('.')) relPath = './' + relPath;
+
+      logger.debug(
+        `Adding client entry for layout wrapper: '${name}' -> '${relPath}'`,
+      );
+      return `['${name}', () => import('${relPath}')]`;
+    },
+  );
+
+  const allLoaderEntries = [
+    ...sourceLoaderEntries,
+    ...layoutWrapperLoaderEntries,
+  ];
+
+  const entrypointContent = `
+    import { hydrate } from '@conradklek/webs';
+    const dbConfig = ${JSON.stringify({
+      version: dbConfig.version,
+      clientTables: dbConfig.clientTables,
+    })};
+    const componentLoaders = new Map([${allLoaderEntries.join(',\n    ')}]);
+    hydrate(componentLoaders, dbConfig);
+  `;
+  await writeFile(config.TMP_APP_JS, entrypointContent);
+}
+
+/**
+ * Builds the client-side JavaScript and CSS bundles.
+ * @param {string[]} sourceEntrypoints - Array of paths to .webs source files.
+ * @param {LayoutWrapperEntrypoint[]} layoutWrapperEntrypoints - Array of layout wrapper objects.
+ * @param {string[]} publicCssEntrypoints - Array of paths to public CSS files.
+ * @param {DbConfigForClient} dbConfig - The database configuration.
+ * @param {Config} config - The global server configuration.
+ * @returns {Promise<BuildOutput['outputs'] | null>} The build outputs or null if failed.
+ */
+export async function buildClientBundle(
+  sourceEntrypoints,
+  layoutWrapperEntrypoints,
+  publicCssEntrypoints,
+  dbConfig,
+  config,
+) {
+  logger.info('Starting client bundle...');
+  await prepareClientEntrypoint(
+    sourceEntrypoints,
+    layoutWrapperEntrypoints,
+    dbConfig,
+    config,
+  );
+
+  const clientBuildResult = await Bun.build({
+    entrypoints: [config.TMP_APP_JS, ...publicCssEntrypoints],
+    outdir: config.OUTDIR,
+    target: 'browser',
+    minify: config.IS_PROD,
+    naming: config.IS_PROD ? '[name]-[hash].[ext]' : '[name].[ext]',
+    plugins: [bunPluginTailwind],
+    sourcemap: config.IS_PROD ? 'none' : 'inline',
+    define: {
+      'process.env.NODE_ENV': `"${process.env.NODE_ENV || 'development'}"`,
+    },
+  });
+
+  if (!clientBuildResult.success) {
+    logger.error('Client build failed.');
+    clientBuildResult.logs.forEach((log) => console.error(log));
+    return null;
+  }
+
+  logger.info('Client bundle complete.');
+  return clientBuildResult.outputs;
+}
+
+/**
+ * Generates the service worker file.
+ * @param {BuildOutput['outputs']} buildOutputs - The outputs from the client bundle build.
+ * @param {Config} config - The global server configuration.
+ * @returns {Promise<string | null>} The path to the generated service worker or null.
+ */
+export async function generateServiceWorker(buildOutputs, config) {
+  if (!buildOutputs || buildOutputs.length === 0) return null;
+  logger.info('Generating service worker...');
+
+  const swTemplatePath = resolve(config.LIB_DIR, './client/service-worker.js');
+  if (!(await Bun.file(swTemplatePath).exists())) {
+    logger.warn('Service worker template not found. Skipping SW generation.');
+    return null;
+  }
+  const swTemplate = await Bun.file(swTemplatePath).text();
+
+  const manifestForSw = JSON.stringify(
+    buildOutputs
+      .filter(
+        (o) =>
+          (o.kind === 'entry-point' || o.kind === 'chunk') &&
+          (o.path.endsWith('.js') || o.path.endsWith('.css')),
+      )
+      .map((o) => ({ url: '/' + basename(o.path) }))
+      .filter((entry) => !entry.url.includes('[...'))
+      .concat({ url: '/' }),
+  );
+  const finalSwContent = `const IS_PROD = ${
+    config.IS_PROD
+  };\nself.__WEBS_MANIFEST = ${manifestForSw};\n\n${swTemplate}`;
+
+  const swOutputPath = join(config.OUTDIR, 'sw.js');
+  await writeFile(swOutputPath, finalSwContent);
+  logger.info(`Service worker generated at: ${swOutputPath}`);
+  return swOutputPath;
+}
+
+---------- END: server/bundler.js ----------
+
+---------- START: server/cli.js ----------
+#!/usr/bin/env bun
+
+/**
+ * @typedef {import('./server-config.js').Config} Config
+ * @typedef {import('./server-config.js').DbConfig} DbConfig
+ * @typedef {import('bun').BuildArtifact} BuildArtifact
+ * @typedef {import('./ai.server.js').AgentDefinition} AgentDefinition
+ * @typedef {import('./router.js').ServerContext} ServerContext
+ * @typedef {import('bun').Server & { serverContext?: ServerContext }} BunServerWithContext
+ */
+
+/**
+ * Represents a single page component's source and compiled file paths.
+ * @typedef {object} PageEntrypoint
+ * @property {string} source - The absolute path to the source .webs file.
+ * @property {string} compiled - The absolute path to the pre-compiled .js file in the temporary directory.
+ */
+
+/**
+ * Represents the definition of a server route.
+ * @typedef {object} RouteDefinition
+ * @property {string} path - The URL path for the route (e.g., '/users/:id').
+ * @property {object} definition - The route's handler and component information.
+ * @property {any} definition.component - The compiled component (or layout wrapper) to render.
+ * @property {string} definition.componentName - The unique name of the component.
+ * @property {Record<string, Function>} definition.actions - Server-side actions associated with the component.
+ * @property {Record<string, Function>} definition.handlers - HTTP method handlers (post, patch, etc.).
+ * @property {Record<string, Function>} [definition.wsHandlers] - WebSocket lifecycle handlers.
+ * @property {any} [definition.cc] - Compiled native C functions for this route.
+ */
+
+/**
+ * Represents all the entrypoints and file collections required for a build.
+ * @typedef {object} BuildEntries
+ * @property {string[]} sourceEntrypoints - All discovered .webs source files.
+ * @property {PageEntrypoint[]} pageEntrypoints - .webs files that are pages.
+ * @property {string[]} publicCssEntrypoints - CSS files from the public directory.
+ * @property {Array<{ name: string; path: string; }>} layoutWrapperEntrypoints - Dynamically generated layout wrapper components.
+ */
+import { rm, writeFile, exists, readdir } from 'fs/promises';
+import { join, relative, dirname, resolve, basename } from 'path';
+import {
+  config as defaultConfig,
+  getDbConfig,
+  aiConfig as defaultAiConfig,
+} from './server-config.js';
+import { setupDatabase } from './db.server.js';
+import { AI } from './ai.server.js';
+import { startServer } from './server.js';
+import { seedDevDatabase, ensureDir } from './server-setup.js';
+import { createLogger } from '../shared/logger.js';
+import tailwind from 'bun-plugin-tailwind';
+import {
+  runAnalysis,
+  createLockfile,
+  generateInspectionReport,
+  runGrep,
+} from './profiler.js';
+import { startDevShell } from './shell.js';
+import { cc } from 'bun:ffi';
+
+const logger = createLogger('[Main]');
+
+/**
+ * @param {Config} config
+ */
+async function compileFrameworkNativeModules(config) {
+  const nativeDir = resolve(config.LIB_DIR, 'native');
+  if (!(await exists(nativeDir))) {
+    return null;
+  }
+
+  logger.info('Compiling framework-level native modules...');
+  /** @type {Record<string, any>} */
+  const nativeModules = {};
+  const files = await readdir(nativeDir);
+
+  for (const file of files) {
+    if (file.endsWith('.c')) {
+      const baseName = basename(file, '.c');
+      const cSourcePath = join(nativeDir, file);
+      const symbolsPath = join(nativeDir, `${baseName}.symbols.js`);
+
+      if (await exists(symbolsPath)) {
+        try {
+          const { symbols: symbolDef } = await import(
+            `${symbolsPath}?t=${Date.now()}`
+          );
+          const cSourceText = await Bun.file(cSourcePath).text();
+
+          const { symbols } = cc({
+            source: cSourceText,
+            symbols: symbolDef,
+          });
+
+          nativeModules[baseName] = symbols;
+          logger.info(
+            `[CC] Successfully compiled framework module: ${baseName}`,
+          );
+        } catch (e) {
+          logger.error(
+            `[CC] Failed to compile framework module ${baseName}:`,
+            e,
+          );
+        }
+      }
+    }
+  }
+  return Object.keys(nativeModules).length > 0 ? nativeModules : null;
+}
+
+/**
+ * @param {string} componentName
+ */
+function toPascalCase(componentName) {
+  return (componentName.split('/').pop() || '')
+    .split('-')
+    .map((/** @type {string} */ s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join('');
+}
+
+/**
+ * @param {string} scriptContent
+ * @param {string} filePath
+ * @param {string} componentName
+ * @param {Config} config
+ */
+async function getPrimaryExportIdentifier(
+  scriptContent,
+  filePath,
+  componentName,
+  config,
+) {
+  if (/export\s+default\s+\{/.test(scriptContent)) {
+    return 'default_inline';
+  }
+
+  const tempScriptPath = join(
+    config.TMPDIR,
+    `${basename(filePath)}.${Date.now()}.mjs`,
+  );
+  await writeFile(tempScriptPath, scriptContent);
+
+  try {
+    const mod = await import(`${tempScriptPath}?v=${Date.now()}`);
+
+    if ('default' in mod) {
+      return 'default';
+    }
+
+    const namedExports = Object.keys(mod).filter((key) => key !== '__esModule');
+    if (namedExports.length === 1 && namedExports[0]) {
+      return namedExports[0];
+    }
+
+    const pascalComponentName = toPascalCase(componentName);
+    if (mod[pascalComponentName]) {
+      return pascalComponentName;
+    }
+
+    if (namedExports.length > 1) {
+      throw new Error(
+        `Cannot determine primary export for ${filePath}. Found multiple exports: [${namedExports.join(
+          ', ',
+        )}]. Please use a default export, a single named export, or a named export matching the component's filename (expected '${pascalComponentName}').`,
+      );
+    }
+  } catch (e) {
+    logger.error(`Error analyzing script for ${filePath}:`, e);
+  } finally {
+    await rm(tempScriptPath, { force: true });
+  }
+  return null;
+}
+
+/**
+ * @param {string} filePath
+ * @param {string} componentName
+ * @param {Config} config
+ */
+async function compileWebsFile(filePath, componentName, config) {
+  const sourceCode = await Bun.file(filePath).text();
+  const scriptMatch = /<script[^>]*>(.*?)<\/script>/s.exec(sourceCode);
+  const templateMatch = /<template>(.*?)<\/template>/s.exec(sourceCode);
+  const styleMatch = /<style>([\s\S]*?)<\/style>/s.exec(sourceCode);
+
+  let scriptContent = scriptMatch?.[1]?.trim() ?? '';
+  const templateContent = templateMatch?.[1]?.trim() ?? '';
+  const styleContent = styleMatch?.[1]?.trim() ?? '';
+
+  scriptContent = scriptContent.replace(/\.c\?native/g, '.js');
+
+  scriptContent = scriptContent.replace(
+    /from\s+['"](.+?)\.webs['"]/g,
+    "from '$1.js'",
+  );
+
+  const primaryExportIdentifier = await getPrimaryExportIdentifier(
+    scriptContent,
+    filePath,
+    componentName,
+    config,
+  );
+
+  const isGlobalComponent =
+    config.GUI_DIR && filePath.startsWith(config.GUI_DIR);
+  let registryImport = '';
+  let componentsInjection = '';
+
+  if (!isGlobalComponent) {
+    const outPath = resolve(
+      config.TMP_COMPILED_DIR,
+      relative(config.SRC_DIR, filePath).replace('.webs', '.js'),
+    );
+    let relPathToRegistry = relative(
+      dirname(outPath),
+      config.TMP_COMPONENT_REGISTRY,
+    ).replace(/\\/g, '/');
+    if (!relPathToRegistry.startsWith('.'))
+      relPathToRegistry = './' + relPathToRegistry;
+    registryImport = `import __globalComponents from '${relPathToRegistry}';\n`;
+    componentsInjection = `...(__globalComponents || {})`;
+  }
+
+  const injectedProps = `name: '${componentName}', template: ${JSON.stringify(
+    templateContent,
+  )}, style: ${JSON.stringify(styleContent)}`;
+
+  let finalScript;
+
+  if (!scriptContent.trim() && !primaryExportIdentifier) {
+    finalScript = `${registryImport}\nexport default { ${injectedProps}, components: { ${componentsInjection} } };`;
+  } else if (primaryExportIdentifier === 'default_inline') {
+    let processedScript = scriptContent.replace(
+      /(export\s+default\s*\{)/,
+      `$1 ${injectedProps},`,
+    );
+    if (processedScript.includes('components:')) {
+      processedScript = processedScript.replace(
+        /(components\s*:\s*\{)/,
+        `$1 ${componentsInjection},`,
+      );
+    } else {
+      processedScript = processedScript.replace(
+        /(export\s+default\s*\{)/,
+        `$1 components: { ${componentsInjection} },`,
+      );
+    }
+    finalScript = `${registryImport}${processedScript}`;
+  } else if (primaryExportIdentifier) {
+    const exportRef =
+      primaryExportIdentifier === 'default'
+        ? 'default'
+        : primaryExportIdentifier;
+
+    finalScript = `
+      ${registryImport}
+      ${scriptContent}
+
+      const __webs_primary_export = ${
+        primaryExportIdentifier === 'default' ? '__default' : exportRef
+      };
+      const __webs_final_def = {
+        ...__webs_primary_export,
+        ${injectedProps},
+        components: { ...(__webs_primary_export.components || {}), ${componentsInjection} }
+      };
+      export default __webs_final_def;
+    `.replace('__default', 'default');
+  } else {
+    finalScript = `
+      ${registryImport}
+      ${scriptContent}
+      export default { ${injectedProps}, components: { ${componentsInjection} } };
+    `;
+  }
+
+  return { js: finalScript, css: styleContent };
+}
+
+/**
+ * @param {Config} config
+ * @returns {Promise<BuildEntries>}
+ */
+async function prepareBuildFiles(config) {
+  logger.info('Stage 1: Starting file pre-compilation...');
+  await ensureDir(config.TMP_COMPILED_DIR);
+
+  const websGlob = new Bun.Glob('**/*.{webs,agent.webs}');
+  const cssGlob = new Bun.Glob('**/*.css');
+  const sourceEntrypoints = [];
+  const publicCssEntrypoints = [];
+  /** @type {PageEntrypoint[]} */
+  const pageEntrypoints = [];
+
+  for await (const file of websGlob.scan(config.SRC_DIR)) {
+    const fullPath = join(config.SRC_DIR, file);
+    sourceEntrypoints.push(fullPath);
+
+    const relativePath = relative(config.SRC_DIR, fullPath).replace(/\\/g, '/');
+    const componentName = relativePath.replace('.webs', '');
+
+    const { js } = await compileWebsFile(fullPath, componentName, config);
+    const outPath = join(
+      config.TMP_COMPILED_DIR,
+      relativePath.replace('.webs', '.js'),
+    );
+
+    if (fullPath.startsWith(config.APP_DIR)) {
+      pageEntrypoints.push({ source: fullPath, compiled: outPath });
+    }
+
+    await ensureDir(dirname(outPath));
+    await writeFile(outPath, js);
+  }
+
+  if (await exists(config.PUB_DIR)) {
+    logger.info(
+      'Found src/pub directory. Adding CSS files as build entrypoints...',
+    );
+    for await (const file of cssGlob.scan(config.PUB_DIR)) {
+      publicCssEntrypoints.push(join(config.PUB_DIR, file));
+    }
+  }
+
+  logger.info('Stage 1: File pre-compilation complete.');
+  return {
+    sourceEntrypoints,
+    pageEntrypoints,
+    publicCssEntrypoints,
+    layoutWrapperEntrypoints:
+      /** @type {Array<{ name: string; path: string; }>} */ ([]),
+  };
+}
+
+/**
+ * @param {Config} config
+ */
+async function generateComponentRegistry(config) {
+  logger.info('Generating global component registry...');
+  await ensureDir(dirname(config.TMP_COMPONENT_REGISTRY));
+  const glob = new Bun.Glob('**/*.webs');
+  const imports = [];
+  const exports = [];
+
+  if (await exists(config.GUI_DIR)) {
+    for await (const file of glob.scan(config.GUI_DIR)) {
+      const componentName = basename(file, '.webs');
+      const pascalName = toPascalCase(componentName);
+
+      const compiledPath = resolve(
+        config.TMP_COMPILED_DIR,
+        'gui',
+        `${componentName}.js`,
+      );
+      let relativePath = relative(
+        dirname(config.TMP_COMPONENT_REGISTRY),
+        compiledPath,
+      ).replace(/\\/g, '/');
+      if (!relativePath.startsWith('.')) relativePath = './' + relativePath;
+
+      imports.push(`import ${pascalName} from '${relativePath}';`);
+      exports.push(`  '${componentName}': ${pascalName}`);
+    }
+  }
+
+  const content = `${imports.join(
+    '\n',
+  )}\n\nexport default {\n${exports.join(',\n')}\n};`;
+  await writeFile(config.TMP_COMPONENT_REGISTRY, content);
+  logger.info('Global component registry generated.');
+}
+
+/**
+ * @param {string} pagePath
+ * @param {Config} config
+ */
+async function findLayoutsForPage(pagePath, config) {
+  const layouts = [];
+  let currentDir = dirname(pagePath);
+  while (currentDir.startsWith(config.APP_DIR)) {
+    const layoutPath = join(currentDir, 'layout.webs');
+    if (await exists(layoutPath)) layouts.push(layoutPath);
+    if (currentDir === config.APP_DIR) break;
+    currentDir = dirname(currentDir);
+  }
+  return layouts.reverse();
+}
+
+/**
+ * @param {PageEntrypoint[]} pageEntrypoints
+ * @param {Config} config
+ */
+async function generateRoutes(pageEntrypoints, config) {
+  logger.info('Generating server routes...');
+  await ensureDir(config.TMP_WRAPPERS_DIR);
+
+  const routeDefinitions = [];
+  /** @type {Record<string, AgentDefinition>} */
+  const agentDefinitions = {};
+  /** @type {Array<{name: string, path: string}>} */
+  const layoutWrapperEntrypoints = [];
+  /** @type {Record<string, string>} */
+  const sourceToComponentMap = {};
+
+  for (const {
+    source: sourcePagePath,
+    compiled: compiledPagePath,
+  } of pageEntrypoints) {
+    const componentPath = relative(config.APP_DIR, sourcePagePath)
+      .replace(/\\/g, '/')
+      .replace('.webs', '')
+      .replace('.agent', '');
+
+    const componentName = `app/${componentPath}`;
+
+    sourceToComponentMap[
+      relative(config.SRC_DIR, sourcePagePath).replace(/\\/g, '/')
+    ] = componentName;
+
+    if (basename(componentName) === 'layout') continue;
+
+    const mod = await import(`${compiledPagePath}?t=${Date.now()}`);
+
+    let ccSymbols = null;
+    const scriptContent = await Bun.file(sourcePagePath).text();
+    const scriptMatch = /<script[^>]*>(.*?)<\/script>/s.exec(scriptContent);
+    const nativeImportRegex = /from\s+['"](\.\/.*?\.c\?native)['"]/s;
+
+    if (scriptMatch && scriptMatch[1]) {
+      const nativeImportMatch = scriptMatch[1].match(nativeImportRegex);
+      if (nativeImportMatch && nativeImportMatch[1]) {
+        const cSourcePath = resolve(
+          dirname(sourcePagePath),
+          nativeImportMatch[1].replace('?native', ''),
+        );
+        if (mod.symbols && (await Bun.file(cSourcePath).exists())) {
+          try {
+            const cSourceText = await Bun.file(cSourcePath).text();
+            const { symbols } = cc({
+              source: cSourceText,
+              symbols: mod.symbols,
+            });
+            ccSymbols = symbols;
+            logger.info(
+              `[CC] Successfully compiled native module for: ${componentName}`,
+            );
+          } catch (e) {
+            logger.error(
+              `[CC] Failed to compile native module for ${componentName}:`,
+              e,
+            );
+          }
+        } else {
+          logger.warn(
+            `[CC] Found native import in ${componentName} but could not find a 'symbols' export or the C source file '${cSourcePath}'.`,
+          );
+        }
+      }
+    }
+
+    if (sourcePagePath.endsWith('.agent.webs')) {
+      const shortAgentName = basename(sourcePagePath, '.agent.webs');
+      const fullAgentName = componentName.replace('.agent', '');
+
+      logger.info(
+        `Found agent definition: ${fullAgentName} (using short name: '${shortAgentName}')`,
+      );
+
+      if (agentDefinitions[shortAgentName]) {
+        logger.warn(
+          `[!] Duplicate agent short name detected: '${shortAgentName}'. The agent at '${sourcePagePath}' will overwrite the previous definition. To avoid this, please ensure all agent filenames are unique.`,
+        );
+      }
+
+      agentDefinitions[shortAgentName] = {
+        name: fullAgentName,
+        system_prompt: mod.system_prompt || '',
+        tools: mod.tools || [],
+        model: mod.model,
+        component: mod.default,
+      };
+      continue;
+    }
+
+    const layouts = await findLayoutsForPage(sourcePagePath, config);
+    let finalComponent = mod.default;
+    let finalComponentName = componentName;
+
+    if (layouts.length > 0) {
+      finalComponentName = `layout/${componentName.replace(/\//g, '_')}`;
+      const wrapperPath = join(
+        config.TMP_WRAPPERS_DIR,
+        `${finalComponentName.split('/')[1]}.js`,
+      );
+      layoutWrapperEntrypoints.push({
+        name: finalComponentName,
+        path: wrapperPath,
+      });
+
+      const layoutImports = layouts
+        .map((p, i) => {
+          const relativeSourcePath = relative(config.SRC_DIR, p);
+          const targetPath = resolve(
+            config.TMP_COMPILED_DIR,
+            relativeSourcePath.replace('.webs', '.js'),
+          );
+          let relativeImportPath = relative(
+            dirname(wrapperPath),
+            targetPath,
+          ).replace(/\\/g, '/');
+          if (!relativeImportPath.startsWith('.'))
+            relativeImportPath = './' + relativeImportPath;
+          return `import Layout${i} from '${relativeImportPath}';`;
+        })
+        .join('\n');
+
+      let pageComponentRelativePath = relative(
+        dirname(wrapperPath),
+        compiledPagePath,
+      ).replace(/\\/g, '/');
+      if (!pageComponentRelativePath.startsWith('.'))
+        pageComponentRelativePath = './' + pageComponentRelativePath;
+
+      const wrapperContent = `
+                import { h } from '@conradklek/webs';
+                ${layoutImports}
+                import PageComponent from '${pageComponentRelativePath}';
+                export default {
+                    name: '${finalComponentName}',
+                    props: { params: Object, initialState: Object, user: Object, cc: Object },
+                    render() {
+                        const pageNode = h(PageComponent, { ...this.$props });
+                        return ${layouts.reduceRight(
+                          (acc, _, i) =>
+                            `h(Layout${i}, { ...this.$props }, { default: () => ${acc} })`,
+                          'pageNode',
+                        )};
+                    }
+                };
+            `;
+      await writeFile(wrapperPath, wrapperContent);
+      finalComponent = (await import(`${wrapperPath}?t=${Date.now()}`)).default;
+    }
+
+    let urlPath =
+      '/' +
+      componentPath
+        .replace('.webs', '')
+        .replace(/index$/, '')
+        .replace(/\[(\w+)\]/g, ':$1');
+    if (urlPath.length > 1 && urlPath.endsWith('/'))
+      urlPath = urlPath.slice(0, -1);
+
+    const actions = (mod.default && mod.default.actions) || {};
+    /** @type {Record<string, Function>} */
+    const handlers = {};
+    const methodNames = ['post', 'patch', 'put', 'del'];
+    for (const method of methodNames) {
+      if (mod.default && typeof mod.default[method] === 'function') {
+        handlers[method] = mod.default[method];
+      }
+    }
+    /** @type {Record<string, Function>} */
+    const wsHandlers = {};
+    const wsHandlerNames = ['onOpen', 'onMessage', 'onClose', 'onError'];
+    for (const handlerName of wsHandlerNames) {
+      if (mod.default && typeof mod.default[handlerName] === 'function') {
+        wsHandlers[handlerName] = mod.default[handlerName];
+      }
+    }
+
+    routeDefinitions.push({
+      path: urlPath,
+      definition: {
+        component: finalComponent,
+        componentName: finalComponentName,
+        actions: actions,
+        handlers: handlers,
+        wsHandlers: wsHandlers,
+        cc: ccSymbols,
+      },
+    });
+  }
+
+  routeDefinitions.sort((a, b) => b.path.length - a.path.length);
+  logger.info('Server routes and agent definitions generated.');
+  return {
+    appRoutes: Object.fromEntries(
+      routeDefinitions.map((r) => [r.path, r.definition]),
+    ),
+    agentRoutes: agentDefinitions,
+    layoutWrapperEntrypoints,
+    sourceToComponentMap,
+  };
+}
+
+/**
+ * @param {BuildEntries} entries
+ * @param {DbConfig} dbConfig
+ * @param {Config} config
+ * @returns {Promise<BuildArtifact[] | null>}
+ */
+async function buildClientBundle(entries, dbConfig, config) {
+  logger.info('Starting client bundle...');
+
+  const { sourceEntrypoints, layoutWrapperEntrypoints, publicCssEntrypoints } =
+    entries;
+
+  const allLoaderEntries = [
+    ...sourceEntrypoints.map((/** @type {string} */ fullPath) => {
+      const componentName = relative(config.SRC_DIR, fullPath)
+        .replace(/\\/g, '/')
+        .replace('.webs', '');
+      const compiledPath = join(
+        config.TMP_COMPILED_DIR,
+        relative(config.SRC_DIR, fullPath).replace('.webs', '.js'),
+      );
+      let relPath = relative(dirname(config.TMP_APP_JS), compiledPath).replace(
+        /\\/g,
+        '/',
+      );
+      if (!relPath.startsWith('.')) relPath = './' + relPath;
+      return `['${componentName}', () => import('${relPath}')]`;
+    }),
+    ...layoutWrapperEntrypoints.map(({ name, path }) => {
+      let relPath = relative(dirname(config.TMP_APP_JS), path).replace(
+        /\\/g,
+        '/',
+      );
+      if (!relPath.startsWith('.')) relPath = './' + relPath;
+      return `['${name}', () => import('${relPath}')]`;
+    }),
+  ];
+
+  const entrypointContent = `
+        import { hydrate } from '@conradklek/webs';
+        const dbConfig = ${JSON.stringify({
+          version: dbConfig.version,
+          clientTables: dbConfig.clientTables,
+        })};
+        const componentLoaders = new Map([${allLoaderEntries.join(',\n    ')}]);
+        hydrate(componentLoaders, dbConfig);
+    `;
+  await writeFile(config.TMP_APP_JS, entrypointContent);
+
+  const clientBuildResult = await Bun.build({
+    entrypoints: [config.TMP_APP_JS, ...publicCssEntrypoints],
+    outdir: config.OUTDIR,
+    target: 'browser',
+    splitting: true,
+    minify: config.IS_PROD,
+    naming: config.IS_PROD ? '[name]-[hash].[ext]' : '[name].[ext]',
+    plugins: [tailwind],
+    loader: { '.js': 'jsx' },
+    sourcemap: config.IS_PROD ? 'none' : 'inline',
+    define: {
+      'process.env.NODE_ENV': `"${process.env.NODE_ENV || 'development'}"`,
+    },
+  });
+
+  if (!clientBuildResult.success) {
+    logger.error('Client build failed.');
+    clientBuildResult.logs.forEach((log) => console.error(log));
+    return null;
+  }
+
+  logger.info('Client bundle complete.');
+  return clientBuildResult.outputs;
+}
+
+/**
+ * @param {BuildArtifact[] | null} buildOutputs
+ * @param {Config} config
+ */
+async function generateServiceWorker(buildOutputs, config) {
+  if (!buildOutputs) return null;
+  logger.info('Generating service worker...');
+  const swTemplatePath = resolve(config.LIB_DIR, './client/service-worker.js');
+  if (!(await exists(swTemplatePath))) {
+    logger.warn('Service worker template not found.');
+    return null;
+  }
+  const swTemplate = await Bun.file(swTemplatePath).text();
+  const manifestForSw = JSON.stringify(
+    buildOutputs
+      .filter(
+        (/** @type {BuildArtifact} */ o) =>
+          (o.kind === 'entry-point' || o.kind === 'chunk') &&
+          (o.path.endsWith('.js') || o.path.endsWith('.css')),
+      )
+      .map((/** @type {BuildArtifact} */ o) => ({
+        url: '/' + basename(o.path),
+      }))
+      .concat({ url: '/' }),
+  );
+  const finalSwContent = `const IS_PROD = ${
+    config.IS_PROD
+  };\nself.__WEBS_MANIFEST = ${manifestForSw};\n\n${swTemplate}`;
+  const swOutputPath = join(config.OUTDIR, 'sw.js');
+  await writeFile(swOutputPath, finalSwContent);
+  logger.info(`Service worker generated at: ${swOutputPath}`);
+  return swOutputPath;
+}
+
+/**
+ * @param {Config} config
+ * @param {boolean} interactive
+ */
+async function runBuildAndServe(config, interactive = false) {
+  const devInfoPath = join(config.TMPDIR, 'dev.json');
+
+  const cleanup = async () => {
+    if (await exists(devInfoPath)) {
+      await rm(devInfoPath, { force: true });
+    }
+    if (!interactive) process.exit();
+  };
+  process.on('SIGINT', cleanup);
+  process.on('exit', cleanup);
+
+  await rm(config.TMPDIR, { recursive: true, force: true });
+  await ensureDir(config.TMPDIR);
+
+  const frameworkNativeModules = await compileFrameworkNativeModules(config);
+
+  const dbConfig = getDbConfig();
+  const aiConfig = {
+    ...defaultAiConfig,
+    db: { ...defaultAiConfig.db, path: join(config.TMPDIR, 'ai.db') },
+  };
+  const ai = new AI(aiConfig);
+  await ai.init();
+  logger.info('AI module initialized.');
+
+  let buildEntries = await prepareBuildFiles(config);
+  await generateComponentRegistry(config);
+
+  const { default: globalComponents } = await import(
+    `${config.TMP_COMPONENT_REGISTRY}?t=${Date.now()}`
+  );
+
+  const db = await setupDatabase(dbConfig, config.CWD, writeFile, config);
+  if (!config.IS_PROD) await seedDevDatabase(db, config, ai);
+
+  let {
+    appRoutes,
+    agentRoutes,
+    layoutWrapperEntrypoints,
+    sourceToComponentMap,
+  } = await generateRoutes(buildEntries.pageEntrypoints, config);
+  buildEntries.layoutWrapperEntrypoints = layoutWrapperEntrypoints;
+
+  const buildOutputs = await buildClientBundle(buildEntries, dbConfig, config);
+
+  const jsOutput = buildOutputs?.find(
+    (o) => o.kind === 'entry-point' && o.path.endsWith('.js'),
+  );
+  const cssOutput = buildOutputs?.find((o) => o.path.endsWith('.css'));
+  let manifest = {
+    js: jsOutput?.path,
+    css: cssOutput?.path,
+    sw: (await generateServiceWorker(buildOutputs, config)) || undefined,
+  };
+
+  /** @type {ServerContext} */
+  const serverContext = {
+    db,
+    ai,
+    dbConfig,
+    manifest,
+    appRoutes,
+    agentRoutes,
+    config,
+    isProd: config.IS_PROD,
+    SYNC_TOPIC: 'webs-sync',
+    actionsPath: config.TMP_GENERATED_ACTIONS,
+    globalComponents,
+    sourceToComponentMap,
+    frameworkNativeModules,
+    syncActions: (
+      await import(`${config.TMP_GENERATED_ACTIONS}?t=${Date.now()}`)
+    ).registerActions(db),
+    sourceEntrypoints: buildEntries.sourceEntrypoints,
+  };
+
+  const serverOptions = await startServer(serverContext);
+  /** @type {BunServerWithContext} */
+  const server = Bun.serve(serverOptions);
+  ai.initialize(server, agentRoutes);
+  server.serverContext = serverContext;
+
+  await writeFile(
+    devInfoPath,
+    JSON.stringify({ pid: process.pid, port: server.port }),
+  );
+
+  if (!config.IS_PROD) {
+    if (interactive) {
+      await startDevShell(config, server, ai, serverContext);
+      await cleanup();
+      server.stop(true);
+      process.exit();
+    }
+  }
+}
+
+/**
+ * @param {Config} config
+ */
+async function runInspection(config) {
+  await rm(config.TMPDIR, { recursive: true, force: true });
+  await ensureDir(config.TMPDIR);
+
+  const buildEntries = await prepareBuildFiles(config);
+  await generateComponentRegistry(config);
+
+  const { appRoutes, agentRoutes, sourceToComponentMap } = await generateRoutes(
+    buildEntries.pageEntrypoints,
+    config,
+  );
+
+  await generateInspectionReport({
+    appRoutes,
+    agentRoutes,
+    sourceEntrypoints: buildEntries.sourceEntrypoints,
+    config,
+    sourceToComponentMap,
+  });
+}
+
+/**
+ * @param {string[]} args
+ * @param {string} flag
+ */
+function getFlagValues(args, flag) {
+  const flagIndex = args.indexOf(flag);
+  const values = [];
+  if (flagIndex !== -1) {
+    for (let i = flagIndex + 1; i < args.length; i++) {
+      const arg = args[i];
+      if (arg && arg.startsWith('--')) {
+        break;
+      }
+      if (arg) {
+        values.push(arg);
+      }
+    }
+  }
+  return values;
+}
+
+/**
+ * @param {string[]} args
+ */
+async function getTargetDirectory(args) {
+  const targetFlagIndex = args.indexOf('--target');
+  const targetArg = args[targetFlagIndex + 1];
+  if (targetFlagIndex !== -1 && targetArg) {
+    return resolve(targetArg);
+  }
+
+  const pkgPath = resolve(process.cwd(), 'package.json');
+  if (await exists(pkgPath)) {
+    const pkg = await Bun.file(pkgPath).json();
+    if (
+      pkg.name === '@conradklek/webs' &&
+      (await exists(resolve(process.cwd(), 'lib')))
+    ) {
+      logger.info(
+        "Detected execution within framework repository, targeting 'lib'.",
+      );
+      const libSrcExists = await exists(resolve(process.cwd(), 'lib', 'src'));
+      return libSrcExists ? resolve(process.cwd(), 'lib') : process.cwd();
+    }
+  }
+
+  logger.info(
+    'Assuming execution in a consumer project, targeting current directory.',
+  );
+  return process.cwd();
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  const command = args[0] || (defaultConfig.IS_PROD ? 'start' : 'dev');
+
+  const targetDir = await getTargetDirectory(args);
+
+  const config = {
+    ...defaultConfig,
+    CWD: targetDir,
+    OUTDIR: resolve(targetDir, 'dist'),
+    TMPDIR: resolve(targetDir, '.webs'),
+    TMP_COMPILED_DIR: resolve(targetDir, '.webs/compiled'),
+    TMP_WRAPPERS_DIR: resolve(targetDir, '.webs/layout'),
+    TMP_APP_JS: resolve(targetDir, '.webs/app.js'),
+    TMP_APP_CSS: resolve(targetDir, '.webs/app.css'),
+    SRC_DIR: resolve(targetDir, 'src'),
+    APP_DIR: resolve(targetDir, 'src/app'),
+    PUB_DIR: resolve(targetDir, 'src/pub'),
+    GUI_DIR: resolve(targetDir, 'src/gui'),
+    USER_FILES_ROOT: resolve(targetDir, '.webs/files'),
+    TMP_GENERATED_ACTIONS: resolve(targetDir, '.webs/actions.js'),
+    TMP_COMPONENT_REGISTRY: resolve(targetDir, '.webs/registry.js'),
+  };
+
+  switch (command) {
+    case 'dev':
+      await runBuildAndServe(config, true);
+      break;
+    case 'start':
+      await runBuildAndServe(config, false);
+      break;
+    case 'inspect':
+      await runInspection(config);
+      break;
+    case 'shell':
+      console.log(
+        "'webs shell' is now integrated into 'webs dev'.\nStarting dev server and shell...",
+      );
+      await runBuildAndServe(config, true);
+      break;
+    case 'grep': {
+      const [pattern, path = config.CWD, ...rest] = args.slice(1);
+      const includeIndex = rest.indexOf('--include');
+      const filePattern =
+        includeIndex > -1 ? rest[includeIndex + 1] : undefined;
+      if (!pattern) {
+        console.error('Usage: webs grep <pattern> [path] [--include <glob>]');
+        process.exit(1);
+      }
+      await runGrep(pattern, path, filePattern);
+      break;
+    }
+    case 'analyze':
+      console.log(`Analyzing directory: ${targetDir}`);
+      await runAnalysis(targetDir);
+      break;
+    case 'lock': {
+      let lockTarget = args[1];
+      let lockTargetDir;
+
+      if (lockTarget === 'lib' || lockTarget === 'src') {
+        lockTargetDir = resolve(process.cwd(), lockTarget);
+        if (!(await exists(lockTargetDir))) {
+          console.error(`Error: Directory './${lockTarget}' not found.`);
+          process.exit(1);
+        }
+      } else {
+        lockTargetDir = targetDir;
+        if (lockTarget && !lockTarget.startsWith('--')) {
+          console.warn(
+            `Warning: Unknown lock target '${lockTarget}'. Using default target. Supported: 'lib', 'src'.`,
+          );
+        }
+      }
+
+      console.log(
+        `Creating lockfile for: ./${relative(process.cwd(), lockTargetDir)}`,
+      );
+
+      const includedFiles = getFlagValues(args, '--include');
+      const excludedPatterns = getFlagValues(args, '--exclude');
+
+      await createLockfile(lockTargetDir, includedFiles, excludedPatterns);
+      break;
+    }
+    case 'ai':
+      console.log(
+        "'webs ai' is now integrated into 'webs dev'.\nStarting dev server and shell...",
+      );
+      await runBuildAndServe(config, true);
+      break;
+    default:
+      console.error(`Unknown command: ${command}`);
+      console.log(
+        'Available commands: dev, start, inspect, grep, analyze, lock',
+      );
+      process.exit(1);
+  }
+}
+
+main().catch((e) => {
+  logger.error('Fatal error:', e);
+  process.exit(1);
+});
+
+---------- END: server/cli.js ----------
+
 ---------- START: server/db.server.js ----------
 import { resolve as pathResolve } from 'path';
 import { Database } from 'bun:sqlite';
@@ -9966,6 +11352,782 @@ export function createFileSystemForUser(userId) {
 
 ---------- END: server/fs.server.js ----------
 
+---------- START: server/profiler.js ----------
+#!/usr/bin/env bun
+
+import { relative, join, resolve, basename } from 'node:path';
+import { readdir, stat, writeFile } from 'node:fs/promises';
+import { Glob } from 'bun';
+import * as readline from 'node:readline';
+import { $ } from 'bun';
+
+/**
+ * @file Contains type definitions for the profiler and analysis tools.
+ */
+
+/**
+ * Represents a node in the project's file structure tree.
+ * @typedef {object} FileTreeNode
+ * @property {string} name - The name of the file or directory.
+ * @property {string} path - The absolute path to the file or directory.
+ * @property {FileTreeNode[]} [children] - An array of child nodes if it's a directory.
+ */
+
+/**
+ * The result object from running the test suite.
+ * @typedef {object} TestAnalysis
+ * @property {number} exitCode - The exit code of the test process.
+ * @property {number} passed - The number of passed tests.
+ * @property {number} failed - The number of failed tests.
+ * @property {string} output - The standard output from the test runner.
+ * @property {string} errorOutput - The standard error output from the test runner.
+ */
+
+/**
+ * The result object from running the TypeScript compiler for type analysis.
+ * @typedef {object} TypeAnalysis
+ * @property {number} totalFilesWithErrors - The number of files containing type errors.
+ * @property {number} totalErrors - The total number of type errors found.
+ * @property {Record<string, string[]>} errorsByFile - An object mapping file paths to an array of error messages.
+ * @property {number} exitCode - The exit code of the TypeScript compiler process.
+ */
+
+const colors = {
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  cyan: '\x1b[36m',
+  magenta: '\x1b[35m',
+};
+
+/**
+ * @param {keyof typeof colors} color
+ * @param {string | number} text
+ * @returns {string}
+ */
+const c = (color, text) => `${colors[color]}${text}${colors.reset}`;
+/** @param {string} str */
+const stripAnsi = (str) => str.replace(/\x1b\[[0-9;]*m/g, '');
+
+const log = {
+  /** @param {string} label */
+  cardLine: (label, value = '') => {
+    console.log(`${label}  ${c('bold', String(value))}`);
+  },
+  /** @param {string} message */
+  error: (message) => {
+    const formatted = ` ${c('bold', c('red', '✖'))} ${c('red', message)} `;
+    console.log(formatted);
+  },
+};
+
+/**
+ * Builds a file tree from the source for project structure display.
+ * @param {string} dirPath
+ * @returns {Promise<FileTreeNode | null>}
+ */
+async function buildProjectTree(dirPath) {
+  try {
+    const stats = await stat(dirPath);
+    const name = dirPath.split('/').pop() || '';
+    /** @type {FileTreeNode} */
+    const node = { name, path: dirPath, children: [] };
+    if (!stats.isDirectory()) {
+      delete node.children;
+      return node;
+    }
+    const dirents = await readdir(dirPath, { withFileTypes: true });
+    for (const dirent of dirents) {
+      const childPath = join(dirPath, dirent.name);
+      const childNode = await buildProjectTree(childPath);
+      if (childNode) node.children?.push(childNode);
+    }
+    node.children?.sort((a, b) => {
+      if (a.children && !b.children) return -1;
+      if (!a.children && b.children) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    return node;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {FileTreeNode} node
+ * @param {string} [prefix]
+ * @param {boolean} [isLast]
+ * @returns {string[]}
+ */
+function collectTreeStringLines(node, prefix = '', isLast = true) {
+  const lines = [];
+  const connector = isLast ? '└─' : '├─';
+  const linePrefix = `${prefix}${connector} `;
+  lines.push(`${linePrefix}${node.name}`);
+  if (node.children) {
+    const newPrefix = prefix + (isLast ? '   ' : '│  ');
+    for (const [index, child] of node.children.entries()) {
+      lines.push(
+        ...collectTreeStringLines(
+          child,
+          newPrefix,
+          index === node.children.length - 1,
+        ),
+      );
+    }
+  }
+  return lines;
+}
+
+/**
+ * Generates a plain text report of the project structure.
+ * @param {FileTreeNode | null} tree
+ * @returns {string}
+ */
+function generateTreeReport(tree) {
+  if (!tree || !tree.children || !tree.children.length) {
+    return 'Project Structure: No files found.\n';
+  }
+  let report = 'Project Structure:\n';
+  const header = ` ./${tree.name}`;
+  const lines = [];
+  for (const [index, child] of tree.children.entries()) {
+    lines.push(
+      ...collectTreeStringLines(child, '', index === tree.children.length - 1),
+    );
+  }
+  report += [header, ...lines].join('\n');
+  report += '\n';
+  return report;
+}
+
+/**
+ * @param {string} targetDir
+ * @returns {Promise<TestAnalysis>}
+ */
+async function runTests(targetDir) {
+  const proc = Bun.spawn(['bun', 'test', targetDir], {
+    stderr: 'pipe',
+    stdout: 'pipe',
+  });
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  const cleanOutput = stripAnsi(stdout);
+  let passed = 0;
+  let failed = 0;
+
+  const passMatches = cleanOutput.match(/(\d+)\s+pass/g);
+  const failMatches = cleanOutput.match(/(\d+)\s+fail/g);
+
+  if (passMatches) {
+    const lastPass = passMatches[passMatches.length - 1];
+    const passCountStr = lastPass?.split(' ')[0];
+    if (passCountStr) passed = parseInt(passCountStr, 10);
+  }
+
+  if (failMatches) {
+    const lastFail = failMatches[failMatches.length - 1];
+    const failCountStr = lastFail?.split(' ')[0];
+    if (failCountStr) failed = parseInt(failCountStr, 10);
+  }
+
+  return { exitCode, passed, failed, output: stdout, errorOutput: stderr };
+}
+
+/**
+ * @param {string} targetDir
+ * @returns {Promise<TypeAnalysis>}
+ */
+async function checkTypes(targetDir) {
+  const proc = Bun.spawn(['bun', 'tsc', '--noEmit', '--pretty', 'false'], {
+    cwd: targetDir === 'lib' ? process.cwd() : targetDir,
+    stderr: 'pipe',
+    stdout: 'pipe',
+  });
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+  if (stderr && !stdout.trim()) {
+    log.error('Error executing the TypeScript compiler:');
+    console.error(stderr);
+    process.exit(1);
+  }
+
+  /** @type {Record<string, string[]>} */
+  const errorsByFile = {};
+  const errorRegex = /^(.*?)\((\d+),(\d+)\):\s+error\s+TS\d+:\s+(.*)$/gm;
+  let match;
+  while ((match = errorRegex.exec(stdout)) !== null) {
+    const [, filePath, line, column, message] = match;
+    if (filePath) {
+      const relativePath = relative(process.cwd(), join(targetDir, filePath));
+      if (!errorsByFile[relativePath]) errorsByFile[relativePath] = [];
+      errorsByFile[relativePath]?.push(
+        `L${line}:C${column} - ${(message || '').trim()}`,
+      );
+    }
+  }
+
+  const totalErrors = Object.values(errorsByFile).flat().length;
+  const totalFilesWithErrors = Object.keys(errorsByFile).length;
+
+  return { totalFilesWithErrors, totalErrors, errorsByFile, exitCode };
+}
+
+/**
+ * @param {string} targetDir
+ * @param {string[]} [additionalFiles]
+ * @param {string[]} [excludedPatterns]
+ * @returns {Promise<Record<string, string>>}
+ */
+async function getInlineSource(
+  targetDir,
+  additionalFiles = [],
+  excludedPatterns = [],
+) {
+  const inputPath = resolve(process.cwd(), targetDir);
+  const glob = new Glob('**/*');
+  /** @type {Record<string, string>} */
+  const sourceData = {};
+
+  const defaultExcludes = [
+    'node_modules/**',
+    '.git/**',
+    '.webs/**',
+    'dist/**',
+    'webs.lock.txt',
+  ];
+  const allExcludedPatterns = [...defaultExcludes, ...excludedPatterns];
+
+  const scannedFiles = await Array.fromAsync(
+    glob.scan({ cwd: inputPath, absolute: true, dot: true, onlyFiles: true }),
+  );
+
+  const excludeGlobs = allExcludedPatterns.map((pattern) => new Glob(pattern));
+
+  const filteredFiles = scannedFiles.filter((filePath) => {
+    const relativePath = relative(inputPath, filePath);
+    for (const glob of excludeGlobs) {
+      if (glob.match(relativePath)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  for (const filePath of filteredFiles) {
+    const relativePath = relative(inputPath, filePath);
+    const file = Bun.file(filePath);
+    if (file.size > 0 && file.size < 1_000_000) {
+      try {
+        sourceData[relativePath] = await file.text();
+      } catch {}
+    }
+  }
+
+  for (const filePath of additionalFiles) {
+    const absolutePath = resolve(process.cwd(), filePath);
+    try {
+      const file = Bun.file(absolutePath);
+      if ((await file.exists()) && file.size > 0) {
+        const displayPath = relative(process.cwd(), absolutePath);
+        sourceData[displayPath] = await file.text();
+      } else {
+        console.log(
+          c('yellow', `  - Skipping: ${filePath} (not found or empty)`),
+        );
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      log.error(`Error reading file ${filePath}: ${message}`);
+    }
+  }
+
+  return sourceData;
+}
+
+/**
+ * @param {TestAnalysis} analysis
+ * @returns {string}
+ */
+function generateTestReport(analysis) {
+  let report = 'Test Runner:\n';
+  const { exitCode, passed, failed, output, errorOutput } = analysis;
+
+  if (exitCode === 0 && failed === 0) {
+    report += 'Status: OK\n';
+  } else {
+    report += `Status: ${failed > 0 ? 'Failed' : 'Error'}\n`;
+  }
+  report += `Summary: ${passed} test(s) passed, ${failed} test(s) failed.\n`;
+  if (output) report += `\n--- TEST OUTPUT ---\n${output}\n`;
+  if (errorOutput) {
+    report += `\n--- STDERR ---\n${errorOutput}\n`;
+  }
+  return report;
+}
+
+/**
+ * @param {TypeAnalysis} analysis
+ * @returns {string}
+ */
+function generateTypeAnalysisReport(analysis) {
+  const { exitCode, totalErrors, totalFilesWithErrors } = analysis;
+  let report = 'Type Analysis:\n';
+  if (exitCode === 0) {
+    report += 'Status: OK\n';
+    report += 'Total Errors: 0\n';
+    return report;
+  }
+
+  report += `Status: ${totalErrors} error(s) found in ${totalFilesWithErrors} file(s)\n`;
+  return report;
+}
+
+/**
+ * @template T
+ * @param {string} title
+ * @param {() => Promise<T>} task
+ * @returns {Promise<{result: T, duration: string}>}
+ */
+async function runTaskWithLoader(title, task) {
+  let lastLineLength = 0;
+  const startTime = performance.now();
+  console.log('');
+
+  const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  let frameIndex = 0;
+
+  const interval = setInterval(() => {
+    const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+    const timer = c('dim', `(${elapsed}s)`);
+    const frame = spinnerFrames[frameIndex];
+    if (frame) {
+      const spinner = c('magenta', frame);
+      const line = `\r ${spinner} ${title} ${timer}`;
+      process.stdout.write(line.padEnd(lastLineLength));
+      lastLineLength = stripAnsi(line).length;
+    }
+    frameIndex = (frameIndex + 1) % spinnerFrames.length;
+  }, 80);
+
+  try {
+    const result = await task();
+    clearInterval(interval);
+    const duration = ((performance.now() - startTime) / 1000).toFixed(2);
+    const timer = c('dim', `(${duration}s)`);
+    const successLine = `\r${c('green', '✓')} ${title} ${timer}\n`;
+    process.stdout.write(successLine.padEnd(lastLineLength + 1));
+    return { result, duration };
+  } catch (e) {
+    clearInterval(interval);
+    const duration = ((performance.now() - startTime) / 1000).toFixed(2);
+    const timer = c('dim', `(${duration}s)`);
+    const failLine = `\r${c('red', '✖')} ${title} ${timer}\n`;
+    process.stdout.write(failLine.padEnd(lastLineLength + 1));
+    throw e;
+  }
+}
+
+/**
+ * Generates a lockfile containing the project structure and source code.
+ * This provides a snapshot of the directory's contents.
+ * @param {string} targetDir The directory to create the lockfile for.
+ * @param {string[]} [additionalFilesToInclude=[]] An array of specific file paths to include, even if outside the target directory.
+ * @param {string[]} [patternsToExclude=[]] An array of glob patterns to exclude from the source file collection.
+ */
+export async function createLockfile(
+  targetDir,
+  additionalFilesToInclude = [],
+  patternsToExclude = [],
+) {
+  console.log(
+    c('bold', `\nGenerating lockfile for directory: '${targetDir}'...`),
+  );
+
+  if (additionalFilesToInclude.length > 0) {
+    console.log(
+      c(
+        'dim',
+        `Including additional files: ${additionalFilesToInclude.join(', ')}`,
+      ),
+    );
+  }
+  if (patternsToExclude.length > 0) {
+    console.log(
+      c('dim', `Excluding patterns: ${patternsToExclude.join(', ')}`),
+    );
+  }
+
+  const parts = [];
+
+  const { result: tree } = await runTaskWithLoader(
+    'Building project tree',
+    () => buildProjectTree(targetDir),
+  );
+  const treeReport = generateTreeReport(tree);
+  let treeContent = '========== PROJECT STRUCTURE ==========\n';
+  treeContent += stripAnsi(treeReport).replace('Project Structure:\n', '');
+  parts.push(treeContent);
+
+  const { result: sourceFiles } = await runTaskWithLoader(
+    'Collecting source files',
+    () =>
+      getInlineSource(targetDir, additionalFilesToInclude, patternsToExclude),
+  );
+  let filesContent = '========== SOURCE FILES ==========\n';
+  const sortedFilePaths = Object.keys(sourceFiles).sort();
+
+  for (const path of sortedFilePaths) {
+    const sourceContent = sourceFiles[path];
+    filesContent += `\n---------- START: ${path} ----------\n`;
+    filesContent += sourceContent;
+    filesContent += `\n---------- END: ${path} ----------\n`;
+  }
+  parts.push(filesContent);
+
+  const lockfileContent = parts.join('\n');
+  const outputPath = resolve(targetDir, 'webs.lock.txt');
+  await writeFile(outputPath, lockfileContent);
+
+  console.log(
+    c('green', `\n✓ Lockfile created successfully at: ${outputPath}`),
+  );
+}
+
+/**
+ * @param {string} targetDir
+ */
+export async function runAnalysis(targetDir) {
+  const { result: testAnalysis } = await runTaskWithLoader(
+    'Running Tests',
+    () => runTests(targetDir),
+  );
+  const { result: typeAnalysis } = await runTaskWithLoader(
+    'Checking Types',
+    () => checkTypes(targetDir),
+  );
+
+  console.log('\n--- Analysis Complete ---\n');
+  console.log(c('bold', 'Type Analysis:'));
+  console.log(
+    generateTypeAnalysisReport(typeAnalysis).split('\n').slice(1).join('\n'),
+  );
+  console.log(c('bold', '\nTest Analysis:'));
+  console.log(generateTestReport(testAnalysis).split('\n').slice(1).join('\n'));
+}
+
+/**
+ * @param {object} inspectionData
+ * @param {Record<string, import('./router.js').RouteDefinition>} inspectionData.appRoutes
+ * @param {Record<string, import('./ai.server.js').AgentDefinition>} inspectionData.agentRoutes
+ * @param {string[]} inspectionData.sourceEntrypoints
+ * @param {import('./server-config.js').Config} inspectionData.config
+ * @param {Record<string, string>} inspectionData.sourceToComponentMap
+ */
+export async function generateInspectionReport({
+  appRoutes,
+  agentRoutes,
+  sourceEntrypoints,
+  config,
+  sourceToComponentMap,
+}) {
+  console.log(
+    c(
+      'bold',
+      `\nInspecting Webs project at '${relative(process.cwd(), config.CWD)}'`,
+    ),
+  );
+
+  console.log(c('bold', '\nPages & API Routes'));
+  console.log(c('dim', '──────────────────'));
+
+  const sortedRoutes = Object.entries(appRoutes).sort(([pathA], [pathB]) =>
+    pathA.localeCompare(pathB),
+  );
+
+  for (const [path, def] of sortedRoutes) {
+    const methods = ['GET', ...Object.keys(def.handlers)].map((m) =>
+      m.toUpperCase(),
+    );
+    if (Object.keys(def.wsHandlers).length > 0) {
+      methods.push('WSS');
+    }
+    const methodStr = methods.map((m) => c('cyan', `[${m}]`)).join(' ');
+
+    const componentName = def.componentName;
+    const sourcePath = Object.entries(sourceToComponentMap).find(
+      ([, name]) =>
+        name === componentName ||
+        `layout/${name.replace(/\//g, '_')}` === componentName,
+    )?.[0];
+
+    console.log(` ${methodStr} ${path}`);
+    if (sourcePath) {
+      console.log(c('dim', `        └─ component: ${sourcePath}`));
+    }
+  }
+
+  console.log(c('bold', '\nRegistered Components'));
+  console.log(c('dim', '───────────────────'));
+  const guiComponents = [];
+  const appComponents = [];
+
+  for (const fullPath of sourceEntrypoints) {
+    const relPath = relative(config.SRC_DIR, fullPath);
+    if (relPath.endsWith('.agent.webs') || basename(relPath) === 'layout.webs')
+      continue;
+
+    if (relPath.startsWith('gui/')) {
+      guiComponents.push({
+        name: basename(relPath, '.webs'),
+        path: `src/${relPath}`,
+      });
+    } else if (relPath.startsWith('app/')) {
+      appComponents.push({
+        name: relPath.replace('.webs', '').replace('app/', ''),
+        path: `src/${relPath}`,
+      });
+    }
+  }
+
+  guiComponents.sort((a, b) => a.name.localeCompare(b.name));
+  appComponents.sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const { name, path } of guiComponents) {
+    console.log(` • ${name} ${c('dim', `(from: ${path})`)}`);
+  }
+  for (const { name, path } of appComponents) {
+    console.log(` • ${name} ${c('dim', `(from: ${path})`)}`);
+  }
+
+  if (Object.keys(agentRoutes).length > 0) {
+    console.log(c('bold', '\nAI Agents'));
+    console.log(c('dim', '─────────'));
+    for (const [name, def] of Object.entries(agentRoutes)) {
+      console.log(` • ${name.replace('app/', '')}`);
+      if (def.model) {
+        console.log(c('dim', `   └─ model: ${def.model}`));
+      }
+      if (def.tools && def.tools.length > 0) {
+        const toolNames = def.tools.map((t) => t.function.name).join(', ');
+        console.log(c('dim', `   └─ tools: [${toolNames}]`));
+      }
+    }
+  }
+  console.log('');
+}
+
+/**
+ * @param {string} pattern
+ * @param {string} path
+ * @param {string | undefined} filePattern
+ */
+export async function runGrep(pattern, path, filePattern) {
+  const args = ['-r', '-n', '-I', '--color=always', pattern, path];
+  if (filePattern) {
+    args.splice(4, 0, `--include=${filePattern}`);
+  }
+
+  const proc = Bun.spawn(['grep', ...args], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+
+  const reader = proc.stdout.getReader();
+  const decoder = new TextDecoder();
+
+  const highlight = (/** @type {string} */ line) => {
+    return line.replace(
+      new RegExp(pattern, 'g'),
+      (/** @type {string} */ match) => c('red', c('bold', match)),
+    );
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value);
+    const lines = chunk.split('\n');
+    for (const line of lines) {
+      if (!line) continue;
+      const [filePath, lineNum, ...rest] = line.split(':');
+      const content = rest.join(':');
+      if (filePath && lineNum) {
+        process.stdout.write(
+          `${c('yellow', filePath)}:${c('cyan', lineNum)}: ${highlight(
+            content,
+          )}\n`,
+        );
+      }
+    }
+  }
+
+  const stderr = await new Response(proc.stderr).text();
+  if (stderr) {
+    console.error(c('red', `grep error:\n${stderr}`));
+  }
+}
+
+/**
+ * @param {number} port
+ * @param {string} targetDir
+ */
+export async function startInteractiveShell(port, targetDir) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: c('cyan', 'webs> '),
+  });
+
+  console.log(c('bold', `\nConnected to dev server on port ${port}.`));
+  console.log(c('dim', "Type 'help' for a list of commands.\n"));
+
+  /**
+   * @param {string} output
+   */
+  const printResponse = (output) => {
+    const [headerPart, ...bodyParts] = output.split('\r\n\r\n');
+    const body = bodyParts.join('\r\n\r\n');
+    const headers = headerPart?.split('\r\n') || [];
+    const statusLine = headers.shift();
+
+    if (statusLine) {
+      const statusMatch = statusLine.match(/HTTP\/\d\.\d (\d+) (.*)/);
+      if (statusMatch) {
+        const code = parseInt(statusMatch[1] || '0', 10);
+        const statusText = statusMatch[2];
+        const color =
+          code >= 200 && code < 300 ? 'green' : code >= 400 ? 'red' : 'yellow';
+        console.log(c('bold', `Status: ${c(color, `${code} ${statusText}`)}`));
+      }
+    }
+
+    console.log(c('bold', 'Headers:'));
+    console.log(c('dim', headers.join('\n')));
+
+    console.log(c('bold', '\nBody:'));
+    try {
+      console.log(JSON.stringify(JSON.parse(body), null, 2));
+    } catch {
+      console.log(body);
+    }
+  };
+
+  /** @type {{ [key: string]: (args: string[]) => void | Promise<void> }} */
+  const commands = {
+    help() {
+      console.log('\nAvailable commands:');
+      console.log(
+        `  ${c(
+          'bold',
+          'GET|POST|PUT|PATCH|DELETE <path> [body]',
+        )} - Make an HTTP request.`,
+      );
+      console.log(
+        `  ${c(
+          'bold',
+          'grep <pattern> [path] [--include <glob>]',
+        )}   - Search for a pattern in files.`,
+      );
+      console.log(
+        `  ${c(
+          'bold',
+          'test [path]',
+        )}                               - Run tests for the project.`,
+      );
+      console.log(
+        `  ${c('bold', 'exit | quit')}                                - Exit the shell.\n`,
+      );
+    },
+    exit() {
+      rl.close();
+    },
+    quit() {
+      rl.close();
+    },
+    /** @param {string[]} args */
+    async test(args) {
+      const testPath = args[0] || targetDir;
+      console.log(`Running tests for '${testPath}'...`);
+      const { output, errorOutput } = await runTests(testPath);
+      console.log(output);
+      if (errorOutput) console.error(errorOutput);
+    },
+    /** @param {string[]} args */
+    async grep(args) {
+      const pattern = args[0];
+      const path = args[1] || targetDir;
+      const includeIndex = args.indexOf('--include');
+      const filePattern =
+        includeIndex !== -1 ? args[includeIndex + 1] : undefined;
+      if (!pattern) {
+        log.error('Usage: grep <pattern> [path] [--include <glob>]');
+        return;
+      }
+      await runGrep(pattern, path, filePattern);
+    },
+  };
+
+  /**
+   * @param {string} method
+   */
+  const createRequestHandler =
+    (method) => async (/** @type {string[]} */ args) => {
+      const path = args[0];
+      if (!path) {
+        log.error(`Usage: ${method} <path> [body]`);
+        return;
+      }
+      const body = args.slice(1).join(' ');
+      const headers =
+        method !== 'GET' ? `-H "Content-Type: application/json"` : '';
+      const data = body ? `-d '${$.escape(body)}'` : '';
+      const command = `curl -s -i -X ${method} http://localhost:${port}${path} ${headers} ${data}`;
+      const { stdout, stderr, exitCode } = await $`${{
+        raw: command,
+      }}`.nothrow();
+
+      if (exitCode !== 0) {
+        log.error(`Request failed with exit code ${exitCode}`);
+        console.error(stderr.toString());
+      } else {
+        printResponse(stdout.toString());
+      }
+    };
+
+  commands.get = createRequestHandler('GET');
+  commands.post = createRequestHandler('POST');
+  commands.put = createRequestHandler('PUT');
+  commands.patch = createRequestHandler('PATCH');
+  commands.delete = createRequestHandler('DELETE');
+
+  rl.on('line', async (line) => {
+    const [command, ...args] = line.trim().split(/\s+/);
+    const cmdFunc = command ? commands[command.toLowerCase()] : null;
+
+    if (cmdFunc) {
+      await cmdFunc(args);
+    } else if (command) {
+      log.error(`Unknown command: '${command}'. Type 'help' for commands.`);
+    }
+    rl.prompt();
+  }).on('close', () => {
+    console.log(c('bold', '\nExiting shell.'));
+    process.exit(0);
+  });
+
+  rl.prompt();
+}
+
+---------- END: server/profiler.js ----------
+
 ---------- START: server/router.js ----------
 import { getUserFromSession, createSession } from './authentication.js';
 import { createFileSystemForUser } from './fs.server.js';
@@ -10028,6 +12190,7 @@ import { createLogger } from '../shared/logger.js';
  * @property {Record<string, string>} sourceToComponentMap - A development-only map from source file paths to their component names.
  * @property {Record<string, Function>} syncActions - A map of generated functions for handling database synchronization.
  * @property {string[]} sourceEntrypoints - A list of all discovered `.webs` source files.
+ * @property {object | null} [frameworkNativeModules] - Compiled native modules for internal framework use.
  */
 
 /**
@@ -10036,6 +12199,7 @@ import { createLogger } from '../shared/logger.js';
  * @typedef {object} DataRequestContext
  * @property {ServerManifest} manifest - The asset manifest.
  * @property {Record<string, string>} sourceToComponentMap - A map from source file paths to component names.
+ * @property {object | null} [frameworkNativeModules]
  */
 
 /**
@@ -10045,6 +12209,17 @@ import { createLogger } from '../shared/logger.js';
  * @property {ServerManifest} manifest - The asset manifest.
  * @property {any} globalComponents - A map of globally registered UI components.
  * @property {Record<string, string>} sourceToComponentMap - A map from source file paths to component names.
+ * @property {object | null} [frameworkNativeModules]
+ */
+
+/**
+ * The context for the prefetch function.
+ * @typedef {object} PrefetchContext
+ * @property {BunDatabase} db
+ * @property {any} user
+ * @property {any} params
+ * @property {import('./fs.server.js').ServerFsApi | null} fs
+ * @property {object | null | undefined} frameworkNativeModules
  */
 
 const logger = createLogger('[Router]');
@@ -10052,12 +12227,8 @@ const logger = createLogger('[Router]');
 const gzipCache = new Map();
 
 /**
- * Serves a static file from the filesystem with optional Gzip compression.
- * Caches gzipped assets in memory for performance.
- * @internal
- * @param {Request} req - The incoming request, used to check `Accept-Encoding`.
- * @param {string} filePath - The absolute path to the static file to serve.
- * @returns {Promise<Response>} A Response object containing the file content.
+ * @param {Request} req
+ * @param {string} filePath
  */
 async function serveStaticFile(req, filePath) {
   const acceptsGzip = req.headers.get('Accept-Encoding')?.includes('gzip');
@@ -10109,14 +12280,7 @@ async function serveStaticFile(req, filePath) {
 }
 
 /**
- * Renders the final HTML document shell.
- * @internal
- * @param {object} options - The options for rendering the shell.
- * @param {string} options.appHtml - The server-rendered HTML of the root component.
- * @param {object} options.websState - The initial state object to be serialized and sent to the client.
- * @param {{ css?: string, js?: string, sw?: string }} options.manifest - The asset manifest.
- * @param {string} options.title - The title for the HTML page.
- * @returns {string} The complete HTML document as a string.
+ * @param {{appHtml: string, websState: any, manifest: ServerManifest, title: string}} params
  */
 function renderHtmlShell({ appHtml, websState, manifest, title }) {
   const cssPath = manifest.css ? `/${basename(manifest.css)}` : '';
@@ -10140,11 +12304,8 @@ function renderHtmlShell({ appHtml, websState, manifest, title }) {
 }
 
 /**
- * Executes the `prefetch` action on a component to get its initial server-side data.
- * @internal
- * @param {RouteDefinition} routeDefinition - The route definition containing the action.
- * @param {object} context - The context to pass to the action (db, user, params, fs).
- * @returns {Promise<object>} A promise that resolves to the component's initial state.
+ * @param {RouteDefinition} routeDefinition
+ * @param {PrefetchContext} context
  */
 async function executePrefetch(routeDefinition, context) {
   logger.debug(
@@ -10155,7 +12316,11 @@ async function executePrefetch(routeDefinition, context) {
     return {};
   }
   try {
-    const fullContext = { ...context, cc: routeDefinition.cc };
+    const fullContext = {
+      ...context,
+      cc: routeDefinition.cc,
+      native: context.frameworkNativeModules,
+    };
     const result = await routeDefinition.actions.prefetch(fullContext);
     logger.debug('Prefetch action completed successfully.');
     return result;
@@ -10164,19 +12329,16 @@ async function executePrefetch(routeDefinition, context) {
     return { error: 'Failed to load data on the server.' };
   }
 }
+
 /**
- * Handles a fetch request specifically for client-side navigation. Instead of rendering
- * a full HTML page, it fetches the next page's state and returns it as JSON.
- * @internal
- * @param {Request & { db: any, user: any, params: any }} req - The augmented request object.
- * @param {RouteDefinition} routeDefinition - The definition for the matched route.
- * @param {DataRequestContext} context - Contains the manifest and source-to-component map.
- * @returns {Promise<Response>} A JSON response with the state needed to render the next page.
+ * @param {Request & {db: BunDatabase, user: any, params: any}} req
+ * @param {RouteDefinition} routeDefinition
+ * @param {DataRequestContext} context
  */
 async function handleDataRequest(req, routeDefinition, context) {
   logger.info(`Handling data request for route '${req.url}'`);
   const { db, user, params } = req;
-  const { manifest, sourceToComponentMap } = context;
+  const { manifest, sourceToComponentMap, frameworkNativeModules } = context;
   const fs = user ? createFileSystemForUser(user.id) : null;
 
   const componentState = await executePrefetch(routeDefinition, {
@@ -10184,6 +12346,7 @@ async function handleDataRequest(req, routeDefinition, context) {
     user,
     params,
     fs,
+    frameworkNativeModules,
   });
 
   const websState = {
@@ -10200,18 +12363,20 @@ async function handleDataRequest(req, routeDefinition, context) {
     headers: { 'Content-Type': 'application/json;charset=utf-8' },
   });
 }
+
 /**
- * Handles a standard page request (e.g., initial load, full refresh).
- * It fetches data, performs Server-Side Rendering (SSR), and returns a full HTML document.
- * @internal
- * @param {Request & { db: any, user: any, params: any }} req - The augmented request object.
- * @param {RouteDefinition} routeDefinition - The definition for the matched route.
- * @param {PageRequestContext} context - Contains the manifest, global components, and source-to-component map.
- * @returns {Promise<Response>} An HTML response for the complete page.
+ * @param {Request & {db: BunDatabase, user: any, params: any}} req
+ * @param {RouteDefinition} routeDefinition
+ * @param {PageRequestContext} context
  */
 async function handlePageRequest(req, routeDefinition, context) {
   logger.info(`Handling page request for route '${req.url}'`);
-  const { manifest, globalComponents, sourceToComponentMap } = context;
+  const {
+    manifest,
+    globalComponents,
+    sourceToComponentMap,
+    frameworkNativeModules,
+  } = context;
   const { db, user, params } = req;
   const fs = user ? createFileSystemForUser(user.id) : null;
 
@@ -10220,6 +12385,7 @@ async function handlePageRequest(req, routeDefinition, context) {
     user,
     params,
     fs,
+    frameworkNativeModules,
   });
 
   const { pathname } = new URL(req.url);
@@ -10264,47 +12430,37 @@ async function handlePageRequest(req, routeDefinition, context) {
     headers: { 'Content-Type': 'text/html;charset=utf-8' },
   });
 }
-/**
- * A middleware that attaches authentication and database context to each request.
- * In development, it automatically logs in an 'anon' user for convenience.
- * @internal
- * @param {import("bun:sqlite").Database} db - The database instance.
- * @param {boolean} isProd - Production mode flag.
- * @returns {(req: Request & { db?: any, user?: any, params?: any }) => void} A function to process the request.
- */
-const authMiddleware = (db, isProd) => (req) => {
-  req.db = db;
-  const cookie = req.headers.get('cookie');
-  const sessionId = cookie?.match(/session_id=([^;]+)/)?.[1];
-  let user = sessionId ? getUserFromSession(db, sessionId) : null;
 
-  if (!isProd && !user) {
-    const anonUser = db
-      .query('SELECT id, username, email FROM users WHERE username = ?')
-      .get('anon');
-    if (anonUser) {
-      const newSessionId = createSession(
-        db,
-        /** @type {{id: number}} */ (anonUser).id,
-      );
-      user = anonUser;
-      req.headers.set('X-Set-Dev-Session', newSessionId);
-    }
-  }
-  req.user = user;
-};
 /**
- * Creates the main fetch handler for the Bun server.
- * This function acts as the central router, dispatching requests based on a specific order of precedence:
- * 1. Static files in the output directory (e.g., `/dist`).
- * 2. Static files in the source directory (dev mode only, e.g., `/src/pub`).
- * 3. API routes (e.g., `/api/...`).
- * 4. WebSocket upgrade requests.
- * 5. Server action calls (e.g., `/__actions__/...`).
- * 6. Page routes defined by `.webs` files in `src/app`.
- *
- * @param {ServerContext} context - The complete server context object.
- * @returns {(req: Request, server: import("bun").Server) => Promise<Response | undefined>} The main fetch handler.
+ * @param {BunDatabase} db
+ * @param {boolean} isProd
+ */
+const authMiddleware =
+  (db, isProd) =>
+  (/** @type {Request & {db?: BunDatabase, user?: any}} */ req) => {
+    req.db = db;
+    const cookie = req.headers.get('cookie');
+    const sessionId = cookie?.match(/session_id=([^;]+)/)?.[1];
+    let user = sessionId ? getUserFromSession(db, sessionId) : null;
+
+    if (!isProd && !user) {
+      const anonUser = db
+        .query('SELECT id, username, email FROM users WHERE username = ?')
+        .get('anon');
+      if (anonUser) {
+        const newSessionId = createSession(
+          db,
+          /** @type {{id: number}} */ (anonUser).id,
+        );
+        user = anonUser;
+        req.headers.set('X-Set-Dev-Session', newSessionId);
+      }
+    }
+    req.user = user;
+  };
+
+/**
+ * @param {ServerContext} context
  */
 export function createFetchHandler(context) {
   const {
@@ -10315,6 +12471,7 @@ export function createFetchHandler(context) {
     config,
     isProd,
     sourceToComponentMap,
+    frameworkNativeModules,
   } = context;
   const { OUTDIR, SRC_DIR } = config;
 
@@ -10323,7 +12480,7 @@ export function createFetchHandler(context) {
 
   /**
    * @param {Request} req
-   * @param {import("bun").Server} server
+   * @param {import('bun').Server} server
    */
   return async function fetch(req, server) {
     const url = new URL(req.url);
@@ -10357,13 +12514,7 @@ export function createFetchHandler(context) {
     attachContext(extendedReq);
 
     if (pathname.startsWith('/api/')) {
-      const apiResponse = await handleApiRequest(extendedReq, server, {
-        db: context.db,
-        ai: context.ai,
-        syncActions: context.syncActions,
-        SYNC_TOPIC: context.SYNC_TOPIC,
-        agentRoutes: context.agentRoutes,
-      });
+      const apiResponse = await handleApiRequest(extendedReq, server, context);
       if (apiResponse) return apiResponse;
     }
 
@@ -10408,6 +12559,7 @@ export function createFetchHandler(context) {
             fs: createFileSystemForUser(extendedReq.user.id),
             user: extendedReq.user,
             cc: routeDef?.cc,
+            native: frameworkNativeModules,
           },
           ...args,
         );
@@ -10479,7 +12631,8 @@ export function createFetchHandler(context) {
                 user: extendedReq.user,
                 params: extendedReq.params,
                 fs: createFileSystemForUser(extendedReq.user.id),
-                cc: routeDefinition.cc, // <-- [MODIFIED] Inject `cc` object into handler context.
+                cc: routeDefinition.cc,
+                native: frameworkNativeModules,
               });
 
               if (result instanceof Response) {
@@ -10508,11 +12661,13 @@ export function createFetchHandler(context) {
           ? await handleDataRequest(extendedReq, routeDefinition, {
               manifest,
               sourceToComponentMap,
+              frameworkNativeModules,
             })
           : await handlePageRequest(extendedReq, routeDefinition, {
               manifest,
               globalComponents,
               sourceToComponentMap,
+              frameworkNativeModules,
             });
 
         const devSessionId = req.headers.get('X-Set-Dev-Session');
@@ -10562,6 +12717,14 @@ import { resolve } from 'path';
  * @property {string} host
  * @property {{ agent: string, chat: string, embedding: string, labeling: string }} models
  * @property {{ path: string, dimensions: number }} db
+ */
+
+/**
+ * @typedef {object} DbConfig
+ * @property {string} name
+ * @property {number} version
+ * @property {Record<string, import('./db.server.js').Table>} tables
+ * @property {any[]} clientTables
  */
 
 const userProjectDir = process.argv[2]
@@ -11183,6 +13346,1084 @@ export async function startServer(serverContext) {
 }
 
 ---------- END: server/server.js ----------
+
+---------- START: server/shell.js ----------
+#!/usr/bin/env bun
+
+import * as readline from 'node:readline';
+import { $ } from 'bun';
+import {
+  runAnalysis,
+  createLockfile,
+  generateInspectionReport,
+} from './profiler.js';
+import { relative, resolve as resolvePath } from 'node:path';
+import {
+  suspendConsoleOutput,
+  resumeConsoleOutput,
+  getLogBuffer,
+} from '../shared/logger.js';
+import { createFileSystemForUser } from './fs.server.js';
+import { generateUUID } from '../shared/utils.js';
+
+const colors = {
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  cyan: '\x1b[36m',
+  magenta: '\x1b[35m',
+};
+
+/**
+ * @param {keyof typeof colors} color
+ * @param {string | number} text
+ * @returns {string}
+ */
+const c = (color, text) => `${colors[color]}${text}${colors.reset}`;
+/** @param {string} str */
+const stripAnsi = (str) => str.replace(/\x1b\[[0-9;]*m/g, '');
+
+const log = {
+  /** @param {string} message */
+  error: (message) => ` ${c('bold', c('red', '✖'))} ${c('red', message)} `,
+};
+
+/**
+ * @typedef {object} ChatMessage
+ * @property {'user' | 'assistant'} role
+ * @property {string} content
+ */
+
+/**
+ * @typedef {object} Chat
+ * @property {string} id
+ * @property {string} name
+ * @property {string} topic
+ * @property {string} created_at
+ */
+
+/**
+ * @typedef {object} MainViewState
+ * @property {string[]} outputLines
+ * @property {string} inputLine
+ * @property {number} cursorPos
+ * @property {string[]} history
+ * @property {number} historyIndex
+ * @property {boolean} isBusy
+ */
+
+/**
+ * @typedef {object} AiChatViewState
+ * @property {string | null} chatId
+ * @property {ChatMessage[]} messages
+ * @property {boolean} isBusy
+ */
+
+/**
+ * @typedef {object} AgentChatViewState
+ * @property {ChatMessage[]} messages
+ * @property {boolean} isBusy
+ * @property {string | null} agentName
+ * @property {any[]} toolEvents
+ */
+
+/**
+ * @typedef {object} ChatSelectViewState
+ * @property {Chat[]} chats
+ * @property {boolean} isBusy
+ * @property {string | null} error
+ */
+
+/**
+ * @typedef {object} ShellState
+ * @property {'main' | 'aiChat' | 'agentChat' | 'chatSelect'} currentView
+ * @property {MainViewState} main
+ * @property {AiChatViewState} aiChat
+ * @property {AgentChatViewState} agentChat
+ * @property {ChatSelectViewState} chatSelect
+ */
+
+/**
+ * Starts the interactive developer shell with a stateful, view-based UI.
+ * @param {import('./server-config.js').Config} config
+ * @param {import('bun').Server} server
+ * @param {import('./ai.server.js').AI} ai
+ * @param {import('./router.js').ServerContext} serverContext
+ * @returns {Promise<void>}
+ */
+export function startDevShell(config, server, ai, serverContext) {
+  return new Promise((resolve) => {
+    /** @type {ShellState} */
+    let state = {
+      currentView: 'main',
+      main: {
+        outputLines: [
+          c('bold', `\nWelcome to the Webs Interactive Developer Shell.`),
+          c('dim', `Watching for file changes. Type 'help' for commands.\n`),
+        ],
+        inputLine: '',
+        cursorPos: 0,
+        history: [],
+        historyIndex: -1,
+        isBusy: false,
+      },
+      aiChat: {
+        chatId: null,
+        messages: [],
+        isBusy: false,
+      },
+      agentChat: {
+        messages: [],
+        isBusy: false,
+        agentName: null,
+        toolEvents: [],
+      },
+      chatSelect: {
+        chats: [],
+        isBusy: false,
+        error: null,
+      },
+    };
+
+    const promptText = `(webs-dev) ⬢ ${config.CWD.split('/').pop()} > `;
+    const prompt = c('cyan', promptText);
+    const promptLength = stripAnsi(prompt).length;
+
+    const cleanupAndExit = async () => {
+      process.stdout.off('resize', redraw);
+      process.stdin.off('keypress', onKeyPress);
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
+      process.stdout.write('\x1b[?25h');
+      resumeConsoleOutput();
+      console.log('');
+      resolve();
+    };
+
+    /**
+     * @param {ShellState['currentView']} view
+     * @param {...any} args
+     */
+    const changeView = (view, ...args) => {
+      state.currentView = view;
+      if (view === 'aiChat') {
+        const [chatId, ...promptParts] = args;
+        enterAiChatView(chatId, promptParts.join(' '));
+      } else if (view === 'agentChat') {
+        enterAgentChatView(args[0], args.slice(1).join(' '));
+      } else if (view === 'chatSelect') {
+        enterChatSelectView();
+      }
+      redraw();
+    };
+
+    const redraw = () => {
+      const { rows, columns } = process.stdout;
+      process.stdout.write('\x1b[?25l');
+      process.stdout.write('\x1b[2J\x1b[H');
+
+      let headerText = '';
+      switch (state.currentView) {
+        case 'main':
+          headerText = `[Main View] - Type 'help' for commands`;
+          break;
+        case 'aiChat': {
+          const chatName = state.aiChat.chatId
+            ? state.chatSelect.chats.find((c) => c.id === state.aiChat.chatId)
+                ?.name || 'Chat'
+            : 'New Chat';
+          headerText = `[AI Chat: ${chatName}] - Use 'q' or '/back' on a new line to exit.`;
+          break;
+        }
+        case 'agentChat':
+          const agentName = state.agentChat.agentName || 'agent';
+          headerText = `[Agent: ${agentName}] - Use 'q' or '/back' on a new line to exit.`;
+          break;
+        case 'chatSelect':
+          headerText = `[AI Chat] - Select a chat or type 'new' to start.`;
+          break;
+      }
+
+      const paddedHeader = c('bold', headerText.padEnd(columns));
+      process.stdout.write(`\x1b[44m\x1b[37m${paddedHeader}\x1b[0m`);
+
+      switch (state.currentView) {
+        case 'main':
+          drawMainView(rows, columns);
+          break;
+        case 'aiChat':
+          drawAiChatView(rows, columns);
+          break;
+        case 'agentChat':
+          drawAgentChatView(rows, columns);
+          break;
+        case 'chatSelect':
+          drawChatSelectView(rows, columns);
+          break;
+      }
+
+      process.stdout.write(`\x1b[?25h`);
+    };
+    /**
+     * @param {number} rows
+     * @param {number} _columns
+     */
+    const drawMainView = (rows, _columns) => {
+      const outputHeight = rows - 3;
+      const visibleOutput = state.main.outputLines.slice(-outputHeight);
+      process.stdout.write('\n');
+      process.stdout.write(visibleOutput.join('\n'));
+      for (let i = visibleOutput.length; i < outputHeight; i++) {
+        process.stdout.write('\n');
+      }
+
+      const fullPrompt = prompt + state.main.inputLine;
+      process.stdout.write(`\x1b[${rows};1H${fullPrompt}`);
+      process.stdout.write('\x1b[K');
+      process.stdout.write(
+        `\x1b[${rows};${promptLength + state.main.cursorPos + 1}H`,
+      );
+    };
+    /**
+     * @param {number} rows
+     * @param {number} _columns
+     */
+
+    const drawChatSelectView = (rows, _columns) => {
+      const outputHeight = rows - 3;
+      const { chats, isBusy, error } = state.chatSelect;
+      let output = [];
+
+      if (isBusy) {
+        output.push(c('dim', 'Loading chats...'));
+      } else if (error) {
+        output.push(c('red', `Error: ${error}`));
+        output.push(c('dim', "Type 'q' or '/back' to return."));
+      } else if (chats.length === 0) {
+        output.push('No previous chats found.');
+        output.push('\n' + c('bold', "Type 'new' to start a new chat."));
+        output.push(c('dim', "Type 'q' or '/back' to return."));
+      } else {
+        output.push(c('bold', 'Your recent chats:'));
+        chats.forEach((chat, i) => {
+          const topic = chat.topic ? `- ${chat.topic.substring(0, 50)}...` : '';
+          output.push(
+            c('bold', `${i + 1}. ${chat.name}`) + c('dim', ` ${topic}`),
+          );
+        });
+        output.push(
+          '\n' +
+            c(
+              'bold',
+              "Enter a number to continue a chat, or type 'new' to start a new one.",
+            ),
+        );
+        output.push(c('dim', "Type 'q' or '/back' to return."));
+      }
+
+      if (error) {
+        state.chatSelect.error = null;
+      }
+
+      const visibleOutput = output.slice(-outputHeight);
+      process.stdout.write('\n');
+      process.stdout.write(visibleOutput.join('\n'));
+      for (let i = visibleOutput.length; i < outputHeight; i++) {
+        process.stdout.write('\n');
+      }
+
+      const fullPrompt = '> ' + state.main.inputLine;
+      process.stdout.write(`\x1b[${rows};1H${fullPrompt}`);
+      process.stdout.write('\x1b[K');
+      process.stdout.write(`\x1b[${rows};${2 + state.main.cursorPos + 1}H`);
+    };
+
+    /**
+     * @param {number} rows
+     * @param {number} _columns
+     */
+    const drawAiChatView = (rows, _columns) => {
+      const outputHeight = rows - 3;
+      const messagesToDisplay = [];
+      for (const msg of state.aiChat.messages) {
+        const prefix =
+          msg.role === 'user'
+            ? c('green', c('bold', 'You: '))
+            : c('magenta', c('bold', 'AI:  '));
+        messagesToDisplay.push(...(prefix + msg.content).split('\n'));
+      }
+      if (state.aiChat.isBusy) {
+        messagesToDisplay.push(c('dim', 'AI is thinking...'));
+      }
+
+      const visibleOutput = messagesToDisplay.slice(-outputHeight);
+      process.stdout.write('\n');
+      process.stdout.write(visibleOutput.join('\n'));
+      for (let i = visibleOutput.length; i < outputHeight; i++) {
+        process.stdout.write('\n');
+      }
+
+      const fullPrompt = '> ' + state.main.inputLine;
+      process.stdout.write(`\x1b[${rows};1H${fullPrompt}`);
+      process.stdout.write('\x1b[K');
+      process.stdout.write(`\x1b[${rows};${2 + state.main.cursorPos + 1}H`);
+    };
+
+    /**
+     * @param {number} rows
+     * @param {number} _columns
+     */
+    const drawAgentChatView = (rows, _columns) => {
+      const outputHeight = rows - 3;
+      const messagesToDisplay = [];
+      for (const msg of state.agentChat.messages) {
+        const prefix =
+          msg.role === 'user'
+            ? c('green', c('bold', 'You: '))
+            : c('magenta', c('bold', 'Agent: '));
+        messagesToDisplay.push(...(prefix + msg.content).split('\n'));
+      }
+
+      if (state.agentChat.toolEvents.length > 0) {
+        messagesToDisplay.push(c('bold', c('yellow', '\n--- Tool Calls ---')));
+        for (const tool of state.agentChat.toolEvents) {
+          messagesToDisplay.push(
+            c('yellow', `> Calling ${tool.name}(${JSON.stringify(tool.args)})`),
+          );
+          if (tool.status === 'complete') {
+            messagesToDisplay.push(
+              c('dim', `  └─ Result: ${JSON.stringify(tool.result)}`),
+            );
+          }
+        }
+        messagesToDisplay.push('');
+      }
+
+      if (state.agentChat.isBusy) {
+        messagesToDisplay.push(c('dim', 'Agent is thinking...'));
+      }
+
+      const visibleOutput = messagesToDisplay.slice(-outputHeight);
+      process.stdout.write('\n');
+      process.stdout.write(visibleOutput.join('\n'));
+      for (let i = visibleOutput.length; i < outputHeight; i++) {
+        process.stdout.write('\n');
+      }
+
+      const fullPrompt = '> ' + state.main.inputLine;
+      process.stdout.write(`\x1b[${rows};1H${fullPrompt}`);
+      process.stdout.write('\x1b[K');
+      process.stdout.write(`\x1b[${rows};${2 + state.main.cursorPos + 1}H`);
+    };
+
+    /** @param {string} line */
+    const executeMainCommand = async (line) => {
+      const trimmedLine = line.trim();
+      state.main.isBusy = true;
+      state.main.outputLines.push(prompt + line);
+      if (trimmedLine) {
+        state.main.history.unshift(trimmedLine);
+        if (state.main.history.length > 100) state.main.history.pop();
+      }
+      state.main.historyIndex = -1;
+      state.main.inputLine = '';
+      state.main.cursorPos = 0;
+      redraw();
+
+      const [commandName, ...args] = trimmedLine.split(/\s+/);
+      const cmd = commandName ? commands[commandName.toLowerCase()] : null;
+
+      if (cmd) {
+        const originalConsoleLog = console.log;
+        const capturedOutput = [];
+        console.log = (...logArgs) => {
+          capturedOutput.push(
+            logArgs
+              .map((arg) =>
+                typeof arg === 'string' ? arg : JSON.stringify(arg),
+              )
+              .join(' '),
+          );
+        };
+        resumeConsoleOutput();
+        try {
+          await cmd.action(args);
+        } catch (e) {
+          const error = /** @type {Error} */ (e);
+          capturedOutput.push(
+            c('red', `Error executing command: ${error.message}`),
+          );
+        } finally {
+          console.log = originalConsoleLog;
+          suspendConsoleOutput();
+          if (capturedOutput.length > 0) {
+            state.main.outputLines.push(...capturedOutput);
+          }
+        }
+      } else if (commandName) {
+        state.main.outputLines.push(
+          log.error(
+            `Unknown command: '${commandName}'. Type 'help' for available commands.`,
+          ),
+        );
+      }
+      state.main.isBusy = false;
+      redraw();
+    };
+    /** @param {string} line */
+    const handleAiChatSubmit = async (line) => {
+      const content = line.trim();
+      if (!content) return;
+      if (content === '/back' || content === 'q') {
+        changeView('main');
+        return;
+      }
+
+      const { aiChat: ac } = state;
+      const devUser = { id: 1, username: 'anon' };
+      ac.isBusy = true;
+      state.main.inputLine = '';
+      state.main.cursorPos = 0;
+
+      if (!ac.chatId) {
+        redraw();
+        try {
+          const { chatId } = await ai.createChat(
+            { message: { role: 'user', content } },
+            {
+              db: serverContext.db,
+              user: devUser,
+              syncActions: serverContext.syncActions,
+              server,
+            },
+          );
+          ac.chatId = chatId;
+          ac.messages.push({ role: 'user', content });
+        } catch (e) {
+          ac.isBusy = false;
+          const message = e instanceof Error ? e.message : String(e);
+          ac.messages.push({
+            role: 'assistant',
+            content: c('red', `Failed to create chat: ${message}`),
+          });
+          redraw();
+          return;
+        }
+      } else {
+        const userMessageToSave = {
+          id: generateUUID(),
+          chat_id: ac.chatId,
+          username: devUser.username,
+          message: content,
+          user_id: devUser.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        if (serverContext.syncActions.upsertChat_messages) {
+          serverContext.syncActions.upsertChat_messages(
+            { user: devUser },
+            userMessageToSave,
+          );
+        }
+        ac.messages.push({ role: 'user', content });
+      }
+
+      redraw();
+
+      const historyForApi = ac.messages.map(({ role, content }) => ({
+        role,
+        content,
+      }));
+
+      try {
+        const stream = ai.chat(historyForApi);
+        ac.isBusy = false;
+        let responseText = '';
+        /** @type {ChatMessage} */
+        const assistantMessage = { role: 'assistant', content: '' };
+        ac.messages.push(assistantMessage);
+
+        for await (const chunk of stream) {
+          responseText += chunk;
+          assistantMessage.content = responseText;
+          redraw();
+        }
+
+        const aiMessageToSave = {
+          id: generateUUID(),
+          chat_id: ac.chatId,
+          username: 'assistant',
+          message: responseText,
+          user_id: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        if (serverContext.syncActions.upsertChat_messages) {
+          serverContext.syncActions.upsertChat_messages(
+            { user: devUser },
+            aiMessageToSave,
+          );
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        ac.messages.push({
+          role: 'assistant',
+          content: c('red', `AI chat failed: ${message}`),
+        });
+      } finally {
+        ac.isBusy = false;
+        redraw();
+      }
+    };
+
+    /** @param {string} line */
+    const handleAgentChatSubmit = async (line) => {
+      const content = line.trim();
+      if (!content) return;
+      if (content === '/back' || content === 'q') {
+        changeView('main');
+        return;
+      }
+      const { agentChat: ac } = state;
+      const agentName = ac.agentName;
+      if (!agentName) return;
+
+      ac.messages.push({ role: 'user', content });
+      ac.isBusy = true;
+      ac.toolEvents = [];
+      state.main.inputLine = '';
+      state.main.cursorPos = 0;
+      redraw();
+
+      const agentDef = serverContext.agentRoutes[agentName];
+      if (!agentDef) {
+        ac.isBusy = false;
+        ac.messages.push({
+          role: 'assistant',
+          content: c('red', `Agent '${agentName}' definition not found.`),
+        });
+        redraw();
+        return;
+      }
+
+      try {
+        const toolContext = {
+          db: serverContext.db,
+          user: { id: 1, username: 'dev' }, // Mock user for shell
+          fs: createFileSystemForUser(1),
+          ai,
+          syncActions: serverContext.syncActions,
+          server,
+        };
+        const stream = ai.agent(ac.messages, agentDef, toolContext);
+        ac.isBusy = false;
+        let responseText = '';
+        /** @type {ChatMessage} */
+        const assistantMessage = { role: 'assistant', content: '' };
+        ac.messages.push(assistantMessage);
+
+        for await (const chunk of stream) {
+          try {
+            const event = JSON.parse(chunk);
+            if (event.type === 'chunk') {
+              responseText += event.content || '';
+              assistantMessage.content = responseText;
+            } else if (event.type === 'tool_start') {
+              ac.toolEvents.push({
+                name: event.name,
+                args: event.args,
+                status: 'pending',
+              });
+            } else if (event.type === 'tool_end') {
+              const toolEvent = ac.toolEvents.find(
+                (e) => e.name === event.name && e.status === 'pending',
+              );
+              if (toolEvent) {
+                toolEvent.result = event.result;
+                toolEvent.status = 'complete';
+              }
+            }
+          } catch (e) {
+            responseText += chunk;
+            assistantMessage.content = responseText;
+          }
+          redraw();
+        }
+      } catch (e) {
+        ac.isBusy = false;
+        const message = e instanceof Error ? e.message : String(e);
+        ac.messages.push({
+          role: 'assistant',
+          content: c('red', `Agent run failed: ${message}`),
+        });
+      }
+      redraw();
+    };
+
+    /** @param {string} output */
+    const printApiResponse = (output) => {
+      const capturedOutput = [];
+      const [headerPart, ...bodyParts] = output.split('\r\n\r\n');
+      const body = bodyParts.join('\r\n\r\n');
+      const headers = headerPart?.split('\r\n') || [];
+      const statusLine = headers.shift();
+
+      if (statusLine) {
+        const statusMatch = statusLine.match(/HTTP\/\d\.\d (\d+) (.*)/);
+        if (statusMatch) {
+          const code = parseInt(statusMatch[1] || '0', 10);
+          const statusText = statusMatch[2];
+          const color =
+            code >= 200 && code < 300
+              ? 'green'
+              : code >= 400
+                ? 'red'
+                : 'yellow';
+          capturedOutput.push(
+            c('bold', `Status: ${c(color, `${code} ${statusText}`)}`),
+          );
+        }
+      }
+      capturedOutput.push(c('dim', body));
+      state.main.outputLines.push(...capturedOutput);
+    };
+
+    /** @type {{ [key: string]: { description: string, action: (args: string[]) => void | Promise<void> } }} */
+    const commands = {
+      help: {
+        description: 'Displays this help message.',
+        action() {
+          console.log('\nAvailable Views & Commands:\n');
+          const commandList = Object.entries(commands).sort(([a], [b]) =>
+            a.localeCompare(b),
+          );
+          for (const [name, { description }] of commandList) {
+            console.log(`  ${c('bold', name.padEnd(10))} ${description}`);
+          }
+          console.log('\n');
+        },
+      },
+      exit: {
+        description: 'Exits the developer shell and stops the server.',
+        action: cleanupAndExit,
+      },
+      clear: {
+        description: 'Clears the output of the main view.',
+        action: () => {
+          state.main.outputLines = [];
+        },
+      },
+      logs: {
+        description: 'Displays recent server logs from memory.',
+        action: () => {
+          const buffer = getLogBuffer();
+          if (buffer.length === 0) {
+            console.log(c('dim', 'Log buffer is empty.'));
+            return;
+          }
+          console.log(c('bold', '\n--- Recent Server Logs ---'));
+          console.log(buffer.join('\n'));
+          console.log(c('bold', '--- End of Logs ---'));
+        },
+      },
+      ai: {
+        description: 'Select a previous AI chat or start a new one.',
+        action: () => changeView('chatSelect'),
+      },
+      chat: {
+        description: "Alias for 'ai'. Starts or resumes an AI chat session.",
+        action: () => changeView('chatSelect'),
+      },
+      agent: {
+        description:
+          'Runs a defined AI agent. Usage: agent [name] [initial prompt]',
+        action: async (args) => {
+          const [agentName, ...promptParts] = args;
+          const agentDefs = serverContext.agentRoutes || {};
+
+          if (!agentName) {
+            console.log(c('bold', '\nAvailable Agents:'));
+            if (Object.keys(agentDefs).length === 0) {
+              console.log(
+                c(
+                  'dim',
+                  '  No agents defined. Create files ending in .agent.webs in src/app.',
+                ),
+              );
+            } else {
+              for (const name in agentDefs) {
+                console.log(`  - ${name}`);
+              }
+            }
+            console.log('');
+            return;
+          }
+
+          if (!agentDefs[agentName]) {
+            console.log(log.error(`Agent '${agentName}' not found.`));
+            return;
+          }
+
+          const initialPrompt = promptParts.join(' ');
+          changeView('agentChat', agentName, initialPrompt);
+        },
+      },
+      inspect: {
+        description: 'Displays a report of all pages, components, and routes.',
+        action: async () =>
+          generateInspectionReport({ ...serverContext, config }),
+      },
+      analyze: {
+        description: 'Runs type analysis and tests for the current target.',
+        action: async () => await runAnalysis(config.CWD),
+      },
+      lock: {
+        description:
+          'Generates a webs.lock.txt file. Usage: lock [lib|src] [--include <files...>] [--exclude <patterns...>]',
+        action: async (args) => {
+          let lockTargetDir = config.CWD;
+          let commandArgs = [...args];
+          const target = commandArgs[0];
+          if (target === 'lib' || target === 'src') {
+            commandArgs.shift();
+            lockTargetDir = resolvePath(process.cwd(), target);
+            if (!(await Bun.file(lockTargetDir).exists())) {
+              console.log(log.error(`Directory './${target}' not found.`));
+              return;
+            }
+          }
+          /**
+           * @param {string[]} localArgs
+           * @param {string} flag
+           * @returns {string[]}
+           */
+          const getFlagValues = (localArgs, flag) => {
+            const flagIndex = localArgs.indexOf(flag);
+            const values = [];
+            if (flagIndex !== -1) {
+              for (let i = flagIndex + 1; i < localArgs.length; i++) {
+                const arg = localArgs[i];
+                if (arg && arg.startsWith('--')) break;
+                if (arg) values.push(arg);
+              }
+            }
+            return values;
+          };
+          const includedFiles = getFlagValues(commandArgs, '--include');
+          const excludedPatterns = getFlagValues(commandArgs, '--exclude');
+          console.log(
+            `Creating lockfile for: ./${relative(
+              process.cwd(),
+              lockTargetDir,
+            )}`,
+          );
+          await createLockfile(lockTargetDir, includedFiles, excludedPatterns);
+        },
+      },
+      grep: {
+        description:
+          'Searches for a pattern in files. Usage: grep <pattern> [path] [--include <glob>]',
+        action: async (args) => {
+          const [pattern, path = config.CWD, ...rest] = args;
+          if (!pattern) {
+            return console.log(
+              log.error('Usage: grep <pattern> [path] [--include <glob>]'),
+            );
+          }
+          const includeIndex = rest.indexOf('--include');
+          const filePattern =
+            includeIndex > -1 ? rest[includeIndex + 1] : undefined;
+          const grepArgs = ['-r', '-n', '-I', pattern, path];
+          if (filePattern) {
+            grepArgs.splice(3, 0, `--include=${filePattern}`);
+          }
+          const proc = Bun.spawn(['grep', ...grepArgs], {
+            stdout: 'pipe',
+            stderr: 'pipe',
+          });
+          const stdout = await new Response(proc.stdout).text();
+          const stderr = await new Response(proc.stderr).text();
+          /** @param {string} line */
+          const highlight = (line) =>
+            line.replace(
+              new RegExp(pattern, 'g'),
+              /** @param {string} match */
+              (match) => c('red', c('bold', match)),
+            );
+          const outputLines = stdout
+            .split('\n')
+            .filter((line) => line)
+            .map((line) => {
+              const parts = line.split(':');
+              const filePath = parts.shift();
+              const lineNum = parts.shift();
+              const content = parts.join(':');
+              return `${c('yellow', filePath || '')}:${c(
+                'cyan',
+                lineNum || '',
+              )}: ${highlight(content)}`;
+            });
+          if (outputLines.length > 0) {
+            console.log(outputLines.join('\n'));
+          } else {
+            console.log(c('dim', 'No results found.'));
+          }
+          if (stderr) {
+            console.log(log.error(`grep error:\n${stderr}`));
+          }
+        },
+      },
+      api: {
+        description:
+          'Makes an HTTP request to the dev server. Usage: api <GET|POST|..> <path> [body]',
+        action: async (args) => {
+          const [method, path, ...bodyParts] = args;
+          if (!method || !path)
+            return console.log(log.error('Usage: api <METHOD> <path> [body]'));
+          const body = bodyParts.join(' ');
+          const headers =
+            method.toUpperCase() !== 'GET'
+              ? `-H "Content-Type: application/json"`
+              : '';
+          const data = body ? `-d '${$.escape(body)}'` : '';
+          const command = `curl -s -i -X ${method.toUpperCase()} http://localhost:${
+            server.port
+          }${path} ${headers} ${data}`;
+          const { stdout, stderr } = await $`${{ raw: command }}`.nothrow();
+          if (stderr.length > 0) {
+            console.log(log.error(`Request failed.`));
+            console.log(stderr.toString());
+          } else {
+            printApiResponse(stdout.toString());
+          }
+        },
+      },
+    };
+
+    const enterChatSelectView = async () => {
+      const { chatSelect: cs } = state;
+      cs.isBusy = true;
+      cs.error = null;
+      redraw();
+      try {
+        const devUser = { id: 1, username: 'anon' };
+        const chats = await ai.getChats({
+          db: serverContext.db,
+          user: devUser,
+          syncActions: serverContext.syncActions,
+          server,
+        });
+        cs.chats = chats;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        cs.error = message;
+      } finally {
+        cs.isBusy = false;
+      }
+      redraw();
+    };
+
+    /**
+     * @param {string | null} chatId
+     * @param {string} initialPrompt
+     */
+    const enterAiChatView = async (chatId, initialPrompt) => {
+      const { aiChat: ac } = state;
+      ac.chatId = chatId;
+      ac.messages = [];
+      state.main.inputLine = '';
+      state.main.cursorPos = 0;
+
+      if (chatId) {
+        ac.isBusy = true;
+        redraw();
+        try {
+          const messages = serverContext.db
+            .prepare(
+              'SELECT username, message as content FROM chat_messages WHERE chat_id = ? ORDER BY created_at ASC',
+            )
+            .all(chatId);
+
+          ac.messages = messages.map(
+            (/** @type {{ username: string; content: any; }} */ m) => ({
+              role: m.username === 'anon' ? 'user' : 'assistant',
+              content: m.content,
+            }),
+          );
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          ac.messages.push({
+            role: 'assistant',
+            content: c('red', `Error loading chat history: ${message}`),
+          });
+        } finally {
+          ac.isBusy = false;
+        }
+      }
+
+      if (initialPrompt) {
+        await handleAiChatSubmit(initialPrompt);
+      } else {
+        redraw();
+      }
+    };
+
+    /**
+     * @param {string | undefined} agentName
+     * @param {string} initialPrompt
+     */
+    const enterAgentChatView = (agentName, initialPrompt) => {
+      state.agentChat.agentName = agentName || null;
+      state.agentChat.messages = [];
+      state.agentChat.toolEvents = [];
+      state.main.inputLine = '';
+      state.main.cursorPos = 0;
+      if (initialPrompt) {
+        handleAgentChatSubmit(initialPrompt);
+      }
+    };
+
+    /**
+     * @param {string | undefined} str
+     * @param {{ name: string, ctrl?: boolean, meta?: boolean }} key
+     */
+    const handleMainKeyPress = (str, key) => {
+      const { main: m } = state;
+      switch (key.name) {
+        case 'return':
+          executeMainCommand(m.inputLine);
+          return;
+        case 'backspace':
+          if (m.cursorPos > 0) {
+            m.inputLine =
+              m.inputLine.slice(0, m.cursorPos - 1) +
+              m.inputLine.slice(m.cursorPos);
+            m.cursorPos--;
+          }
+          break;
+        case 'delete':
+          m.inputLine =
+            m.inputLine.slice(0, m.cursorPos) +
+            m.inputLine.slice(m.cursorPos + 1);
+          break;
+        case 'left':
+          m.cursorPos = Math.max(0, m.cursorPos - 1);
+          break;
+        case 'right':
+          m.cursorPos = Math.min(m.inputLine.length, m.cursorPos + 1);
+          break;
+        case 'up':
+          if (m.historyIndex < m.history.length - 1) {
+            m.historyIndex++;
+            m.inputLine = m.history[m.historyIndex] || '';
+            m.cursorPos = m.inputLine.length;
+          }
+          break;
+        case 'down':
+          if (m.historyIndex > 0) {
+            m.historyIndex--;
+            m.inputLine = m.history[m.historyIndex] || '';
+            m.cursorPos = m.inputLine.length;
+          } else {
+            m.historyIndex = -1;
+            m.inputLine = '';
+            m.cursorPos = 0;
+          }
+          break;
+        default:
+          if (str && !key.ctrl && !key.meta) {
+            m.inputLine =
+              m.inputLine.slice(0, m.cursorPos) +
+              str +
+              m.inputLine.slice(m.cursorPos);
+            m.cursorPos++;
+          }
+      }
+    };
+
+    /**
+     * @param {string | undefined} str
+     * @param {{ name: string, ctrl?: boolean, meta?: boolean }} key
+     */
+    const handleChatSelectKeyPress = (str, key) => {
+      const { main: m, chatSelect: cs } = state;
+      if (key.name === 'return') {
+        const input = m.inputLine.trim().toLowerCase();
+        m.inputLine = '';
+        m.cursorPos = 0;
+        if (input === 'new') {
+          changeView('aiChat', null);
+        } else if (input === 'q' || input === '/back') {
+          changeView('main');
+        } else {
+          const index = parseInt(input, 10) - 1;
+          const chat = cs.chats[index];
+          if (!isNaN(index) && chat) {
+            changeView('aiChat', chat.id);
+          } else {
+            cs.error =
+              "Invalid selection. Please enter a number from the list or 'new'.";
+            redraw();
+          }
+        }
+        return;
+      }
+      handleMainKeyPress(str, key);
+    };
+
+    /**
+     * @param {string | undefined} str
+     * @param {{ name: string, ctrl?: boolean, meta?: boolean }} key
+     */
+    const onKeyPress = (str, key) => {
+      if (key.ctrl && key.name === 'c') {
+        return cleanupAndExit();
+      }
+      const isBusy =
+        state.main.isBusy || state.aiChat.isBusy || state.agentChat.isBusy;
+      if (isBusy && key.name !== 'q') return;
+
+      switch (state.currentView) {
+        case 'main':
+          handleMainKeyPress(str, key);
+          break;
+        case 'chatSelect':
+          handleChatSelectKeyPress(str, key);
+          break;
+        case 'aiChat':
+          if (key.name === 'return') {
+            handleAiChatSubmit(state.main.inputLine);
+          } else {
+            handleMainKeyPress(str, key);
+          }
+          break;
+        case 'agentChat':
+          if (key.name === 'return') {
+            handleAgentChatSubmit(state.main.inputLine);
+          } else {
+            handleMainKeyPress(str, key);
+          }
+          break;
+      }
+
+      redraw();
+    };
+
+    if (process.stdin.isTTY) process.stdin.setRawMode(true);
+    readline.emitKeypressEvents(process.stdin);
+    process.stdin.on('keypress', onKeyPress);
+    process.stdout.on('resize', redraw);
+
+    suspendConsoleOutput();
+    redraw();
+  });
+}
+
+---------- END: server/shell.js ----------
 
 ---------- START: shared/devtools.js ----------
 /**
