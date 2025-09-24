@@ -1,0 +1,58 @@
+<script>
+  import { state } from '@conradklek/webs';
+
+  export default {
+    actions: {
+      async prefetch({ fs, user, params }) {
+        try {
+          const entries = await fs.ls('.', { access: 'private' });
+          console.log('Server prefetch result:', { entries });
+          return {
+            isDirectory: true,
+            entries: entries,
+            path: '',
+          };
+        } catch (error) {
+          return { error: `Failed to load directory: ${error.message}` };
+        }
+      },
+    },
+
+    props: {
+      initialState: { default: () => ({}) },
+    },
+
+    setup(props, { params }) {
+      const { isDirectory, entries, error, path } = props.initialState;
+      const { username } = params;
+      console.log({ props, params });
+      return {
+        isDirectory,
+        entries,
+        error,
+        username,
+        path,
+      };
+    },
+  };
+</script>
+
+<template>
+  <div class="file-browser">
+    <div class="dir-listing">
+      <h2>Directory: /{{ path }}</h2>
+      <ul>
+        {#if entries.length === 0}
+        <li class="empty-dir">This directory is empty.</li>
+        {/if} {#each entries as entry}
+        <li>
+          <a :href="`/${username}/fs/${entry.path}`">
+            <span class="icon">{{ entry.isDirectory ? '📁' : '📄' }}</span>
+            {{ entry.name }}
+          </a>
+        </li>
+        {/each}
+      </ul>
+    </div>
+  </div>
+</template>

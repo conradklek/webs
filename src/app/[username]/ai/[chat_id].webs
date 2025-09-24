@@ -1,0 +1,108 @@
+<script>
+  import { state, useChat, effect, onMounted } from '@conradklek/webs';
+
+  export default {
+    props: {
+      params: { default: () => ({}) },
+      initialState: { default: () => ({ messages: [] }) },
+    },
+    setup(props) {
+      const newMessage = state('');
+      const chatContainer = state(null);
+
+      const { state: chatState, send } = useChat(props.params.chat_id, {
+        initialMessages: props.initialState.messages,
+      });
+
+      function sendMessage() {
+        const content = newMessage.value.trim();
+        if (!content) return;
+
+        send(content);
+        newMessage.value = '';
+      }
+
+      effect(() => {
+        const messageCount = chatState.messages.length;
+        const streamingResponse = chatState.streamingResponse;
+
+        Promise.resolve().then(() => {
+          const container = chatContainer.value;
+          if (container) {
+            container.scrollTop = container.scrollHeight;
+          }
+        });
+      });
+
+      return {
+        newMessage,
+        chatContainer,
+        sendMessage,
+        chatState,
+      };
+    },
+  };
+</script>
+
+<template>
+  <div
+    class="flex flex-col h-full max-w-3xl mx-auto bg-white border rounded-lg shadow-sm"
+  >
+    <main @ref="chatContainer" class="flex-1 p-6 space-y-6 overflow-y-auto">
+      {#if chatState.isLoading && chatState.messages.length === 0}
+      <p class="text-center text-gray-500">Loading chat history...</p>
+      {:else if chatState.messages.length === 0}
+      <div class="text-center text-gray-500 py-10">
+        <p class="text-lg">Start your conversation</p>
+        <p class="text-sm">Send a message to begin.</p>
+      </div>
+      {:else} {#each chatState.messages as msg}
+      <div
+        class="flex items-start gap-3"
+        class:justify-end="msg.username !== 'assistant'"
+      >
+        <div
+          class="p-3 rounded-lg max-w-lg"
+          class:bg-gray-100="msg.username === 'assistant'"
+          class:bg-blue-500="msg.username !== 'assistant'"
+          class:text-white="msg.username !== 'assistant'"
+        >
+          <p class="whitespace-pre-wrap">{{ msg.message }}</p>
+        </div>
+      </div>
+      {/each} {#if chatState.streamingResponse}
+      <div class="flex items-start gap-3">
+        <div class="p-3 rounded-lg max-w-lg bg-gray-100">
+          <p class="whitespace-pre-wrap">{{ chatState.streamingResponse }}</p>
+        </div>
+      </div>
+      {/if} {/if}
+    </main>
+
+    <footer class="p-4 border-t border-gray-200">
+      <form @submit.prevent="sendMessage" class="flex items-center gap-2">
+        <input
+          bind:value="newMessage"
+          type="text"
+          placeholder="Type a message..."
+          class="input flex-grow"
+          disabled="{{chatState.isLoading}}"
+        />
+        <button
+          type="submit"
+          class="btn btn-default"
+          disabled="{{chatState.isLoading}}"
+        >
+          {#if chatState.isLoading}
+          <span>...</span>
+          {:else}
+          <span>Send</span>
+          {/if}
+        </button>
+      </form>
+      {#if chatState.error}
+      <p class="text-red-500 text-sm mt-2">{{ chatState.error.message }}</p>
+      {/if}
+    </footer>
+  </div>
+</template>

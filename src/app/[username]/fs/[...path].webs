@@ -1,0 +1,105 @@
+<script>
+  import { state } from '@conradklek/webs';
+
+  export default {
+    actions: {
+      async prefetch({ fs, params, user }) {
+        const path = params.path || '.';
+
+        try {
+          const stats = await fs.stat(path, { access: 'private' });
+
+          if (stats.isDirectory) {
+            const entries = await fs.ls(path, { access: 'private' });
+            return {
+              isDirectory: true,
+              entries: entries,
+              path: path === '.' ? '' : path,
+            };
+          } else {
+            const file = await fs.cat(path, { access: 'private' });
+            const content = await file.text();
+            return {
+              isDirectory: false,
+              content: content,
+              path: path,
+            };
+          }
+        } catch (error) {
+          return { error: 'File or directory not found.' };
+        }
+      },
+    },
+
+    props: {
+      initialState: { default: () => ({}) },
+    },
+
+    setup(props, { params }) {
+      const { isDirectory, entries, content, error, path } = props.initialState;
+      const { username } = params;
+
+      const breadcrumbs = (path || '')
+        .split('/')
+        .filter(Boolean)
+        .reduce(
+          (acc, part, i, arr) => {
+            const currentPath = arr.slice(0, i + 1).join('/');
+            acc.push({ name: part, path: currentPath });
+            return acc;
+          },
+          [{ name: 'root', path: '' }],
+        );
+
+      return {
+        isDirectory,
+        entries,
+        content,
+        error,
+        username,
+        path,
+        breadcrumbs,
+      };
+    },
+  };
+</script>
+
+<template>
+  <div class="file-browser">
+    <nav class="breadcrumbs">
+      <a :href="`/${username}/fs/`">/</a>
+      {#each breadcrumbs as crumb, i} {#if i > 0}
+      <span class="separator">/</span>
+      <a :href="`/${username}/fs/${crumb.path}`">{{ crumb.name }}</a>
+      {/if} {/each}
+    </nav>
+
+    {#if error}
+    <div class="error-message">
+      <h2>404 - Not Found</h2>
+      <p>{{ error }}</p>
+    </div>
+    {:else if isDirectory}
+    <div class="dir-listing">
+      <h2>Directory: /{{ path }}</h2>
+      <ul>
+        {#if entries.length === 0}
+        <li class="empty-dir">This directory is empty.</li>
+        {/if} {#each entries as entry}
+        <li>
+          <a :href="`/${username}/fs/${entry.path}`">
+            <span class="icon">{{ entry.isDirectory ? '📁' : '📄' }}</span>
+            {{ entry.name }}
+          </a>
+        </li>
+        {/each}
+      </ul>
+    </div>
+    {:else}
+    <div class="file-content">
+      <h2>File: /{{ path }}</h2>
+      <pre><code>{{ content }}</code></pre>
+    </div>
+    {/if}
+  </div>
+</template>

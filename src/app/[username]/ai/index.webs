@@ -1,0 +1,77 @@
+<script>
+  import { state, ai } from '@conradklek/webs';
+
+  export default {
+    actions: {
+      async prefetch({ user, ai: serverAi }) {
+        if (!user) return { chats: [] };
+        const chats = await serverAi.getChats({ user });
+        return { chats };
+      },
+    },
+
+    props: {
+      initialState: { default: () => ({ chats: [] }) },
+    },
+    setup(props) {
+      const chats = state(props.initialState.chats || []);
+      const newMessage = state('');
+
+      async function startNewChat() {
+        const content = newMessage.value.trim();
+        if (!content) return;
+
+        try {
+          await ai.createChat({ role: 'user', content });
+          newMessage.value = '';
+        } catch (error) {
+          console.error('Failed to create new chat:', error);
+        }
+      }
+
+      return {
+        chats,
+        newMessage,
+        startNewChat,
+      };
+    },
+  };
+</script>
+
+<template>
+  <div class="max-w-2xl mx-auto flex flex-col gap-8">
+    <div>
+      <h1 class="text-2xl font-bold mb-4">New Chat</h1>
+      <form @submit.prevent="startNewChat" class="flex items-center gap-2">
+        <input
+          bind:value="newMessage"
+          type="text"
+          placeholder="Start a new conversation..."
+          class="input flex-grow"
+        />
+        <button type="submit" class="btn btn-default">Send</button>
+      </form>
+    </div>
+
+    <div>
+      <h2 class="text-xl font-bold mb-4">Chat History</h2>
+      {#if !chats || chats.length === 0}
+      <p class="text-gray-500">You have no previous chats.</p>
+      {:else}
+      <ul class="space-y-2">
+        {#each chats as chat}
+        <li>
+          <a
+            :href="'/' + params.username + '/ai/' + chat.id"
+            class="block p-4 rounded-lg border hover:bg-gray-100 transition-colors"
+          >
+            <p class="font-semibold">{{ chat.name }}</p>
+            <p class="text-sm text-gray-600 truncate">{{ chat.topic }}</p>
+          </a>
+        </li>
+        {/each}
+      </ul>
+      {/if}
+    </div>
+  </div>
+</template>
