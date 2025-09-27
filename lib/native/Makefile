@@ -1,34 +1,24 @@
 CC = clang
+CFLAGS = -g -O2 -Wall -fPIC -MMD -MP
+SRCDIR = .
+INCDIR = .
+SOURCES = $(shell find $(SRCDIR)/src -name '*.c')
+OBJECTS = $(SOURCES:.c=.o)
+DEPS = $(OBJECTS:.o=.d)
 TARGET = .webs.dylib
 
-# Add the new hash table source files to the include path and sources list
-CFLAGS = -fPIC -g -Isrc/core -Isrc/codecs -Isrc/api
-LDFLAGS = -shared
-
-CORE_SOURCES = src/core/webs_value.c src/core/webs_hash.c
-CODEC_SOURCES = src/codecs/webs_codec_json.c
-API_SOURCES = src/api/webs_api.c
-
-# Removed the unused SAX_SOURCES variable for clarity
-ALL_SOURCES = $(CORE_SOURCES) $(CODEC_SOURCES) $(API_SOURCES)
-
-ALL_OBJECTS = $(ALL_SOURCES:.c=.o)
-
-# Default target
 all: $(TARGET)
 
-# Link all object files into the final shared library
-$(TARGET): $(ALL_OBJECTS)
-	$(CC) $(LDFLAGS) -o $@ $^
+$(TARGET): $(OBJECTS)
+	$(CC) $(CFLAGS) -shared -o $@ $^
 
-# Generic rule to compile any .c file into a .o file
 %.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -I$(INCDIR) -c $< -o $@
 
-# Clean up build artifacts
 clean:
-	rm -f $(TARGET) $(ALL_OBJECTS)
+	rm -f $(OBJECTS) $(TARGET) $(DEPS)
 
-# Declare targets that are not files
+-include $(DEPS)
+
 .PHONY: all clean
 

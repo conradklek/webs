@@ -18,6 +18,7 @@ webs.lock.txt
 .webs.dylib
 .webs.dylib.dSYM/
 *.o
+*.d
 
 # OS-generated files
 .DS_Store
