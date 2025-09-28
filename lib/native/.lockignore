@@ -1,0 +1,17 @@
+.git/
+node_modules/
+
+bin/cli.dSYM/Contents/Resources/DWARF/cli
+bin/cli
+.DS_Store
+package-lock.json
+bun.lockb
+
+Use wildcard patterns for file extensions.
+*.plist
+*.yml
+*.d
+*.o
+*.dylib
+*.so
+*.dll

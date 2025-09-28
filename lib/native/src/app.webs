@@ -1,0 +1,31 @@
+<template>
+  <div class="app-container">
+    <h1>Welcome to Webs!</h1>
+    <p>This is a component rendered from a .webs file.</p>
+  </div>
+</template>
+
+<script>
+  export {
+    name: "App",
+    setup(props, context) {
+      console.log({ props, context });
+      return {}
+    },
+  }
+</script>
+
+<style>
+  .app-container {
+    font-family: sans-serif;
+    text-align: center;
+    margin-top: 50px;
+    padding: 20px;
+    display: inline-block;
+  }
+
+  h1 {
+    color: #333;
+    font-size: 2em;
+  }
+</style>
