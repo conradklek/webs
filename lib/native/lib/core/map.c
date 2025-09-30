@@ -1,5 +1,9 @@
+/**
+ * @file map.c
+ * @brief Implements a hash map for string keys and `Value` pointers.
+ */
 #include "map.h"
-#include "console.h"
+#include "../webs_api.h"
 #include "value.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +13,9 @@ static Status map_set_method(Map *self, const char *key, Value *value);
 static Value *map_get_method(const Map *self, const char *key);
 static Value *map_get_len_method(const Map *self, const char *key, size_t len);
 
+/**
+ * @brief FNV-1a hash function for strings.
+ */
 static size_t hash_key(const char *key) {
   size_t hash = 2166136261u;
   for (const char *p = key; *p; p++) {
@@ -18,6 +25,9 @@ static size_t hash_key(const char *key) {
   return hash;
 }
 
+/**
+ * @brief FNV-1a hash function for strings with a specified length.
+ */
 static size_t hash_key_len(const char *key, size_t len) {
   size_t hash = 2166136261u;
   for (size_t i = 0; i < len; i++) {
@@ -27,6 +37,9 @@ static size_t hash_key_len(const char *key, size_t len) {
   return hash;
 }
 
+/**
+ * @brief Creates a new hash map.
+ */
 Map *map(size_t capacity) {
   Map *table = malloc(sizeof(Map));
   if (!table)
@@ -47,6 +60,9 @@ Map *map(size_t capacity) {
   return table;
 }
 
+/**
+ * @brief Frees a hash map and all its contents.
+ */
 void map_free(Map *table) {
   if (!table)
     return;
@@ -55,7 +71,7 @@ void map_free(Map *table) {
     while (entry) {
       MapEntry *next = entry->next;
       free(entry->key);
-      value_free(entry->value);
+      W->freeValue(entry->value);
       free(entry);
       entry = next;
     }
@@ -64,11 +80,14 @@ void map_free(Map *table) {
   free(table);
 }
 
+/**
+ * @brief Resizes the hash map when the load factor is exceeded.
+ */
 static Status map_resize(Map *table) {
   size_t new_capacity = table->capacity * 2;
   MapEntry **new_entries = calloc(new_capacity, sizeof(MapEntry *));
   if (!new_entries) {
-    console()->error(console(), "Map: Failed to allocate memory for resize.");
+    W->log->error("Map: Failed to allocate memory for resize.");
     return ERROR_MEMORY;
   }
 
@@ -76,12 +95,9 @@ static Status map_resize(Map *table) {
     MapEntry *entry = table->entries[i];
     while (entry) {
       MapEntry *next = entry->next;
-
       size_t index = hash_key(entry->key) % new_capacity;
-
       entry->next = new_entries[index];
       new_entries[index] = entry;
-
       entry = next;
     }
   }
@@ -92,16 +108,19 @@ static Status map_resize(Map *table) {
   return OK;
 }
 
+/**
+ * @brief Sets a key-value pair in the map.
+ */
 static Status map_set_method(Map *self, const char *key, Value *value) {
   if (!self || !key || !value) {
     if (value)
-      value_free(value);
+      W->freeValue(value);
     return ERROR_INVALID_ARG;
   }
 
   if (self->count >= self->capacity * 0.75) {
     if (map_resize(self) != OK) {
-      value_free(value);
+      W->freeValue(value);
       return ERROR_MEMORY;
     }
   }
@@ -110,8 +129,8 @@ static Status map_set_method(Map *self, const char *key, Value *value) {
   MapEntry *entry = self->entries[index];
 
   while (entry) {
-    if (strcmp(entry->key, key) == 0) {
-      value_free(entry->value);
+    if (W->stringCompare(entry->key, key) == 0) {
+      W->freeValue(entry->value);
       entry->value = value;
       return OK;
     }
@@ -120,14 +139,14 @@ static Status map_set_method(Map *self, const char *key, Value *value) {
 
   MapEntry *new_entry = malloc(sizeof(MapEntry));
   if (!new_entry) {
-    value_free(value);
+    W->freeValue(value);
     return ERROR_MEMORY;
   }
 
   new_entry->key = strdup(key);
   if (!new_entry->key) {
     free(new_entry);
-    value_free(value);
+    W->freeValue(value);
     return ERROR_MEMORY;
   }
   new_entry->value = value;
@@ -138,6 +157,9 @@ static Status map_set_method(Map *self, const char *key, Value *value) {
   return OK;
 }
 
+/**
+ * @brief Gets a value from the map by key.
+ */
 static Value *map_get_method(const Map *self, const char *key) {
   if (!self || !key)
     return NULL;
@@ -145,7 +167,7 @@ static Value *map_get_method(const Map *self, const char *key) {
   MapEntry *entry = self->entries[index];
 
   while (entry) {
-    if (strcmp(entry->key, key) == 0) {
+    if (W->stringCompare(entry->key, key) == 0) {
       return entry->value;
     }
     entry = entry->next;
@@ -153,6 +175,9 @@ static Value *map_get_method(const Map *self, const char *key) {
   return NULL;
 }
 
+/**
+ * @brief Gets a value from the map by a key of a specific length.
+ */
 static Value *map_get_len_method(const Map *self, const char *key, size_t len) {
   if (!self || !key)
     return NULL;

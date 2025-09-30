@@ -1,5 +1,5 @@
 #include "regex.h"
-#include "object.h"
+#include "../webs_api.h"
 #include "string.h"
 #include <stdlib.h>
 #include <string.h>
@@ -29,23 +29,15 @@ Value *regex_parse(const char *pattern, Status *status) {
 
   const char *flags_str = end_slash + 1;
 
-  Value *regex_obj = object_value();
-  if (!regex_obj) {
-    free(pattern_str);
-    *status = ERROR_MEMORY;
-    return NULL;
-  }
-
-  if (regex_obj->as.object->set(regex_obj->as.object, "pattern",
-                                string_value(pattern_str)) != OK ||
-      regex_obj->as.object->set(regex_obj->as.object, "flags",
-                                string_value(flags_str)) != OK) {
-    *status = ERROR_MEMORY;
-    value_free(regex_obj);
-    free(pattern_str);
-    return NULL;
-  }
+  Value *regex_obj = W->objectOf("pattern", W->string(pattern_str), "flags",
+                                 W->string(flags_str), NULL);
 
   free(pattern_str);
+
+  if (!regex_obj) {
+    *status = ERROR_MEMORY;
+    return NULL;
+  }
+
   return regex_obj;
 }

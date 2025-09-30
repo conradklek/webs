@@ -1,3 +1,8 @@
+/**
+ * @file terminal.h
+ * @brief Provides utilities for colorized terminal output.
+ */
+
 #ifndef TERMINAL_H
 #define TERMINAL_H
 
@@ -11,9 +16,22 @@
 #define T_GRAY "\x1B[90m"
 #define T_BOLD "\x1B[1m"
 
+/**
+ * @brief Prints a formatted, colored string to a specified file stream.
+ * @param stream The stream to print to (e.g., `stdout`, `stderr`).
+ * @param color The ANSI color code string.
+ * @param format The printf-style format string.
+ * @param ... Variable arguments for the format string.
+ */
 void term_fprint_colored(FILE *stream, const char *color, const char *format,
                          ...);
 
+/**
+ * @brief Prints a formatted, colored string to stdout.
+ * @param color The ANSI color code string.
+ * @param format The printf-style format string.
+ * @param ... Variable arguments for the format string.
+ */
 void term_print_colored(const char *color, const char *format, ...);
 
-#endif
+#endif // TERMINAL_H

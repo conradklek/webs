@@ -1,3 +1,10 @@
+/**
+ * @file url.c
+ * @brief Provides URL and route parsing.
+ * @note This file has been refactored to use the W-> API for string
+ * splitting and slicing, replacing manual tokenization with `strtok_r`.
+ */
+
 #include "url.h"
 #include "../webs_api.h"
 #include <ctype.h>
@@ -5,8 +12,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-static size_t url_decode_inplace(char *str) {
-  char *p = str, *q = str;
+// Helper to decode a URL component (e.g., %20 -> ' '). Returns a new string.
+static char *url_decode_component(const char *str) {
+  if (!str)
+    return NULL;
+  size_t len = strlen(str);
+  char *decoded = malloc(len + 1);
+  if (!decoded)
+    return NULL;
+
+  char *q = decoded;
+  const char *p = str;
   while (*p) {
     if (*p == '%') {
       if (p[1] && p[2] && isxdigit((unsigned char)p[1]) &&
@@ -25,11 +41,39 @@ static size_t url_decode_inplace(char *str) {
     }
   }
   *q = '\0';
-  return q - str;
+  return decoded;
+}
+
+// Helper to decode a path segment. Returns a new string.
+static char *path_segment_decode(const char *str) {
+  if (!str)
+    return NULL;
+  size_t len = strlen(str);
+  char *decoded = malloc(len + 1);
+  if (!decoded)
+    return NULL;
+
+  char *q = decoded;
+  const char *p = str;
+  while (*p) {
+    if (*p == '%') {
+      if (p[1] && p[2] && isxdigit((unsigned char)p[1]) &&
+          isxdigit((unsigned char)p[2])) {
+        char hex[3] = {p[1], p[2], 0};
+        *q++ = (char)strtol(hex, NULL, 16);
+        p += 3;
+      } else {
+        *q++ = *p++;
+      }
+    } else {
+      *q++ = *p++;
+    }
+  }
+  *q = '\0';
+  return decoded;
 }
 
 static Status set_nested_value(Value *root, char *key, Value *value) {
-  const WebsApi *w = webs();
   Value *cursor = root;
   char *p = key;
   char *key_part_start = key;
@@ -38,34 +82,26 @@ static Status set_nested_value(Value *root, char *key, Value *value) {
     if (*p == '[') {
       if (p > key_part_start) {
         *p = '\0';
-        Value *child_node = w->objectGet(cursor, key_part_start);
-
+        Value *child_node = W->objectGetRef(cursor, key_part_start);
         if (!child_node) {
-          if (*(p + 1) == ']') {
-            child_node = w->array();
-          } else {
-            child_node = w->object();
-          }
+          child_node = (*(p + 1) == ']') ? W->array() : W->object();
           if (!child_node) {
-            w->freeValue(value);
+            W->freeValue(value);
             return ERROR_MEMORY;
           }
-          Status set_status = w->objectSet(cursor, key_part_start, child_node);
-          if (set_status != OK) {
-            w->freeValue(value);
-            w->freeValue(child_node);
-            return set_status;
+          if (W->objectSet(cursor, key_part_start, child_node) != OK) {
+            W->freeValue(value);
+            W->freeValue(child_node);
+            return ERROR_MEMORY;
           }
         }
         cursor = child_node;
       }
-
       char *end_bracket = strchr(p + 1, ']');
       if (!end_bracket) {
-        w->freeValue(value);
+        W->freeValue(value);
         return ERROR_PARSE;
       }
-
       p++;
       *end_bracket = '\0';
       key_part_start = p;
@@ -73,238 +109,242 @@ static Status set_nested_value(Value *root, char *key, Value *value) {
     }
     p++;
   }
-
   if (*key_part_start == '\0') {
-    if (cursor && w->valueGetType(cursor) == VALUE_ARRAY) {
-      return w->arrayPush(cursor, value);
-    }
+    if (cursor && W->valueGetType(cursor) == VALUE_ARRAY)
+      return W->arrayPush(cursor, value);
   } else {
-    if (cursor && w->valueGetType(cursor) == VALUE_OBJECT) {
-      return w->objectSet(cursor, key_part_start, value);
-    }
+    if (cursor && W->valueGetType(cursor) == VALUE_OBJECT)
+      return W->objectSet(cursor, key_part_start, value);
   }
-
-  w->freeValue(value);
+  W->freeValue(value);
   return ERROR_INVALID_ARG;
 }
 
 Value *url_decode(const char *url_string, Status *status) {
-  const WebsApi *w = webs();
-  Value *root = NULL;
-  char *input_copy = NULL;
   *status = OK;
+  if (!url_string)
+    return W->object();
 
-  if (!url_string) {
-    return w->object();
-  }
-
-  input_copy = strdup(url_string);
-  if (!input_copy) {
-    *status = ERROR_MEMORY;
-    goto cleanup;
-  }
-
-  root = w->object();
-  if (!root) {
-    *status = ERROR_MEMORY;
-    goto cleanup;
-  }
-
-  if (strstr(url_string, "://") == NULL) {
-    char *pair_state;
-    char *pair = strtok_r(input_copy, "&", &pair_state);
-    while (pair != NULL) {
-      char *equals = strchr(pair, '=');
-      char *key;
-      Value *value;
-
-      if (equals) {
-        *equals = '\0';
-        key = pair;
-        char *val_str = equals + 1;
-        url_decode_inplace(val_str);
-        value = w->string(val_str);
-      } else {
-        key = pair;
-        value = w->string("");
-      }
-
-      if (!value) {
-        *status = ERROR_MEMORY;
-        goto cleanup;
-      }
-      url_decode_inplace(key);
-      *status = set_nested_value(root, key, value);
-      if (*status != OK) {
-        goto cleanup;
-      }
-      pair = strtok_r(NULL, "&", &pair_state);
+  if (W->stringIndexOf(url_string, "://") != -1) {
+    // Full URL parsing logic
+    char *input_copy = strdup(url_string);
+    if (!input_copy) {
+      *status = ERROR_MEMORY;
+      return NULL;
     }
-  } else {
+    Value *root = W->object();
     char *rest = input_copy;
 
-    char *fragment_start = strchr(rest, '#');
-    if (fragment_start) {
-      *fragment_start = '\0';
-      w->objectSet(root, "fragment", w->string(fragment_start + 1));
+    int fragment_idx = W->stringIndexOf(rest, "#");
+    if (fragment_idx != -1) {
+      char *fragment_str = W->stringSlice(rest, fragment_idx + 1, strlen(rest));
+      W->objectSet(root, "fragment", W->string(fragment_str));
+      W->freeString(fragment_str);
+      rest[fragment_idx] = '\0';
     }
 
-    Value *query_obj = w->object();
-    if (!query_obj) {
-      *status = ERROR_MEMORY;
-      goto cleanup;
-    }
-    char *query_start = strchr(rest, '?');
-    if (query_start) {
-      *query_start = '\0';
-      char *query_part = query_start + 1;
+    Value *query_obj = W->object();
+    int query_idx = W->stringIndexOf(rest, "?");
+    if (query_idx != -1) {
+      char *query_part = rest + query_idx + 1;
+      rest[query_idx] = '\0';
 
-      char *pair_state;
-      char *pair = strtok_r(query_part, "&", &pair_state);
-      while (pair != NULL) {
-        char *equals = strchr(pair, '=');
-        char *key;
-        Value *value;
-        if (equals) {
-          *equals = '\0';
-          key = pair;
-          char *val_str = equals + 1;
-          url_decode_inplace(val_str);
-          value = w->string(val_str);
-        } else {
-          key = pair;
-          value = w->string("");
+      // REFACTOR: Use W->stringSplit instead of strtok_r
+      int pair_count;
+      char **pairs = W->stringSplit(query_part, "&", &pair_count);
+      if (pairs) {
+        for (int i = 0; i < pair_count; i++) {
+          char *key;
+          Value *value;
+          int equals_idx = W->stringIndexOf(pairs[i], "=");
+
+          if (equals_idx != -1) {
+            char *raw_key = W->stringSlice(pairs[i], 0, equals_idx);
+            char *raw_val =
+                W->stringSlice(pairs[i], equals_idx + 1, strlen(pairs[i]));
+
+            key = url_decode_component(raw_key);
+            char *decoded_val = url_decode_component(raw_val);
+            value = W->string(decoded_val);
+
+            W->freeString(raw_key);
+            W->freeString(raw_val);
+            W->freeString(decoded_val);
+          } else {
+            key = url_decode_component(pairs[i]);
+            value = W->string("");
+          }
+
+          if (key) {
+            set_nested_value(query_obj, key, value);
+            free(key);
+          }
         }
-        if (!value) {
-          *status = ERROR_MEMORY;
-          w->freeValue(query_obj);
-          goto cleanup;
-        }
-        url_decode_inplace(key);
-        *status = set_nested_value(query_obj, key, value);
-        if (*status != OK) {
-          w->freeValue(query_obj);
-          goto cleanup;
-        }
-        pair = strtok_r(NULL, "&", &pair_state);
+        W->freeStringArray(pairs, pair_count);
       }
     }
-    w->objectSet(root, "query", query_obj);
+    W->objectSet(root, "query", query_obj);
 
-    char *scheme_end = strstr(rest, "://");
-    if (scheme_end) {
-      *scheme_end = '\0';
-      w->objectSet(root, "scheme", w->string(rest));
-      rest = scheme_end + 3;
+    // Continue with full URL parsing
+    int scheme_end_idx = W->stringIndexOf(rest, "://");
+    if (scheme_end_idx != -1) {
+      char *scheme = W->stringSlice(rest, 0, scheme_end_idx);
+      W->objectSet(root, "scheme", W->string(scheme));
+      W->freeString(scheme);
+      rest += scheme_end_idx + 3;
     }
 
-    char *path_start = strchr(rest, '/');
-    if (path_start) {
-      w->objectSet(root, "path", w->string(path_start));
-      *path_start = '\0';
+    int path_idx = W->stringIndexOf(rest, "/");
+    if (path_idx != -1) {
+      char *path_str = W->stringSlice(rest, path_idx, strlen(rest));
+      W->objectSet(root, "path", W->string(path_str));
+      W->freeString(path_str);
+      rest[path_idx] = '\0';
     } else {
-      w->objectSet(root, "path", w->string("/"));
+      W->objectSet(root, "path", W->string("/"));
     }
 
-    char *host_part = rest;
-    char *port_delim = strchr(host_part, ':');
-    if (port_delim) {
-      *port_delim = '\0';
-      w->objectSet(root, "port", w->string(port_delim + 1));
+    int port_idx = W->stringIndexOf(rest, ":");
+    if (port_idx != -1) {
+      char *port_str = W->stringSlice(rest, port_idx + 1, strlen(rest));
+      W->objectSet(root, "port", W->string(port_str));
+      W->freeString(port_str);
+      rest[port_idx] = '\0';
     }
-    w->objectSet(root, "host", w->string(host_part));
-  }
-
-cleanup:
-  if (input_copy)
+    W->objectSet(root, "host", W->string(rest));
     free(input_copy);
-  if (*status != OK && root) {
-    w->freeValue(root);
-    root = NULL;
+    return root;
+
+  } else {
+    // Query string only parsing logic
+    Value *root = W->object();
+    int pair_count;
+    char **pairs = W->stringSplit(url_string, "&", &pair_count);
+    if (pairs) {
+      for (int i = 0; i < pair_count; i++) {
+        char *key;
+        Value *value;
+        int equals_idx = W->stringIndexOf(pairs[i], "=");
+
+        if (equals_idx != -1) {
+          char *raw_key = W->stringSlice(pairs[i], 0, equals_idx);
+          char *raw_val =
+              W->stringSlice(pairs[i], equals_idx + 1, strlen(pairs[i]));
+          key = url_decode_component(raw_key);
+          char *decoded_val = url_decode_component(raw_val);
+          value = W->string(decoded_val);
+          W->freeString(raw_key);
+          W->freeString(raw_val);
+          W->freeString(decoded_val);
+        } else {
+          key = url_decode_component(pairs[i]);
+          value = W->string("");
+        }
+        if (key) {
+          set_nested_value(root, key, value);
+          free(key);
+        }
+      }
+      W->freeStringArray(pairs, pair_count);
+    }
+    return root;
   }
-  return root;
 }
 
 Value *url_match_route(const char *pattern, const char *path, Status *status) {
-  const WebsApi *w = webs();
   *status = OK;
-  char *p_copy = strdup(pattern);
-  char *path_copy = strdup(path);
-  if (!p_copy || !path_copy) {
-    free(p_copy);
-    free(path_copy);
-    *status = ERROR_MEMORY;
-    return NULL;
-  }
-
-  Value *params = w->object();
+  Value *params = W->object();
   if (!params) {
-    free(p_copy);
-    free(path_copy);
     *status = ERROR_MEMORY;
     return NULL;
   }
 
-  char *p_tok, *path_tok;
-  char *p_save, *path_save;
+  const char *p_cursor = pattern;
+  const char *path_cursor = path;
 
-  p_tok = strtok_r(p_copy, "/", &p_save);
-  path_tok = strtok_r(path_copy, "/", &path_save);
+  while (*p_cursor) {
+    if (*p_cursor == '[') {
+      p_cursor++;
+      bool is_catch_all = W->stringStartsWith(p_cursor, "...");
+      if (is_catch_all)
+        p_cursor += 3;
 
-  bool catch_all_matched = false;
-
-  while (p_tok != NULL) {
-    if (path_tok == NULL && p_tok[0] != '[') {
-      w->freeValue(params);
-      params = NULL;
-      break;
-    }
-
-    if (p_tok[0] == '[') {
-      bool is_catch_all = strncmp(p_tok + 1, "...", 3) == 0;
-      size_t offset = is_catch_all ? 4 : 1;
-      char *name = strndup(p_tok + offset, strlen(p_tok) - offset - 1);
+      const char *name_start = p_cursor;
+      while (*p_cursor && *p_cursor != ']')
+        p_cursor++;
+      if (*p_cursor != ']') {
+        W->freeValue(params);
+        return NULL;
+      }
+      char *name = strndup(name_start, p_cursor - name_start);
+      p_cursor++;
 
       if (is_catch_all) {
-        Value *vals = w->array();
-        if (path_tok) {
-          do {
-            w->arrayPush(vals, w->string(path_tok));
-          } while ((path_tok = strtok_r(NULL, "/", &path_save)));
-        }
-        w->objectSet(params, name, vals);
-        catch_all_matched = true;
-
-      } else {
-        if (!path_tok) {
-          w->freeValue(params);
-          params = NULL;
+        if (*p_cursor != '\0') {
+          W->freeValue(params);
           free(name);
-          break;
+          return NULL;
         }
-        w->objectSet(params, name, w->string(path_tok));
+        Value *segments = W->array();
+        if (*path_cursor != '\0' &&
+            (*path_cursor != '/' || *(path_cursor + 1) != '\0')) {
+          const char *start =
+              (*path_cursor == '/') ? path_cursor + 1 : path_cursor;
+          if (*start != '\0') {
+            // REFACTOR: Use W->stringSplit instead of strtok_r
+            int segment_count;
+            char **path_segments = W->stringSplit(start, "/", &segment_count);
+            if (path_segments) {
+              for (int i = 0; i < segment_count; i++) {
+                char *decoded_segment = path_segment_decode(path_segments[i]);
+                W->arrayPush(segments, W->string(decoded_segment));
+                free(decoded_segment);
+              }
+              W->freeStringArray(path_segments, segment_count);
+            }
+          }
+        }
+        W->objectSet(params, name, segments);
+        path_cursor += strlen(path_cursor);
+      } else {
+        const char *seg_end;
+        const char delimiter = *p_cursor;
+
+        if (delimiter != '\0' && delimiter != '/') {
+          seg_end = strchr(path_cursor, delimiter);
+          if (!seg_end) {
+            W->freeValue(params);
+            free(name);
+            return NULL;
+          }
+        } else {
+          seg_end = path_cursor;
+          while (*seg_end && *seg_end != '/') {
+            seg_end++;
+          }
+        }
+
+        char *value = strndup(path_cursor, seg_end - path_cursor);
+        char *decoded_value = path_segment_decode(value);
+        W->objectSet(params, name, W->string(decoded_value));
+        free(value);
+        free(decoded_value);
+        path_cursor = seg_end;
       }
       free(name);
-
-    } else if (path_tok == NULL || strcmp(p_tok, path_tok) != 0) {
-      w->freeValue(params);
-      params = NULL;
-      break;
-    }
-
-    p_tok = strtok_r(NULL, "/", &p_save);
-    if (!catch_all_matched) {
-      path_tok = strtok_r(NULL, "/", &path_save);
+    } else if (*p_cursor == *path_cursor) {
+      p_cursor++;
+      path_cursor++;
+    } else {
+      W->freeValue(params);
+      return NULL;
     }
   }
 
-  if (path_tok != NULL && !catch_all_matched) {
-    if (params)
-      w->freeValue(params);
-    params = NULL;
+  if (*path_cursor != *p_cursor) {
+    W->freeValue(params);
+    return NULL;
   }
 
-  free(p_copy);
-  free(path_copy);
   return params;
 }

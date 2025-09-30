@@ -6,26 +6,25 @@
 
 VNode *vnode_new(VNodeType node_type, const char *type, Value *props,
                  Value *events, Value *children) {
-  const WebsApi *w = webs();
   VNode *vnode = (VNode *)calloc(1, sizeof(VNode));
   if (!vnode)
     return NULL;
 
   vnode->node_type = node_type;
   vnode->type = type ? strdup(type) : NULL;
-  vnode->props = props ? props : w->object();
-  vnode->events = events ? events : w->object();
+  vnode->props = props ? props : W->object();
+  vnode->events = events ? events : W->object();
   vnode->children = children;
 
-  if (vnode->props && w->valueGetType(vnode->props) == VALUE_OBJECT) {
-    Value *key_val = w->objectGet(vnode->props, "key");
+  if (vnode->props && W->valueGetType(vnode->props) == VALUE_OBJECT) {
+    Value *key_val = W->objectGetRef(vnode->props, "key");
     if (key_val) {
-      if (w->valueGetType(key_val) == VALUE_STRING) {
-        vnode->key = w->valueClone(key_val);
-      } else if (w->valueGetType(key_val) == VALUE_NUMBER) {
+      if (W->valueGetType(key_val) == VALUE_STRING) {
+        vnode->key = W->valueClone(key_val);
+      } else if (W->valueGetType(key_val) == VALUE_NUMBER) {
         char buffer[64];
-        snprintf(buffer, sizeof(buffer), "%g", w->valueAsNumber(key_val));
-        vnode->key = w->string(buffer);
+        snprintf(buffer, sizeof(buffer), "%g", W->valueAsNumber(key_val));
+        vnode->key = W->string(buffer);
       }
     }
   }
@@ -34,98 +33,94 @@ VNode *vnode_new(VNodeType node_type, const char *type, Value *props,
 }
 
 void vnode_free(VNode *vnode) {
-  const WebsApi *w = webs();
   if (!vnode)
     return;
 
   free(vnode->type);
-  w->freeValue(vnode->props);
-  w->freeValue(vnode->events);
-  w->freeValue(vnode->key);
+  W->freeValue(vnode->props);
+  W->freeValue(vnode->events);
+  W->freeValue(vnode->key);
 
-  if (vnode->children && w->valueGetType(vnode->children) == VALUE_ARRAY) {
-    for (size_t i = 0; i < w->arrayCount(vnode->children); i++) {
-      Value *child_wrapper = w->arrayGet(vnode->children, i);
-      if (child_wrapper && w->valueGetType(child_wrapper) == VALUE_POINTER) {
+  if (vnode->children && W->valueGetType(vnode->children) == VALUE_ARRAY) {
+    for (size_t i = 0; i < W->arrayCount(vnode->children); i++) {
+      Value *child_wrapper = W->arrayGetRef(vnode->children, i);
+      if (child_wrapper && W->valueGetType(child_wrapper) == VALUE_POINTER) {
         vnode_free((VNode *)child_wrapper->as.pointer);
       }
     }
   }
-  w->freeValue(vnode->children);
+  W->freeValue(vnode->children);
   free(vnode);
 }
 
 Value *normalize_children(Value *children) {
-  const WebsApi *w = webs();
   Value *array_to_process = children;
   bool created_wrapper = false;
 
   if (!children) {
-    return w->array();
+    return W->array();
   }
 
-  if (w->valueGetType(children) != VALUE_ARRAY) {
-    array_to_process = w->array();
-    w->arrayPush(array_to_process, children);
+  if (W->valueGetType(children) != VALUE_ARRAY) {
+    array_to_process = W->array();
+    W->arrayPush(array_to_process, children);
     created_wrapper = true;
   }
 
-  Value *normalized_array = w->array();
-  for (size_t i = 0; i < w->arrayCount(array_to_process); i++) {
-    Value *child = w->arrayGet(array_to_process, i);
+  Value *normalized_array = W->array();
+  for (size_t i = 0; i < W->arrayCount(array_to_process); i++) {
+    Value *child = W->arrayGetRef(array_to_process, i);
     VNode *vnode = NULL;
 
-    if (child && w->valueGetType(child) == VALUE_POINTER) {
-      w->arrayPush(normalized_array, w->valueClone(child));
+    if (child && W->valueGetType(child) == VALUE_POINTER) {
+      W->arrayPush(normalized_array, W->valueClone(child));
       continue;
     }
 
-    ValueType child_type = w->valueGetType(child);
+    ValueType child_type = W->valueGetType(child);
     if (child && (child_type == VALUE_STRING || child_type == VALUE_NUMBER)) {
       char buffer[64];
       const char *child_content;
       if (child_type == VALUE_NUMBER) {
-        snprintf(buffer, sizeof(buffer), "%g", w->valueAsNumber(child));
+        snprintf(buffer, sizeof(buffer), "%g", W->valueAsNumber(child));
         child_content = buffer;
       } else {
-        child_content = w->valueAsString(child);
+        child_content = W->valueAsString(child);
       }
-      Value *text_child_value = w->string(child_content);
-      vnode = vnode_new(VNODE_TYPE_TEXT, "Text", w->object(), w->object(),
+      Value *text_child_value = W->string(child_content);
+      vnode = vnode_new(VNODE_TYPE_TEXT, "Text", W->object(), W->object(),
                         text_child_value);
     } else if (child && child_type == VALUE_OBJECT) {
-      Value *v_type_val = w->objectGet(child, "type");
-      Value *v_props_val = w->objectGet(child, "props");
-      Value *v_children_val = w->objectGet(child, "children");
+      Value *v_type_val = W->objectGetRef(child, "type");
+      Value *v_props_val = W->objectGetRef(child, "props");
+      Value *v_children_val = W->objectGetRef(child, "children");
 
-      if (v_type_val && w->valueGetType(v_type_val) == VALUE_STRING) {
-        vnode = h(w->valueAsString(v_type_val), w->valueClone(v_props_val),
-                  w->valueClone(v_children_val));
+      if (v_type_val && W->valueGetType(v_type_val) == VALUE_STRING) {
+        vnode = h(W->valueAsString(v_type_val), W->valueClone(v_props_val),
+                  W->valueClone(v_children_val));
       } else {
-        char *stringified = w->json->encode(child);
-        Value *text_content = w->string(stringified ? stringified : "{}");
-        vnode = vnode_new(VNODE_TYPE_TEXT, "Text", w->object(), w->object(),
+        char *stringified = W->json->encode(child);
+        Value *text_content = W->string(stringified ? stringified : "{}");
+        vnode = vnode_new(VNODE_TYPE_TEXT, "Text", W->object(), W->object(),
                           text_content);
-        w->freeString(stringified);
+        W->freeString(stringified);
       }
     }
 
     if (vnode) {
-      w->arrayPush(normalized_array, w->pointer(vnode));
+      W->arrayPush(normalized_array, W->pointer(vnode));
     }
   }
 
   if (created_wrapper) {
-    // Clear the temporary wrapper array before freeing
-    w->arrayGet(array_to_process, 0)->type = VALUE_FREED;
-    w->freeValue(array_to_process);
+    W->arrayGetRef(array_to_process, 0)->type = VALUE_FREED;
+    W->freeValue(array_to_process);
   }
 
   return normalized_array;
 }
 
 VNode *h(const char *type, Value *props, Value *children) {
-  const WebsApi *w = webs();
   VNodeType node_type;
   if (strcmp(type, "Fragment") == 0) {
     node_type = VNODE_TYPE_FRAGMENT;
@@ -139,43 +134,43 @@ VNode *h(const char *type, Value *props, Value *children) {
     node_type = VNODE_TYPE_ELEMENT;
   }
 
-  Value *actual_props = w->object();
-  Value *events = w->object();
-  if (props && w->valueGetType(props) == VALUE_OBJECT) {
-    Value *keys = w->objectKeys(props);
+  Value *actual_props = W->object();
+  Value *events = W->object();
+  if (props && W->valueGetType(props) == VALUE_OBJECT) {
+    Value *keys = W->objectKeys(props);
     if (keys) {
-      for (size_t i = 0; i < w->arrayCount(keys); i++) {
-        Value *key_val = w->arrayGet(keys, i);
-        const char *key = w->valueAsString(key_val);
-        Value *val = w->objectGet(props, key);
+      for (size_t i = 0; i < W->arrayCount(keys); i++) {
+        Value *key_val = W->arrayGetRef(keys, i);
+        const char *key = W->valueAsString(key_val);
+        Value *val = W->objectGetRef(props, key);
         if (key[0] == '@') {
-          w->objectSet(events, key + 1, w->valueClone(val));
+          W->objectSet(events, key + 1, W->valueClone(val));
         } else {
-          w->objectSet(actual_props, key, w->valueClone(val));
+          W->objectSet(actual_props, key, W->valueClone(val));
         }
       }
-      w->freeValue(keys);
+      W->freeValue(keys);
     }
   }
-  w->freeValue(props);
+  W->freeValue(props);
 
   Value *vnode_children;
   if (node_type == VNODE_TYPE_TEXT || node_type == VNODE_TYPE_COMMENT) {
-    if (children && w->valueGetType(children) == VALUE_STRING) {
+    if (children && W->valueGetType(children) == VALUE_STRING) {
       vnode_children = children;
-    } else if (children && w->valueGetType(children) == VALUE_ARRAY &&
-               w->arrayCount(children) > 0) {
-      Value *first_child = w->arrayGet(children, 0);
-      if (first_child && w->valueGetType(first_child) == VALUE_STRING) {
-        vnode_children = w->valueClone(first_child);
+    } else if (children && W->valueGetType(children) == VALUE_ARRAY &&
+               W->arrayCount(children) > 0) {
+      Value *first_child = W->arrayGetRef(children, 0);
+      if (first_child && W->valueGetType(first_child) == VALUE_STRING) {
+        vnode_children = W->valueClone(first_child);
       } else {
-        vnode_children = w->string("");
+        vnode_children = W->string("");
       }
-      w->freeValue(children);
+      W->freeValue(children);
     } else {
-      vnode_children = w->string("");
+      vnode_children = W->string("");
       if (children) {
-        w->freeValue(children);
+        W->freeValue(children);
       }
     }
   } else {
@@ -189,38 +184,31 @@ VNode *h(const char *type, Value *props, Value *children) {
 }
 
 Value *vnode_to_value(const VNode *vnode) {
-  const WebsApi *w = webs();
   if (!vnode)
-    return w->null();
+    return W->null();
 
-  Value *obj = w->object();
-  w->objectSet(obj, "node_type", w->number(vnode->node_type));
-  w->objectSet(obj, "type", w->string(vnode->type ? vnode->type : ""));
-  w->objectSet(obj, "props", w->valueClone(vnode->props));
-  w->objectSet(obj, "events", w->valueClone(vnode->events));
-
+  Value *children_value;
   if (vnode->node_type == VNODE_TYPE_TEXT ||
       vnode->node_type == VNODE_TYPE_COMMENT) {
-    w->objectSet(obj, "children", w->valueClone(vnode->children));
+    children_value = W->valueClone(vnode->children);
   } else {
-    Value *children_array = w->array();
-    if (vnode->children && w->valueGetType(vnode->children) == VALUE_ARRAY) {
-      for (size_t i = 0; i < w->arrayCount(vnode->children); i++) {
-        Value *child_wrapper = w->arrayGet(vnode->children, i);
-        if (child_wrapper && w->valueGetType(child_wrapper) == VALUE_POINTER) {
+    Value *children_array = W->array();
+    if (vnode->children && W->valueGetType(vnode->children) == VALUE_ARRAY) {
+      for (size_t i = 0; i < W->arrayCount(vnode->children); i++) {
+        Value *child_wrapper = W->arrayGetRef(vnode->children, i);
+        if (child_wrapper && W->valueGetType(child_wrapper) == VALUE_POINTER) {
           const VNode *child_vnode = (const VNode *)child_wrapper->as.pointer;
-          w->arrayPush(children_array, w->vnodeToValue(child_vnode));
+          W->arrayPush(children_array, vnode_to_value(child_vnode));
         }
       }
     }
-    w->objectSet(obj, "children", children_array);
+    children_value = children_array;
   }
 
-  if (vnode->key) {
-    w->objectSet(obj, "key", w->valueClone(vnode->key));
-  } else {
-    w->objectSet(obj, "key", w->null());
-  }
-
-  return obj;
+  return W->objectOf("node_type", W->number(vnode->node_type), "type",
+                     W->string(vnode->type ? vnode->type : ""), "props",
+                     W->valueClone(vnode->props), "events",
+                     W->valueClone(vnode->events), "children", children_value,
+                     "key", vnode->key ? W->valueClone(vnode->key) : W->null(),
+                     NULL);
 }

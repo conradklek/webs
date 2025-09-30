@@ -15,3 +15,5 @@ Use wildcard patterns for file extensions.
 *.dylib
 *.so
 *.dll
+*.db
+*.md

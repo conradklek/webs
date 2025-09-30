@@ -1,3 +1,7 @@
+/**
+ * @file json.c
+ * @brief Implements JSON parsing, encoding, and querying functionality.
+ */
 #include "json.h"
 #include "../modules/terminal.h"
 #include "../webs_api.h"
@@ -31,7 +35,6 @@ static char *parse_allocated_string(Parser *p) {
   p->current++;
   const char *start = p->current;
   const char *end = start;
-
   while (*end && *end != '"') {
     if (*end == '\\') {
       end++;
@@ -41,18 +44,15 @@ static char *parse_allocated_string(Parser *p) {
       end++;
     }
   }
-
   if (*end != '"') {
     set_status(p, ERROR_PARSE);
     return NULL;
   }
-
   char *unescaped_str = (char *)malloc(end - start + 1);
   if (!unescaped_str) {
     set_status(p, ERROR_MEMORY);
     return NULL;
   }
-
   char *writer = unescaped_str;
   const char *reader = start;
   while (reader < end) {
@@ -93,18 +93,15 @@ static char *parse_allocated_string(Parser *p) {
     }
   }
   *writer = '\0';
-
   p->current = end + 1;
   return unescaped_str;
 }
 
 static Value *parse_string(Parser *p) {
-  const WebsApi *w = webs();
   char *str_val = parse_allocated_string(p);
   if (!str_val)
     return NULL;
-
-  Value *node = w->string(str_val);
+  Value *node = W->string(str_val);
   free(str_val);
   if (!node) {
     set_status(p, ERROR_MEMORY);
@@ -113,7 +110,6 @@ static Value *parse_string(Parser *p) {
 }
 
 static Value *parse_number(Parser *p) {
-  const WebsApi *w = webs();
   const char *start = p->current;
   char *end;
   double num = strtod(start, &end);
@@ -122,51 +118,45 @@ static Value *parse_number(Parser *p) {
     return NULL;
   }
   p->current = end;
-  return w->number(num);
+  return W->number(num);
 }
 
 static Value *parse_literal(Parser *p) {
-  const WebsApi *w = webs();
   if (strncmp(p->current, "true", 4) == 0) {
     p->current += 4;
-    return w->boolean(true);
+    return W->boolean(true);
   }
   if (strncmp(p->current, "false", 5) == 0) {
     p->current += 5;
-    return w->boolean(false);
+    return W->boolean(false);
   }
   if (strncmp(p->current, "null", 4) == 0) {
     p->current += 4;
-    return w->null();
+    return W->null();
   }
   set_status(p, ERROR_PARSE);
   return NULL;
 }
 
 static Value *parse_array(Parser *p) {
-  const WebsApi *w = webs();
   p->current++;
-
-  Value *node = w->array();
+  Value *node = W->array();
   if (!node) {
     set_status(p, ERROR_MEMORY);
     return NULL;
   }
-
   skip_whitespace(p);
   if (*p->current == ']') {
     p->current++;
     return node;
   }
-
   while (*p->current) {
     Value *element = parse_value(p);
     if (!element) {
-      w->freeValue(node);
+      W->freeValue(node);
       return NULL;
     }
-    w->arrayPush(node, element);
-
+    W->arrayPush(node, element);
     skip_whitespace(p);
     if (*p->current == ']') {
       p->current++;
@@ -177,48 +167,41 @@ static Value *parse_array(Parser *p) {
       skip_whitespace(p);
       if (*p->current == ']') {
         set_status(p, ERROR_PARSE);
-        w->freeValue(node);
+        W->freeValue(node);
         return NULL;
       }
     } else {
       set_status(p, ERROR_PARSE);
-      w->freeValue(node);
+      W->freeValue(node);
       return NULL;
     }
   }
-
   set_status(p, ERROR_PARSE);
-  w->freeValue(node);
+  W->freeValue(node);
   return NULL;
 }
 
 static Value *parse_object(Parser *p) {
-  const WebsApi *w = webs();
   p->current++;
-
-  Value *node = w->object();
+  Value *node = W->object();
   if (!node) {
     set_status(p, ERROR_MEMORY);
     return NULL;
   }
-
   skip_whitespace(p);
   if (*p->current == '}') {
     p->current++;
     return node;
   }
-
   while (*p->current) {
     if (*p->current != '"') {
       set_status(p, ERROR_PARSE);
       goto cleanup;
     }
-
     char *key_string = parse_allocated_string(p);
     if (!key_string) {
       goto cleanup;
     }
-
     skip_whitespace(p);
     if (*p->current != ':') {
       set_status(p, ERROR_PARSE);
@@ -226,16 +209,13 @@ static Value *parse_object(Parser *p) {
       goto cleanup;
     }
     p->current++;
-
     Value *value_node = parse_value(p);
     if (!value_node) {
       free(key_string);
       goto cleanup;
     }
-
-    w->objectSet(node, key_string, value_node);
+    W->objectSet(node, key_string, value_node);
     free(key_string);
-
     skip_whitespace(p);
     if (*p->current == '}') {
       p->current++;
@@ -253,11 +233,9 @@ static Value *parse_object(Parser *p) {
       goto cleanup;
     }
   }
-
   set_status(p, ERROR_PARSE);
-
 cleanup:
-  w->freeValue(node);
+  W->freeValue(node);
   return NULL;
 }
 
@@ -284,186 +262,112 @@ static Value *parse_value(Parser *p) {
 }
 
 Value *json_decode(const char *json_string, Status *status) {
-  const WebsApi *w = webs();
   Parser p = {.current = json_string, .start = json_string, .status = status};
   *status = OK;
-
   Value *root = parse_value(&p);
-
   if (*status == OK && root) {
     skip_whitespace(&p);
     if (*p.current != '\0') {
       *status = ERROR_PARSE;
     }
   }
-
   if (*status != OK && root) {
-    w->freeValue(root);
+    W->freeValue(root);
     return NULL;
   }
-
   return root;
-}
-
-typedef struct {
-  char *buffer;
-  size_t length;
-  size_t capacity;
-} StringBuilder;
-
-static void sb_init(StringBuilder *sb, size_t initial_capacity) {
-  sb->capacity = initial_capacity > 0 ? initial_capacity : 256;
-  sb->buffer = malloc(sb->capacity);
-  if (sb->buffer) {
-    sb->buffer[0] = '\0';
-  }
-  sb->length = 0;
-}
-
-static bool sb_ensure_capacity(StringBuilder *sb, size_t additional_length) {
-  if (!sb->buffer)
-    return false;
-  if (sb->length + additional_length >= sb->capacity) {
-    size_t new_capacity = sb->capacity;
-    while (new_capacity <= sb->length + additional_length) {
-      new_capacity *= 2;
-    }
-    char *new_buffer = realloc(sb->buffer, new_capacity);
-    if (!new_buffer) {
-      webs()->log->error("Encoder: Failed to reallocate string builder.");
-      return false;
-    }
-    sb->buffer = new_buffer;
-    sb->capacity = new_capacity;
-  }
-  return true;
-}
-
-static void sb_append_str(StringBuilder *sb, const char *str) {
-  if (!str)
-    return;
-  size_t len = strlen(str);
-  if (!sb_ensure_capacity(sb, len))
-    return;
-  memcpy(sb->buffer + sb->length, str, len);
-  sb->length += len;
-  sb->buffer[sb->length] = '\0';
-}
-
-static void sb_append_char(StringBuilder *sb, char c) {
-  if (!sb_ensure_capacity(sb, 1))
-    return;
-  sb->buffer[sb->length++] = c;
-  sb->buffer[sb->length] = '\0';
-}
-
-static char *sb_to_string(StringBuilder *sb) {
-  if (!sb || !sb->buffer)
-    return NULL;
-  char *result = realloc(sb->buffer, sb->length + 1);
-  if (result) {
-    result[sb->length] = '\0';
-  }
-  sb->buffer = NULL;
-  sb->length = 0;
-  sb->capacity = 0;
-  return result;
 }
 
 static void encode_value(const Value *value, StringBuilder *sb);
 
 static void encode_string(const char *str, StringBuilder *sb) {
-  sb_append_char(sb, '"');
+  W->stringBuilder->appendChar(sb, '"');
   for (const char *p = str; *p; p++) {
     switch (*p) {
     case '"':
-      sb_append_str(sb, "\\\"");
+      W->stringBuilder->appendStr(sb, "\\\"");
       break;
     case '\\':
-      sb_append_str(sb, "\\\\");
+      W->stringBuilder->appendStr(sb, "\\\\");
       break;
     case '\b':
-      sb_append_str(sb, "\\b");
+      W->stringBuilder->appendStr(sb, "\\b");
       break;
     case '\f':
-      sb_append_str(sb, "\\f");
+      W->stringBuilder->appendStr(sb, "\\f");
       break;
     case '\n':
-      sb_append_str(sb, "\\n");
+      W->stringBuilder->appendStr(sb, "\\n");
       break;
     case '\r':
-      sb_append_str(sb, "\\r");
+      W->stringBuilder->appendStr(sb, "\\r");
       break;
     case '\t':
-      sb_append_str(sb, "\\t");
+      W->stringBuilder->appendStr(sb, "\\t");
       break;
     default:
       if ((unsigned char)*p < 32) {
         char hex_buf[7];
         sprintf(hex_buf, "\\u%04x", (unsigned char)*p);
-        sb_append_str(sb, hex_buf);
+        W->stringBuilder->appendStr(sb, hex_buf);
       } else {
-        sb_append_char(sb, *p);
+        W->stringBuilder->appendChar(sb, *p);
       }
       break;
     }
   }
-  sb_append_char(sb, '"');
+  W->stringBuilder->appendChar(sb, '"');
 }
 
 static void encode_object(const Value *value, StringBuilder *sb) {
-  const WebsApi *w = webs();
-  sb_append_char(sb, '{');
-  Value *keys = w->objectKeys(value);
+  W->stringBuilder->appendChar(sb, '{');
+  Value *keys = W->objectKeys(value);
   if (keys) {
-    size_t key_count = w->arrayCount(keys);
+    size_t key_count = W->arrayCount(keys);
     for (size_t i = 0; i < key_count; i++) {
       if (i > 0) {
-        sb_append_char(sb, ',');
+        W->stringBuilder->appendChar(sb, ',');
       }
-      Value *key_val = w->arrayGet(keys, i);
-      const char *key_str = w->valueAsString(key_val);
+      Value *key_val = W->arrayGetRef(keys, i);
+      const char *key_str = W->valueAsString(key_val);
       encode_string(key_str, sb);
-      sb_append_char(sb, ':');
-      encode_value(w->objectGet(value, key_str), sb);
+      W->stringBuilder->appendChar(sb, ':');
+      encode_value(W->objectGetRef(value, key_str), sb);
     }
-    w->freeValue(keys);
+    W->freeValue(keys);
   }
-  sb_append_char(sb, '}');
+  W->stringBuilder->appendChar(sb, '}');
 }
 
 static void encode_array(const Value *value, StringBuilder *sb) {
-  const WebsApi *w = webs();
-  sb_append_char(sb, '[');
-  size_t count = w->arrayCount(value);
+  W->stringBuilder->appendChar(sb, '[');
+  size_t count = W->arrayCount(value);
   for (size_t i = 0; i < count; i++) {
     if (i > 0) {
-      sb_append_char(sb, ',');
+      W->stringBuilder->appendChar(sb, ',');
     }
-    encode_value(w->arrayGet(value, i), sb);
+    encode_value(W->arrayGetRef(value, i), sb);
   }
-  sb_append_char(sb, ']');
+  W->stringBuilder->appendChar(sb, ']');
 }
 
 static void encode_value(const Value *value, StringBuilder *sb) {
-  const WebsApi *w = webs();
   if (!value) {
-    sb_append_str(sb, "null");
+    W->stringBuilder->appendStr(sb, "null");
     return;
   }
-
-  switch (w->valueGetType(value)) {
+  switch (W->valueGetType(value)) {
   case VALUE_BOOL:
-    sb_append_str(sb, w->valueAsBool(value) ? "true" : "false");
+    W->stringBuilder->appendStr(sb, W->valueAsBool(value) ? "true" : "false");
     break;
   case VALUE_NUMBER: {
     char num_buf[32];
-    snprintf(num_buf, sizeof(num_buf), "%g", w->valueAsNumber(value));
-    sb_append_str(sb, num_buf);
+    snprintf(num_buf, sizeof(num_buf), "%g", W->valueAsNumber(value));
+    W->stringBuilder->appendStr(sb, num_buf);
     break;
   }
   case VALUE_STRING:
-    encode_string(w->valueAsString(value), sb);
+    encode_string(W->valueAsString(value), sb);
     break;
   case VALUE_ARRAY:
     encode_array(value, sb);
@@ -471,111 +375,89 @@ static void encode_value(const Value *value, StringBuilder *sb) {
   case VALUE_OBJECT:
     encode_object(value, sb);
     break;
-  default: // NULL, UNDEFINED, POINTER, etc.
-    sb_append_str(sb, "null");
+  default:
+    W->stringBuilder->appendStr(sb, "null");
     break;
   }
 }
 
 char *json_encode(const Value *value) {
   StringBuilder sb;
-  sb_init(&sb, 1024);
+  W->stringBuilder->init(&sb);
   if (!sb.buffer)
     return NULL;
   encode_value(value, &sb);
-  return sb_to_string(&sb);
+  return W->stringBuilder->toString(&sb);
 }
 
 Value *value_query(const Value *root, const char *path, Status *status) {
-  const WebsApi *w = webs();
   *status = OK;
   const Value *current = root;
-  char *path_copy = strdup(path);
-  if (!path_copy) {
-    *status = ERROR_MEMORY;
-    return NULL;
-  }
-  char *p_start = path_copy;
+  const char *p = path;
 
-  while (*p_start && current) {
-    if (*p_start == '.') {
-      p_start++;
+  while (*p && current) {
+    if (*p == '.') {
+      p++;
     }
 
-    char *p_end = strpbrk(p_start, ".[]");
-    size_t len = p_end ? (size_t)(p_end - p_start) : strlen(p_start);
-    char *key_part = strndup(p_start, len);
+    const char *key_start = p;
+    const char *key_end = strpbrk(p, ".[]");
+    size_t key_len =
+        key_end ? (size_t)(key_end - key_start) : strlen(key_start);
 
-    if (w->valueGetType(current) == VALUE_OBJECT) {
-      current = w->objectGet(current, key_part);
+    if (W->valueGetType(current) == VALUE_OBJECT) {
+      char key_buffer[key_len + 1];
+      strncpy(key_buffer, key_start, key_len);
+      key_buffer[key_len] = '\0';
+      current = W->objectGetRef(current, key_buffer);
     } else {
       *status = ERROR_INVALID_ARG;
-      free(key_part);
-      goto cleanup;
+      return NULL;
     }
-    free(key_part);
 
     if (!current) {
-      *status = ERROR_NOT_FOUND;
-      goto cleanup;
+      break;
     }
 
-    p_start = p_end ? p_end : p_start + len;
+    p = key_start + key_len;
 
-    while (*p_start == '[') {
-      p_start++;
-      char *idx_end = strchr(p_start, ']');
-      if (!idx_end) {
+    while (*p == '[') {
+      p++;
+      char *idx_end;
+      long index = strtol(p, &idx_end, 10);
+      if (idx_end == p || *idx_end != ']') {
         *status = ERROR_PARSE;
-        goto cleanup;
-      }
-      *idx_end = '\0';
-
-      char *endptr;
-      long index = strtol(p_start, &endptr, 10);
-      if (*endptr != '\0') {
-        *status = ERROR_PARSE;
-        goto cleanup;
+        return NULL;
       }
 
-      if (w->valueGetType(current) != VALUE_ARRAY) {
+      if (W->valueGetType(current) != VALUE_ARRAY) {
         *status = ERROR_INVALID_ARG;
-        goto cleanup;
+        return NULL;
       }
-      if (index < 0 || (size_t)index >= w->arrayCount(current)) {
-        *status = ERROR_NOT_FOUND;
-        goto cleanup;
+      if (index < 0 || (size_t)index >= W->arrayCount(current)) {
+        current = NULL;
+        break;
       }
-      current = w->arrayGet(current, index);
-      p_start = idx_end + 1;
+      current = W->arrayGetRef(current, index);
+      p = idx_end + 1;
     }
   }
 
-  // REASON: Instead of creating a string representation, we return a deep clone
-  // of the found value. If no value is found, we will return NULL (after
-  // cleanup).
-  Value *result_val = NULL;
-  if (*status == OK && current) {
-    result_val = w->valueClone(current);
-    if (!result_val) {
-      *status = ERROR_MEMORY;
-    }
-  }
-
-cleanup:
-  free(path_copy);
-  // If an error occurred, ensure we don't return a value.
-  if (*status != OK) {
-    if (result_val)
-      w->freeValue(result_val);
+  if (!current) {
+    *status = ERROR_NOT_FOUND;
     return NULL;
+  }
+
+  Value *result_val = W->valueClone(current);
+  if (!result_val) {
+    *status = ERROR_MEMORY;
   }
   return result_val;
 }
 
 static void append_indent(StringBuilder *sb, int level) {
   for (int i = 0; i < level; i++) {
-    sb_append_str(sb, "  ");
+    W->stringBuilder->appendStr(sb, "  ");
   }
 }
 
@@ -584,131 +466,122 @@ static void pretty_print_recursive(const Value *value, StringBuilder *sb,
 
 static void pretty_print_object(const Value *value, StringBuilder *sb,
                                 int indent_level) {
-  const WebsApi *w = webs();
-  sb_append_str(sb, "{\r\n");
-
-  Value *keys = w->objectKeys(value);
+  W->stringBuilder->appendStr(sb, "{\r\n");
+  Value *keys = W->objectKeys(value);
   if (keys) {
-    size_t key_count = w->arrayCount(keys);
+    size_t key_count = W->arrayCount(keys);
     for (size_t i = 0; i < key_count; i++) {
       if (i > 0) {
-        sb_append_str(sb, ",\r\n");
+        W->stringBuilder->appendStr(sb, ",\r\n");
       }
       append_indent(sb, indent_level + 1);
-
-      Value *key_val = w->arrayGet(keys, i);
-      const char *key_str = w->valueAsString(key_val);
-
-      sb_append_str(sb, T_YELLOW);
-      sb_append_char(sb, '"');
-      sb_append_str(sb, key_str);
-      sb_append_char(sb, '"');
-      sb_append_str(sb, T_RESET);
-
-      sb_append_str(sb, ": ");
-      pretty_print_recursive(w->objectGet(value, key_str), sb,
+      Value *key_val = W->arrayGetRef(keys, i);
+      const char *key_str = W->valueAsString(key_val);
+      W->stringBuilder->appendStr(sb, T_YELLOW);
+      W->stringBuilder->appendChar(sb, '"');
+      W->stringBuilder->appendStr(sb, key_str);
+      W->stringBuilder->appendChar(sb, '"');
+      W->stringBuilder->appendStr(sb, T_RESET);
+      W->stringBuilder->appendStr(sb, ": ");
+      pretty_print_recursive(W->objectGetRef(value, key_str), sb,
                              indent_level + 1);
     }
-    w->freeValue(keys);
+    W->freeValue(keys);
     if (key_count > 0) {
-      sb_append_str(sb, "\r\n");
+      W->stringBuilder->appendStr(sb, "\r\n");
     }
   }
-
   append_indent(sb, indent_level);
-  sb_append_char(sb, '}');
+  W->stringBuilder->appendChar(sb, '}');
 }
 
 static void pretty_print_array(const Value *value, StringBuilder *sb,
                                int indent_level) {
-  const WebsApi *w = webs();
-  size_t count = w->arrayCount(value);
+  size_t count = W->arrayCount(value);
   if (count == 0) {
-    sb_append_str(sb, "[]");
+    W->stringBuilder->appendStr(sb, "[]");
     return;
   }
-  sb_append_str(sb, "[\r\n");
+  W->stringBuilder->appendStr(sb, "[\r\n");
   for (size_t i = 0; i < count; i++) {
     append_indent(sb, indent_level + 1);
-    pretty_print_recursive(w->arrayGet(value, i), sb, indent_level + 1);
+    pretty_print_recursive(W->arrayGetRef(value, i), sb, indent_level + 1);
     if (i < count - 1) {
-      sb_append_str(sb, ",\r\n");
+      W->stringBuilder->appendStr(sb, ",\r\n");
     }
   }
-  sb_append_str(sb, "\r\n");
+  W->stringBuilder->appendStr(sb, "\r\n");
   append_indent(sb, indent_level);
-  sb_append_char(sb, ']');
+  W->stringBuilder->appendChar(sb, ']');
 }
 
 static void encode_pretty_string(const char *str, StringBuilder *sb) {
-  sb_append_str(sb, T_GREEN);
-  sb_append_char(sb, '"');
+  W->stringBuilder->appendStr(sb, T_GREEN);
+  W->stringBuilder->appendChar(sb, '"');
   for (const char *p = str; *p; p++) {
     switch (*p) {
     case '"':
-      sb_append_str(sb, "\\\"");
+      W->stringBuilder->appendStr(sb, "\\\"");
       break;
     case '\\':
-      sb_append_str(sb, "\\\\");
+      W->stringBuilder->appendStr(sb, "\\\\");
       break;
     case '\b':
-      sb_append_str(sb, "\\b");
+      W->stringBuilder->appendStr(sb, "\\b");
       break;
     case '\f':
-      sb_append_str(sb, "\\f");
+      W->stringBuilder->appendStr(sb, "\\f");
       break;
     case '\n':
-      sb_append_str(sb, "\\n");
+      W->stringBuilder->appendStr(sb, "\\n");
       break;
     case '\r':
-      sb_append_str(sb, "\\r");
+      W->stringBuilder->appendStr(sb, "\\r");
       break;
     case '\t':
-      sb_append_str(sb, "\\t");
+      W->stringBuilder->appendStr(sb, "\\t");
       break;
     default:
       if ((unsigned char)*p < 32) {
         char hex_buf[7];
         sprintf(hex_buf, "\\u%04x", (unsigned char)*p);
-        sb_append_str(sb, hex_buf);
+        W->stringBuilder->appendStr(sb, hex_buf);
       } else {
-        sb_append_char(sb, *p);
+        W->stringBuilder->appendChar(sb, *p);
       }
       break;
     }
   }
-  sb_append_char(sb, '"');
-  sb_append_str(sb, T_RESET);
+  W->stringBuilder->appendChar(sb, '"');
+  W->stringBuilder->appendStr(sb, T_RESET);
 }
 
 static void pretty_print_recursive(const Value *value, StringBuilder *sb,
                                    int indent_level) {
-  const WebsApi *w = webs();
   if (!value) {
-    sb_append_str(sb, T_GRAY "null" T_RESET);
+    W->stringBuilder->appendStr(sb, T_GRAY "null" T_RESET);
     return;
   }
-
-  switch (w->valueGetType(value)) {
+  switch (W->valueGetType(value)) {
   case VALUE_NULL:
   case VALUE_UNDEFINED:
-    sb_append_str(sb, T_GRAY "null" T_RESET);
+    W->stringBuilder->appendStr(sb, T_GRAY "null" T_RESET);
     break;
   case VALUE_BOOL:
-    sb_append_str(sb, T_YELLOW);
-    sb_append_str(sb, w->valueAsBool(value) ? "true" : "false");
-    sb_append_str(sb, T_RESET);
+    W->stringBuilder->appendStr(sb, T_YELLOW);
+    W->stringBuilder->appendStr(sb, W->valueAsBool(value) ? "true" : "false");
+    W->stringBuilder->appendStr(sb, T_RESET);
     break;
   case VALUE_NUMBER: {
     char num_buf[32];
-    snprintf(num_buf, sizeof(num_buf), "%g", w->valueAsNumber(value));
-    sb_append_str(sb, T_BLUE);
-    sb_append_str(sb, num_buf);
-    sb_append_str(sb, T_RESET);
+    snprintf(num_buf, sizeof(num_buf), "%g", W->valueAsNumber(value));
+    W->stringBuilder->appendStr(sb, T_BLUE);
+    W->stringBuilder->appendStr(sb, num_buf);
+    W->stringBuilder->appendStr(sb, T_RESET);
     break;
   }
   case VALUE_STRING:
-    encode_pretty_string(w->valueAsString(value), sb);
+    encode_pretty_string(W->valueAsString(value), sb);
     break;
   case VALUE_ARRAY:
     pretty_print_array(value, sb, indent_level);
@@ -717,19 +590,17 @@ static void pretty_print_recursive(const Value *value, StringBuilder *sb,
     pretty_print_object(value, sb, indent_level);
     break;
   default:
-    sb_append_str(sb, T_GRAY "null" T_RESET);
+    W->stringBuilder->appendStr(sb, T_GRAY "null" T_RESET);
     break;
   }
 }
 
 char *json_pretty_print(const Value *value) {
   StringBuilder sb;
-  sb_init(&sb, 1024);
+  W->stringBuilder->init(&sb);
   if (!sb.buffer) {
     return strdup("/* Memory allocation failed */");
   }
-
   pretty_print_recursive(value, &sb, 0);
-
-  return sb_to_string(&sb);
+  return W->stringBuilder->toString(&sb);
 }

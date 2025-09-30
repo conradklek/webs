@@ -1,11 +1,7 @@
 #include "evaluate.h"
-#include "../core/array.h"
-#include "../core/boolean.h"
-#include "../core/number.h"
-#include "../core/object.h"
 #include "../core/string.h"
-#include "../core/undefined.h"
 #include "../core/value.h"
+#include "../webs_api.h"
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -35,206 +31,203 @@ static bool is_truthy(const Value *value) {
 }
 
 static Value *evaluate_literal(const Value *node, const Value *scope) {
-  const Value *literal_value = node->as.object->get(node->as.object, "value");
-  return value_clone(literal_value);
+  const Value *literal_value = W->objectGetRef(node, "value");
+  return W->valueClone(literal_value);
 }
 
 static Value *evaluate_identifier(const Value *node, const Value *scope) {
-  const char *name =
-      node->as.object->get(node->as.object, "name")->as.string->chars;
-  if (scope && scope->type == VALUE_OBJECT) {
-    Value *result = scope->as.object->get(scope->as.object, name);
+  const char *name = W->valueAsString(W->objectGetRef(node, "name"));
+  if (scope && W->valueGetType(scope) == VALUE_OBJECT) {
+    Value *result = W->objectGetRef(scope, name);
     if (result) {
-      return value_clone(result);
+      return W->valueClone(result);
     }
   }
-  return undefined();
+  return W->undefined();
 }
 
 static Value *evaluate_binary_expression(const Value *node,
                                          const Value *scope) {
-  const Object *node_obj = node->as.object;
-  const char *op = node_obj->get(node_obj, "operator")->as.string->chars;
+  const char *op = W->valueAsString(W->objectGetRef(node, "operator"));
 
-  const Value *left_node = node_obj->get(node_obj, "left");
+  const Value *left_node = W->objectGetRef(node, "left");
   Value *left = evaluate_node(left_node, scope);
 
   if (strcmp(op, "&&") == 0) {
     if (!is_truthy(left))
       return left;
-    value_free(left);
-    const Value *right_node = node_obj->get(node_obj, "right");
+    W->freeValue(left);
+    const Value *right_node = W->objectGetRef(node, "right");
     return evaluate_node(right_node, scope);
   }
   if (strcmp(op, "||") == 0) {
     if (is_truthy(left))
       return left;
-    value_free(left);
-    const Value *right_node = node_obj->get(node_obj, "right");
+    W->freeValue(left);
+    const Value *right_node = W->objectGetRef(node, "right");
     return evaluate_node(right_node, scope);
   }
   if (strcmp(op, "??") == 0) {
-    if (left && left->type != VALUE_NULL && left->type != VALUE_UNDEFINED)
+    if (left && W->valueGetType(left) != VALUE_NULL &&
+        W->valueGetType(left) != VALUE_UNDEFINED)
       return left;
     if (left)
-      value_free(left);
-    const Value *right_node = node_obj->get(node_obj, "right");
+      W->freeValue(left);
+    const Value *right_node = W->objectGetRef(node, "right");
     return evaluate_node(right_node, scope);
   }
 
-  const Value *right_node = node_obj->get(node_obj, "right");
+  const Value *right_node = W->objectGetRef(node, "right");
   Value *right = evaluate_node(right_node, scope);
 
   Value *result = NULL;
 
   if (!left || !right) {
     if (left)
-      value_free(left);
+      W->freeValue(left);
     if (right)
-      value_free(right);
-    return undefined();
+      W->freeValue(right);
+    return W->undefined();
   }
 
-  if (left->type == VALUE_NUMBER && right->type == VALUE_NUMBER) {
-    double l = left->as.number;
-    double r = right->as.number;
+  if (W->valueGetType(left) == VALUE_NUMBER &&
+      W->valueGetType(right) == VALUE_NUMBER) {
+    double l = W->valueAsNumber(left);
+    double r = W->valueAsNumber(right);
     if (strcmp(op, "+") == 0)
-      result = number(l + r);
+      result = W->number(l + r);
     else if (strcmp(op, "-") == 0)
-      result = number(l - r);
+      result = W->number(l - r);
     else if (strcmp(op, "*") == 0)
-      result = number(l * r);
+      result = W->number(l * r);
     else if (strcmp(op, "/") == 0)
-      result = number(l / r);
+      result = W->number(l / r);
     else if (strcmp(op, "%") == 0)
-      result = number(fmod(l, r));
+      result = W->number(fmod(l, r));
     else if (strcmp(op, ">") == 0)
-      result = boolean(l > r);
+      result = W->boolean(l > r);
     else if (strcmp(op, "<") == 0)
-      result = boolean(l < r);
+      result = W->boolean(l < r);
     else if (strcmp(op, ">=") == 0)
-      result = boolean(l >= r);
+      result = W->boolean(l >= r);
     else if (strcmp(op, "<=") == 0)
-      result = boolean(l <= r);
+      result = W->boolean(l <= r);
   }
 
   if (strcmp(op, "==") == 0 || strcmp(op, "===") == 0) {
-    result = boolean(value_equals(left, right));
+    result = W->boolean(W->valueEquals(left, right));
   } else if (strcmp(op, "!=") == 0 || strcmp(op, "!==") == 0) {
-    result = boolean(!value_equals(left, right));
+    result = W->boolean(!W->valueEquals(left, right));
   }
 
-  value_free(left);
-  value_free(right);
+  W->freeValue(left);
+  W->freeValue(right);
 
-  return result ? result : undefined();
+  return result ? result : W->undefined();
 }
 
 static Value *evaluate_unary_expression(const Value *node, const Value *scope) {
-  const Object *node_obj = node->as.object;
-  const char *op = node_obj->get(node_obj, "operator")->as.string->chars;
-  const Value *argument_node = node_obj->get(node_obj, "argument");
+  const char *op = W->valueAsString(W->objectGetRef(node, "operator"));
+  const Value *argument_node = W->objectGetRef(node, "argument");
   Value *argument = evaluate_node(argument_node, scope);
   if (!argument) {
-    return undefined();
+    return W->undefined();
   }
 
   Value *result = NULL;
   if (strcmp(op, "!") == 0) {
-    result = boolean(!is_truthy(argument));
+    result = W->boolean(!is_truthy(argument));
   } else if (strcmp(op, "-") == 0) {
-    if (argument->type == VALUE_NUMBER) {
-      result = number(-argument->as.number);
+    if (W->valueGetType(argument) == VALUE_NUMBER) {
+      result = W->number(-W->valueAsNumber(argument));
     }
   }
 
-  value_free(argument);
-  return result ? result : undefined();
+  W->freeValue(argument);
+  return result ? result : W->undefined();
 }
 
 static Value *evaluate_member_expression(const Value *node,
                                          const Value *scope) {
-  const Object *node_obj = node->as.object;
-  const Value *object_node = node_obj->get(node_obj, "object");
-  const Value *property_node = node_obj->get(node_obj, "property");
+  const Value *object_node = W->objectGetRef(node, "object");
+  const Value *property_node = W->objectGetRef(node, "property");
 
   Value *object = evaluate_node(object_node, scope);
 
   if (!object) {
-    return undefined();
+    return W->undefined();
   }
 
-  if (object->type != VALUE_OBJECT) {
-    const Value *is_optional = node_obj->get(node_obj, "optional");
-    if (is_optional && is_optional->as.boolean &&
-        (object->type == VALUE_NULL || object->type == VALUE_UNDEFINED)) {
-      value_free(object);
-      return undefined();
+  if (W->valueGetType(object) != VALUE_OBJECT) {
+    const Value *is_optional = W->objectGetRef(node, "optional");
+    if (is_optional && W->valueAsBool(is_optional) &&
+        (W->valueGetType(object) == VALUE_NULL ||
+         W->valueGetType(object) == VALUE_UNDEFINED)) {
+      W->freeValue(object);
+      return W->undefined();
     }
-    value_free(object);
-    return undefined();
+    W->freeValue(object);
+    return W->undefined();
   }
 
   const char *prop_name =
-      property_node->as.object->get(property_node->as.object, "name")
-          ->as.string->chars;
-  Value *result = object->as.object->get(object->as.object, prop_name);
+      W->valueAsString(W->objectGetRef(property_node, "name"));
+  Value *result = W->objectGetRef(object, prop_name);
 
-  Value *cloned_result = result ? value_clone(result) : undefined();
+  Value *cloned_result = result ? W->valueClone(result) : W->undefined();
 
-  value_free(object);
+  W->freeValue(object);
   return cloned_result;
 }
 
 static Value *evaluate_computed_member_expression(const Value *node,
                                                   const Value *scope) {
-  const Object *node_obj = node->as.object;
-  const Value *object_node = node_obj->get(node_obj, "object");
-  const Value *property_node = node_obj->get(node_obj, "property");
+  const Value *object_node = W->objectGetRef(node, "object");
+  const Value *property_node = W->objectGetRef(node, "property");
 
   Value *object = evaluate_node(object_node, scope);
   Value *property = evaluate_node(property_node, scope);
 
   if (!object || !property) {
     if (object)
-      value_free(object);
+      W->freeValue(object);
     if (property)
-      value_free(property);
-    return undefined();
+      W->freeValue(property);
+    return W->undefined();
   }
 
   Value *result = NULL;
 
-  if (object->type == VALUE_ARRAY && property->type == VALUE_NUMBER) {
-    size_t index = (size_t)property->as.number;
-    Value *item = array_get(object->as.array, index);
+  if (W->valueGetType(object) == VALUE_ARRAY &&
+      W->valueGetType(property) == VALUE_NUMBER) {
+    size_t index = (size_t)W->valueAsNumber(property);
+    Value *item = W->arrayGetRef(object, index);
     if (item) {
-      result = value_clone(item);
+      result = W->valueClone(item);
     }
-  } else if (object->type == VALUE_OBJECT && property->type == VALUE_STRING) {
-    Value *item =
-        object->as.object->get(object->as.object, property->as.string->chars);
+  } else if (W->valueGetType(object) == VALUE_OBJECT &&
+             W->valueGetType(property) == VALUE_STRING) {
+    Value *item = W->objectGetRef(object, W->valueAsString(property));
     if (item) {
-      result = value_clone(item);
+      result = W->valueClone(item);
     }
   }
 
-  value_free(object);
-  value_free(property);
+  W->freeValue(object);
+  W->freeValue(property);
 
-  return result ? result : undefined();
+  return result ? result : W->undefined();
 }
 
 static Value *evaluate_conditional_expression(const Value *node,
                                               const Value *scope) {
-  const Object *node_obj = node->as.object;
-  const Value *test_node = node_obj->get(node_obj, "test");
-  const Value *consequent_node = node_obj->get(node_obj, "consequent");
-  const Value *alternate_node = node_obj->get(node_obj, "alternate");
+  const Value *test_node = W->objectGetRef(node, "test");
+  const Value *consequent_node = W->objectGetRef(node, "consequent");
+  const Value *alternate_node = W->objectGetRef(node, "alternate");
 
   Value *test_result = evaluate_node(test_node, scope);
   bool truthy = is_truthy(test_result);
-  value_free(test_result);
+  W->freeValue(test_result);
 
   if (truthy) {
     return evaluate_node(consequent_node, scope);
@@ -244,67 +237,63 @@ static Value *evaluate_conditional_expression(const Value *node,
 }
 
 static Value *evaluate_array_literal(const Value *node, const Value *scope) {
-  const Value *elements_ast = node->as.object->get(node->as.object, "elements");
-  if (!elements_ast || elements_ast->type != VALUE_ARRAY) {
-    return undefined();
+  const Value *elements_ast = W->objectGetRef(node, "elements");
+  if (!elements_ast || W->valueGetType(elements_ast) != VALUE_ARRAY) {
+    return W->undefined();
   }
 
-  Value *result_array = array_value();
+  Value *result_array = W->array();
   if (!result_array) {
-    return undefined();
+    return W->undefined();
   }
 
-  for (size_t i = 0; i < elements_ast->as.array->count; i++) {
-    const Value *element_ast = elements_ast->as.array->elements[i];
+  for (size_t i = 0; i < W->arrayCount(elements_ast); i++) {
+    const Value *element_ast = W->arrayGetRef(elements_ast, i);
     Value *element_value = evaluate_node(element_ast, scope);
     if (!element_value) {
-      element_value = undefined();
+      element_value = W->undefined();
     }
-    result_array->as.array->push(result_array->as.array, element_value);
+    W->arrayPush(result_array, element_value);
   }
 
   return result_array;
 }
 
 static Value *evaluate_object_literal(const Value *node, const Value *scope) {
-  const Value *properties_ast =
-      node->as.object->get(node->as.object, "properties");
-  if (!properties_ast || properties_ast->type != VALUE_ARRAY) {
-    return undefined();
+  const Value *properties_ast = W->objectGetRef(node, "properties");
+  if (!properties_ast || W->valueGetType(properties_ast) != VALUE_ARRAY) {
+    return W->undefined();
   }
 
-  Value *result_object = object_value();
+  Value *result_object = W->object();
   if (!result_object) {
-    return undefined();
+    return W->undefined();
   }
 
-  for (size_t i = 0; i < properties_ast->as.array->count; i++) {
-    const Value *prop_ast = properties_ast->as.array->elements[i];
-    const Object *prop_obj = prop_ast->as.object;
-    const Value *key_ast = prop_obj->get(prop_obj, "key");
-    const Value *value_ast = prop_obj->get(prop_obj, "value");
+  for (size_t i = 0; i < W->arrayCount(properties_ast); i++) {
+    const Value *prop_ast = W->arrayGetRef(properties_ast, i);
+    const Value *key_ast = W->objectGetRef(prop_ast, "key");
+    const Value *value_ast = W->objectGetRef(prop_ast, "value");
 
     const char *key_str = NULL;
-    const Object *key_ast_obj = key_ast->as.object;
-    const Value *key_ast_type = key_ast_obj->get(key_ast_obj, "type");
-    const char *key_type_str = key_ast_type->as.string->chars;
+    const Value *key_ast_type_val = W->objectGetRef(key_ast, "type");
+    const char *key_type_str = W->valueAsString(key_ast_type_val);
 
     if (strcmp(key_type_str, "Identifier") == 0) {
-      key_str = key_ast_obj->get(key_ast_obj, "name")->as.string->chars;
+      key_str = W->valueAsString(W->objectGetRef(key_ast, "name"));
     } else if (strcmp(key_type_str, "Literal") == 0) {
-      const Value *literal_val = key_ast_obj->get(key_ast_obj, "value");
-      if (literal_val->type == VALUE_STRING) {
-        key_str = literal_val->as.string->chars;
+      const Value *literal_val = W->objectGetRef(key_ast, "value");
+      if (W->valueGetType(literal_val) == VALUE_STRING) {
+        key_str = W->valueAsString(literal_val);
       }
     }
 
     if (key_str) {
       Value *prop_value = evaluate_node(value_ast, scope);
       if (!prop_value) {
-        prop_value = undefined();
+        prop_value = W->undefined();
       }
-      result_object->as.object->set(result_object->as.object, key_str,
-                                    prop_value);
+      W->objectSet(result_object, key_str, prop_value);
     }
   }
 
@@ -312,14 +301,14 @@ static Value *evaluate_object_literal(const Value *node, const Value *scope) {
 }
 
 static Value *evaluate_node(const Value *node, const Value *scope) {
-  if (!node || node->type != VALUE_OBJECT)
+  if (!node || W->valueGetType(node) != VALUE_OBJECT)
     return NULL;
 
-  const Value *type_value = node->as.object->get(node->as.object, "type");
-  if (!type_value || type_value->type != VALUE_STRING)
+  const Value *type_value = W->objectGetRef(node, "type");
+  if (!type_value || W->valueGetType(type_value) != VALUE_STRING)
     return NULL;
 
-  const char *type = type_value->as.string->chars;
+  const char *type = W->valueAsString(type_value);
 
   if (strcmp(type, "Literal") == 0) {
     return evaluate_literal(node, scope);
@@ -349,7 +338,7 @@ static Value *evaluate_node(const Value *node, const Value *scope) {
     return evaluate_object_literal(node, scope);
   }
 
-  return undefined();
+  return W->undefined();
 }
 
 Value *evaluate_expression(const Value *node, const Value *scope) {

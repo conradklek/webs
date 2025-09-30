@@ -1,3 +1,7 @@
+/**
+ * @file string_builder.c
+ * @brief Implements the string builder utility.
+ */
 #include "string_builder.h"
 #include <stdbool.h>
 #include <stdio.h>
@@ -5,8 +9,16 @@
 #include <string.h>
 
 static bool sb_ensure_capacity(StringBuilder *sb, size_t additional) {
-  if (!sb->buffer)
+  if (!sb)
     return false;
+  if (!sb->buffer) {
+    sb->capacity = additional > 256 ? additional + 1 : 256;
+    sb->buffer = malloc(sb->capacity);
+    if (!sb->buffer)
+      return false;
+    sb->buffer[0] = '\0';
+    sb->length = 0;
+  }
 
   if (sb->length + additional >= sb->capacity) {
     size_t new_capacity = sb->capacity;
@@ -23,6 +35,8 @@ static bool sb_ensure_capacity(StringBuilder *sb, size_t additional) {
 }
 
 void sb_init(StringBuilder *sb) {
+  if (!sb)
+    return;
   sb->capacity = 1024;
   sb->buffer = malloc(sb->capacity);
   if (sb->buffer) {
@@ -32,7 +46,7 @@ void sb_init(StringBuilder *sb) {
 }
 
 void sb_append_str(StringBuilder *sb, const char *str) {
-  if (!str)
+  if (!sb || !str)
     return;
   size_t len = strlen(str);
   if (!sb_ensure_capacity(sb, len))
@@ -43,6 +57,8 @@ void sb_append_str(StringBuilder *sb, const char *str) {
 }
 
 void sb_append_char(StringBuilder *sb, char c) {
+  if (!sb)
+    return;
   if (!sb_ensure_capacity(sb, 1))
     return;
   sb->buffer[sb->length++] = c;
@@ -50,7 +66,7 @@ void sb_append_char(StringBuilder *sb, char c) {
 }
 
 void sb_append_html_escaped(StringBuilder *sb, const char *text) {
-  if (!text)
+  if (!sb || !text)
     return;
   for (const char *p = text; *p; p++) {
     switch (*p) {

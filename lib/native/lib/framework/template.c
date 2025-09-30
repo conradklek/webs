@@ -16,61 +16,58 @@ static char *parse_until_chars(const char **cursor, const char *delimiters);
 static void skip_whitespace(const char **cursor);
 
 static Value *new_ast_node(const char *type) {
-  const WebsApi *w = webs();
-  Value *node = w->object();
+  Value *node = W->object();
   if (!node)
     return NULL;
-  w->objectSet(node, "type", w->string(type));
+  W->objectSet(node, "type", W->string(type));
   return node;
 }
 
 static Value *new_root_node() {
-  const WebsApi *w = webs();
   Value *node = new_ast_node("root");
-  w->objectSet(node, "children", w->array());
+  W->objectSet(node, "children", W->array());
   return node;
 }
 
 static Value *new_text_node(char *content) {
-  const WebsApi *w = webs();
   Value *node = new_ast_node("text");
-  w->objectSet(node, "content", w->string(content));
+  W->objectSet(node, "content", W->string(content));
   free(content);
   return node;
 }
 
 static Value *new_comment_node(char *content) {
-  const WebsApi *w = webs();
   Value *node = new_ast_node("comment");
-  w->objectSet(node, "content", w->string(content));
+  W->objectSet(node, "content", W->string(content));
   free(content);
   return node;
 }
 
-Value *webs_template_parse(const char *html) {
+Value *webs_template_parse(const char *html, Status *status) {
+  *status = OK;
   const char *cursor = html;
   Value *root = new_root_node();
-  if (!root)
+  if (!root) {
+    *status = ERROR_MEMORY;
     return NULL;
+  }
   parse_nodes(&cursor, root);
   return root;
 }
 
 static bool is_if_family(const Value *node) {
-  const WebsApi *w = webs();
-  if (!node || w->valueGetType(node) != VALUE_OBJECT)
+  if (!node || W->valueGetType(node) != VALUE_OBJECT)
     return false;
-  const Value *type_val = w->objectGet(node, "type");
-  if (!type_val || w->valueGetType(type_val) != VALUE_STRING)
+  const Value *type_val = W->objectGetRef(node, "type");
+  if (!type_val || W->valueGetType(type_val) != VALUE_STRING)
     return false;
-  const char *type = w->valueAsString(type_val);
+  const char *type = W->valueAsString(type_val);
   return strcmp(type, "ifBlock") == 0 || strcmp(type, "elseIfBlock") == 0;
 }
 
 static void parse_nodes(const char **cursor, Value *parent) {
-  const WebsApi *w = webs();
-  Value *children_array = w->objectGet(parent, "children");
-  if (!children_array || w->valueGetType(children_array) != VALUE_ARRAY)
+  Value *children_array = W->objectGetRef(parent, "children");
+  if (!children_array || W->valueGetType(children_array) != VALUE_ARRAY)
     return;
 
   bool in_if_block_context = is_if_family(parent);
@@ -96,7 +93,7 @@ static void parse_nodes(const char **cursor, Value *parent) {
 
     Value *node = parse_node(cursor);
     if (node) {
-      w->arrayPush(children_array, node);
+      W->arrayPush(children_array, node);
     }
   }
 }
@@ -182,7 +179,6 @@ static char *parse_until_chars(const char **cursor, const char *delimiters) {
 }
 
 static Value *parse_element(const char **cursor) {
-  const WebsApi *w = webs();
   (*cursor)++;
 
   if (strncmp(*cursor, "!--", 3) == 0) {
@@ -213,9 +209,9 @@ static Value *parse_element(const char **cursor) {
   tag_name[name_len] = '\0';
 
   Value *node = new_ast_node("element");
-  w->objectSet(node, "tagName", w->string(tag_name));
-  w->objectSet(node, "attributes", w->array());
-  w->objectSet(node, "children", w->array());
+  W->objectSet(node, "tagName", W->string(tag_name));
+  W->objectSet(node, "attributes", W->array());
+  W->objectSet(node, "children", W->array());
   free(tag_name);
 
   parse_attributes(cursor, node);
@@ -233,10 +229,10 @@ static Value *parse_element(const char **cursor) {
                                  "hr",    "img",    "input", "link", "meta",
                                  "param", "source", "track", "wbr",  NULL};
   bool is_void = false;
-  const Value *tagNameValue = w->objectGet(node, "tagName");
-  if (tagNameValue && w->valueGetType(tagNameValue) == VALUE_STRING) {
+  const Value *tagNameValue = W->objectGetRef(node, "tagName");
+  if (tagNameValue && W->valueGetType(tagNameValue) == VALUE_STRING) {
     for (int i = 0; void_elements[i]; ++i) {
-      if (strcmp(w->valueAsString(tagNameValue), void_elements[i]) == 0) {
+      if (strcmp(W->valueAsString(tagNameValue), void_elements[i]) == 0) {
         is_void = true;
         break;
       }
@@ -248,8 +244,8 @@ static Value *parse_element(const char **cursor) {
 
     if (strncmp(*cursor, "</", 2) == 0) {
       *cursor += 2;
-      if (tagNameValue && w->valueGetType(tagNameValue) == VALUE_STRING) {
-        *cursor += strlen(w->valueAsString(tagNameValue));
+      if (tagNameValue && W->valueGetType(tagNameValue) == VALUE_STRING) {
+        *cursor += strlen(W->valueAsString(tagNameValue));
       }
       skip_whitespace(cursor);
       if (**cursor == '>')
@@ -261,8 +257,7 @@ static Value *parse_element(const char **cursor) {
 }
 
 static void parse_attributes(const char **cursor, Value *element_node) {
-  const WebsApi *w = webs();
-  Value *attributes_array = w->objectGet(element_node, "attributes");
+  Value *attributes_array = W->objectGetRef(element_node, "attributes");
   skip_whitespace(cursor);
 
   while (**cursor && **cursor != '>' && **cursor != '/') {
@@ -297,7 +292,7 @@ static void parse_attributes(const char **cursor, Value *element_node) {
         char *value = malloc(value_len + 1);
         strncpy(value, value_start, value_len);
         value[value_len] = '\0';
-        attr_value_node = w->string(value);
+        attr_value_node = W->string(value);
         free(value);
         if (**cursor == quote)
           (*cursor)++;
@@ -309,17 +304,17 @@ static void parse_attributes(const char **cursor, Value *element_node) {
         char *value = malloc(value_len + 1);
         strncpy(value, value_start, value_len);
         value[value_len] = '\0';
-        attr_value_node = w->string(value);
+        attr_value_node = W->string(value);
         free(value);
       }
     } else {
-      attr_value_node = w->boolean(true);
+      attr_value_node = W->boolean(true);
     }
 
-    Value *attr_obj = w->object();
-    w->objectSet(attr_obj, "name", w->string(name));
-    w->objectSet(attr_obj, "value", attr_value_node);
-    w->arrayPush(attributes_array, attr_obj);
+    Value *attr_obj = W->object();
+    W->objectSet(attr_obj, "name", W->string(name));
+    W->objectSet(attr_obj, "value", attr_value_node);
+    W->arrayPush(attributes_array, attr_obj);
 
     free(name);
     skip_whitespace(cursor);
@@ -327,7 +322,6 @@ static void parse_attributes(const char **cursor, Value *element_node) {
 }
 
 static Value *parse_directive(const char **cursor) {
-  const WebsApi *w = webs();
   const char *start_of_directive = *cursor;
   *cursor += 2;
 
@@ -338,8 +332,8 @@ static Value *parse_directive(const char **cursor) {
     if (**cursor == '}')
       (*cursor)++;
     Value *node = new_ast_node("ifBlock");
-    w->objectSet(node, "test", w->string(expr ? expr : ""));
-    w->objectSet(node, "children", w->array());
+    W->objectSet(node, "test", W->string(expr ? expr : ""));
+    W->objectSet(node, "children", W->array());
     free(expr);
     parse_nodes(cursor, node);
     return node;
@@ -352,8 +346,8 @@ static Value *parse_directive(const char **cursor) {
     if (**cursor == '}')
       (*cursor)++;
     Value *node = new_ast_node("elseIfBlock");
-    w->objectSet(node, "test", w->string(expr ? expr : ""));
-    w->objectSet(node, "children", w->array());
+    W->objectSet(node, "test", W->string(expr ? expr : ""));
+    W->objectSet(node, "children", W->array());
     free(expr);
     parse_nodes(cursor, node);
     return node;
@@ -362,7 +356,7 @@ static Value *parse_directive(const char **cursor) {
   if (strncmp(start_of_directive, "{:else}", 7) == 0) {
     *cursor += 5;
     Value *node = new_ast_node("elseBlock");
-    w->objectSet(node, "children", w->array());
+    W->objectSet(node, "children", W->array());
     parse_nodes(cursor, node);
     return node;
   }
@@ -391,10 +385,10 @@ static Value *parse_directive(const char **cursor) {
       (*cursor)++;
 
     Value *node = new_ast_node("eachBlock");
-    w->objectSet(node, "expression", w->string(expression ? expression : ""));
-    w->objectSet(node, "item", w->string(item ? item : ""));
-    w->objectSet(node, "key", key ? w->string(key) : w->string("null"));
-    w->objectSet(node, "children", w->array());
+    W->objectSet(node, "expression", W->string(expression ? expression : ""));
+    W->objectSet(node, "item", W->string(item ? item : ""));
+    W->objectSet(node, "key", key ? W->string(key) : W->null());
+    W->objectSet(node, "children", W->array());
 
     free(expression);
     free(item);

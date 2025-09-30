@@ -222,10 +222,21 @@ void ref_set_value(Engine *engine, Value *ref_value, Value *new_value) {
 }
 
 Value *reactive(Value *target) {
+  if (target->type != VALUE_OBJECT) {
+    return target;
+  }
+  Value *existing_proxy = target->as.object->get(target->as.object, "_proxy");
+  if (existing_proxy) {
+    return existing_proxy;
+  }
+
   Value *proxy = object_value();
   Object *proxy_obj = proxy->as.object;
   proxy_obj->set(proxy_obj, "_is_reactive", boolean(true));
-  proxy_obj->set(proxy_obj, "_raw", target);
+  proxy_obj->set(proxy_obj, "_raw", value_clone(target));
+
+  target->as.object->set(target->as.object, "_proxy", proxy);
+
   return proxy;
 }
 
@@ -234,13 +245,23 @@ Value *reactive_get(Engine *engine, const Value *proxy, const char *key) {
     return NULL;
 
   const Object *proxy_obj = proxy->as.object;
+  if (!proxy_obj->get(proxy_obj, "_is_reactive"))
+    return NULL;
+
   const Value *raw = proxy_obj->get(proxy_obj, "_raw");
   if (!raw)
     return NULL;
 
   track(engine, raw, key);
+
   const Object *raw_obj = raw->as.object;
-  return raw_obj->get(raw_obj, key);
+  Value *result = raw_obj->get(raw_obj, key);
+
+  if (result && result->type == VALUE_OBJECT) {
+    return reactive(result);
+  }
+
+  return result;
 }
 
 void reactive_set(Engine *engine, Value *proxy, const char *key, Value *value) {

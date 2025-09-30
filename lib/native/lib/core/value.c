@@ -1,15 +1,15 @@
+/**
+ * @file value.c
+ * @brief Implements the core dynamic value system.
+ */
 #include "value.h"
 #include "../framework/reactivity.h"
 #include "../framework/vdom.h"
+#include "../webs_api.h"
 #include "array.h"
-#include "boolean.h"
-#include "console.h"
 #include "map.h"
 #include "memory.h"
-#include "null.h"
-#include "number.h"
 #include "object.h"
-#include "pointer.h"
 #include "string.h"
 #include "undefined.h"
 #include <math.h>
@@ -17,7 +17,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-void printValue(Value *value) {
+/**
+ * @brief Prints a representation of the Value to stdout. For debugging.
+ */
+void printValue(const Value *value) {
   switch (value->type) {
   case VALUE_NUMBER:
     printf("%g", value->as.number);
@@ -51,7 +54,7 @@ void writeValueArray(ValueArray *array, Value *value) {
         GROW_ARRAY(Value, array->values, oldCapacity, newCapacity);
 
     if (!new_values) {
-      console()->error(console(), "MEMORY_ERROR: Could not grow ValueArray.");
+      W->log->error("MEMORY_ERROR: Could not grow ValueArray.");
       free(value);
       return;
     }
@@ -67,12 +70,13 @@ void freeValueArray(ValueArray *array) {
   if (!array)
     return;
 
-  for (int i = 0; i < array->count; i++) {
-  }
   FREE_ARRAY(Value, array->values, array->capacity);
   initValueArray(array);
 }
 
+/**
+ * @brief Frees the memory allocated for a Value and its contents.
+ */
 void value_free(Value *value) {
   if (!value)
     return;
@@ -99,44 +103,59 @@ void value_free(Value *value) {
   free(value);
 }
 
+/**
+ * @brief Creates a deep clone of a Value.
+ */
 Value *value_clone(const Value *original) {
   if (!original)
     return NULL;
 
   switch (original->type) {
   case VALUE_NUMBER:
-    return number(original->as.number);
+    return W->number(original->as.number);
   case VALUE_BOOL:
-    return boolean(original->as.boolean);
+    return W->boolean(original->as.boolean);
   case VALUE_NULL:
-    return null();
+    return W->null();
   case VALUE_UNDEFINED:
     return undefined();
   case VALUE_STRING:
-    return string_value(original->as.string->chars);
+    return W->string(original->as.string->chars);
   case VALUE_ARRAY: {
-    Value *clone = array_value();
+    Value *clone = W->array();
+    if (!clone)
+      return NULL;
     for (size_t i = 0; i < original->as.array->count; ++i) {
-      clone->as.array->push(clone->as.array,
-                            value_clone(original->as.array->elements[i]));
+      Value *cloned_element = value_clone(original->as.array->elements[i]);
+      if (!cloned_element) {
+        W->freeValue(clone);
+        return NULL;
+      }
+      W->arrayPush(clone, cloned_element);
     }
     return clone;
   }
   case VALUE_OBJECT: {
-    Value *clone = object_value();
+    Value *clone = W->object();
+    if (!clone)
+      return NULL;
     const Map *table = original->as.object->map;
     for (size_t i = 0; i < table->capacity; ++i) {
       MapEntry *entry = table->entries[i];
       while (entry) {
-        clone->as.object->set(clone->as.object, entry->key,
-                              value_clone(entry->value));
+        Value *cloned_value = value_clone(entry->value);
+        if (!cloned_value) {
+          W->freeValue(clone);
+          return NULL;
+        }
+        W->objectSet(clone, entry->key, cloned_value);
         entry = entry->next;
       }
     }
     return clone;
   }
   case VALUE_POINTER:
-    return pointer(original->as.pointer);
+    return W->pointer(original->as.pointer);
   case VALUE_REF:
     return ref(value_clone(original->as.ref->value));
   case VALUE_VNODE:
@@ -147,6 +166,9 @@ Value *value_clone(const Value *original) {
   }
 }
 
+/**
+ * @brief Compares two Value structs for ordering.
+ */
 int value_compare(const Value *a, const Value *b) {
   if (a == b)
     return 0;
@@ -168,7 +190,7 @@ int value_compare(const Value *a, const Value *b) {
       return 0;
     return a->as.number > b->as.number ? 1 : -1;
   case VALUE_STRING:
-    return strcmp(a->as.string->chars, b->as.string->chars);
+    return W->stringCompare(a->as.string->chars, b->as.string->chars);
   case VALUE_POINTER:
     return a->as.pointer == b->as.pointer ? 0 : 1;
   case VALUE_REF:
@@ -183,6 +205,9 @@ int value_compare(const Value *a, const Value *b) {
   return 1;
 }
 
+/**
+ * @brief Checks if two Value structs are deeply equal.
+ */
 bool value_equals(const Value *a, const Value *b) {
   return value_compare(a, b) == 0;
 }

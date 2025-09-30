@@ -1,3 +1,7 @@
+/**
+ * @file cli.c
+ * @brief The main entry point for the Webs command-line interface.
+ */
 #include "../lib/modules/repl.h"
 #include "../lib/modules/terminal.h"
 #include "../lib/webs_api.h"
@@ -5,37 +9,44 @@
 #include <stdlib.h>
 #include <string.h>
 
+/**
+ * @brief Handles the 'build' command.
+ */
 static int handle_build(Repl *repl, int argc, char **argv) {
   (void)repl;
 
-  const WebsApi *w = webs();
-
   if (argc != 3) {
-    term_fprint_colored(
-        stderr, T_YELLOW,
-        "\nUsage: build <input_directory> <output_directory>\r\n");
+    term_fprint_colored(stderr, T_YELLOW,
+                        "\nUsage: build <entry_file> <output_directory>\r\n");
     return 0;
   }
-  const char *input_dir = argv[1];
+  const char *entry_file = argv[1];
   const char *output_dir = argv[2];
 
   term_print_colored(T_BLUE, "\nBundling project from '%s' into '%s'...\r\n",
-                     input_dir, output_dir);
+                     entry_file, output_dir);
 
-  char *error = w->bundle(input_dir, output_dir);
+  char *error = NULL;
+  Status status = W->bundle(entry_file, output_dir, &error);
 
-  if (error != NULL) {
-    term_fprint_colored(stderr, T_RED, "Build failed: %s\r\n", error);
-    w->freeString(error);
-    return 0;
+  if (status == OK) {
+    term_print_colored(T_GREEN, "Build successful!\r\n");
+  } else {
+    term_fprint_colored(stderr, T_RED, "Build failed: %s\r\n",
+                        error ? error : "Unknown error");
+    if (error) {
+      W->freeString(error);
+    }
   }
-  term_print_colored(T_GREEN, "Build successful!\r\n");
+
   return 0;
 }
 
+/**
+ * @brief Handles the 'pretty' command.
+ */
 static int handle_pretty(Repl *repl, int argc, char **argv) {
   (void)repl;
-  const WebsApi *w = webs();
 
   if (argc < 2) {
     term_fprint_colored(stderr, T_YELLOW, "\nUsage: pretty <json_string>\r\n");
@@ -50,13 +61,11 @@ static int handle_pretty(Repl *repl, int argc, char **argv) {
     total_len += argc - 2;
   }
   total_len += 1;
-
   char *json_string = malloc(total_len);
   if (!json_string) {
     term_fprint_colored(stderr, T_RED, "Memory allocation failed.\n");
     return 0;
   }
-
   char *p = json_string;
   for (int i = 1; i < argc; i++) {
     size_t len = strlen(argv[i]);
@@ -67,35 +76,41 @@ static int handle_pretty(Repl *repl, int argc, char **argv) {
     }
   }
   *p = '\0';
-
   size_t len = strlen(json_string);
   if (len > 1 && json_string[0] == '\'' && json_string[len - 1] == '\'') {
     json_string[len - 1] = '\0';
     memmove(json_string, json_string + 1, len - 1);
   }
 
-  Status status;
-  Value *json_value = w->json->parse(json_string, &status);
+  Value *json_value = NULL;
+  char *parse_error = NULL;
+  Status status = W->json->parse(json_string, &json_value, &parse_error);
   free(json_string);
 
   if (status != OK) {
-    term_fprint_colored(stderr, T_RED, "\nInvalid JSON provided.\r\n");
+    term_fprint_colored(stderr, T_RED, "\nInvalid JSON provided: %s\r\n",
+                        parse_error ? parse_error : "Unknown parse error");
+    if (parse_error)
+      W->freeString(parse_error);
     if (json_value)
-      w->freeValue(json_value);
+      W->freeValue(json_value);
     return 0;
   }
 
-  char *pretty_json = w->json->prettyPrint(json_value);
-  w->freeValue(json_value);
+  char *pretty_json = W->json->prettyPrint(json_value);
+  W->freeValue(json_value);
 
   if (pretty_json) {
     printf("\r\n%s\r\n", pretty_json);
-    w->freeString(pretty_json);
+    W->freeString(pretty_json);
   }
 
   return 0;
 }
 
+/**
+ * @brief Handles the 'help' command.
+ */
 static int handle_help(Repl *repl, int argc, char **argv) {
   (void)argc;
   (void)argv;
@@ -122,6 +137,9 @@ static int handle_help(Repl *repl, int argc, char **argv) {
   return 0;
 }
 
+/**
+ * @brief Handles the 'exit' command.
+ */
 static int handle_exit(Repl *repl, int argc, char **argv) {
   (void)repl;
   (void)argc;
@@ -129,6 +147,9 @@ static int handle_exit(Repl *repl, int argc, char **argv) {
   return -1;
 }
 
+/**
+ * @brief Main function for the CLI tool.
+ */
 int main(int argc, char *argv[]) {
   Repl *repl = repl_new("webs> ");
   if (!repl) {
@@ -136,7 +157,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  repl_add_command(repl, "build", "Bundle a .webs project.", handle_build);
+  repl_add_command(repl, "build", "Bundle a .webs project from an entry file.",
+                   handle_build);
   repl_add_command(repl, "pretty", "Pretty-print a JSON string with colors.",
                    handle_pretty);
   repl_add_command(repl, "help", "Show this help message.", handle_help);

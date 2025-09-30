@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-Value *webs_db_open(const char *filename) {
+Value *db_open(const char *filename) {
   sqlite3 *db;
   int rc = sqlite3_open(filename, &db);
   if (rc) {
@@ -21,21 +21,24 @@ Value *webs_db_open(const char *filename) {
   return pointer(db);
 }
 
-Value *webs_db_close(Value *db_handle_val) {
-  if (!db_handle_val || db_handle_val->type != VALUE_POINTER) {
-    return string_value("Invalid database handle provided.");
+Value *db_close(Value *db_handle_val) {
+  if (!db_handle_val || db_handle_val->type != VALUE_POINTER ||
+      !db_handle_val->as.pointer) {
+    return string_value("Invalid database handle");
   }
   sqlite3 *db = (sqlite3 *)db_handle_val->as.pointer;
   int rc = sqlite3_close(db);
   if (rc != SQLITE_OK) {
     return string_value(sqlite3_errmsg(db));
   }
+  db_handle_val->as.pointer = NULL;
   return boolean(true);
 }
 
-Value *webs_db_exec(Value *db_handle_val, const char *sql) {
-  if (!db_handle_val || db_handle_val->type != VALUE_POINTER) {
-    return string_value("Invalid database handle provided.");
+Value *db_exec(Value *db_handle_val, const char *sql) {
+  if (!db_handle_val || db_handle_val->type != VALUE_POINTER ||
+      !db_handle_val->as.pointer) {
+    return string_value("Invalid database handle");
   }
   sqlite3 *db = (sqlite3 *)db_handle_val->as.pointer;
   char *zErrMsg = 0;
@@ -49,9 +52,10 @@ Value *webs_db_exec(Value *db_handle_val, const char *sql) {
   return boolean(true);
 }
 
-Value *webs_db_query(Value *db_handle_val, const char *sql) {
-  if (!db_handle_val || db_handle_val->type != VALUE_POINTER) {
-    return string_value("Invalid database handle provided.");
+Value *db_query(Value *db_handle_val, const char *sql) {
+  if (!db_handle_val || db_handle_val->type != VALUE_POINTER ||
+      !db_handle_val->as.pointer) {
+    return string_value("Invalid database handle");
   }
   sqlite3 *db = (sqlite3 *)db_handle_val->as.pointer;
   sqlite3_stmt *stmt;

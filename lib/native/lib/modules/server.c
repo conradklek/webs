@@ -18,7 +18,7 @@ static int server_listen_method(Server *self, RequestHandler handler);
 static void server_stop_method(Server *self);
 static int setup_listen_socket(Server *self);
 
-void webs_server_write_response(int client_fd, const char *response) {
+void server_write_response(int client_fd, const char *response) {
   if (response) {
     write(client_fd, response, strlen(response));
   }
@@ -206,7 +206,7 @@ static const char *get_mime_type(const char *path) {
   return "application/octet-stream";
 }
 
-int webs_static_server_run(const char *host, int port, const char *public_dir) {
+int static_server_run(const char *host, int port, const char *public_dir) {
   Server *s = server(host, port);
   if (!s)
     return 1;
@@ -215,8 +215,6 @@ int webs_static_server_run(const char *host, int port, const char *public_dir) {
     server_destroy(s);
     return 1;
   }
-
-  const WebsApi *w = webs();
 
   printf("Listening on http://%s:%d\n", s->host, s->port);
   fflush(stdout);
@@ -259,9 +257,11 @@ int webs_static_server_run(const char *host, int port, const char *public_dir) {
             snprintf(file_path, sizeof(file_path), "%s%s", public_dir,
                      req_file);
 
-            char *content = w->fs->readFile(file_path);
+            char *content = NULL;
+            char *read_error = NULL;
+            Status status = W->fs->readFile(file_path, &content, &read_error);
 
-            if (content && strstr(content, "\"error\"") == NULL) {
+            if (status == OK && content) {
               const char *mime = get_mime_type(file_path);
               char header[512];
               int header_len = snprintf(
@@ -271,12 +271,15 @@ int webs_static_server_run(const char *host, int port, const char *public_dir) {
                   mime, strlen(content));
               write(client_fd, header, header_len);
               write(client_fd, content, strlen(content));
-              w->freeString(content);
+              W->freeString(content);
             } else {
               const char *resp = "HTTP/1.1 404 Not Found\r\n\r\nNot Found";
               write(client_fd, resp, strlen(resp));
               if (content) {
-                w->freeString(content);
+                W->freeString(content);
+              }
+              if (read_error) {
+                W->freeString(read_error);
               }
             }
           }

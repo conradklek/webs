@@ -1,12 +1,12 @@
 CC = clang
 CFLAGS = -g -O2 -Wall -fPIC -Wno-pointer-sign -MMD -MP
-LDLIBS = -lsqlite3
+LDLIBS = -lsqlite3 -pthread
 
 SRCDIR = lib
 INCDIR = lib
 OBJDIR = obj
 
-SOURCES = $(wildcard $(SRCDIR)/*.c) $(wildcard $(SRCDIR)/*/*.c)
+SOURCES = $(shell find $(SRCDIR) -name '*.c')
 
 OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES))
 
@@ -22,12 +22,10 @@ $(TARGET): $(OBJECTS)
 	@echo "LD $@"
 	@$(CC) $(CFLAGS) -shared -o $@ $^ $(LDLIBS)
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
+$(OBJDIR)/%.o: $(SRCDIR)/%.c
+	@mkdir -p $(@D)
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -I$(INCDIR) -c $< -o $@
-
-$(OBJDIR):
-	@mkdir -p $(OBJDIR)/core $(OBJDIR)/framework $(OBJDIR)/modules
 
 bin/%: bin/%.c $(TARGET)
 	@echo "CC $@"

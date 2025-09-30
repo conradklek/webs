@@ -6,13 +6,13 @@
 </template>
 
 <script>
-  export {
-    name: "App",
+  export default {
+    name: 'App',
     setup(props, context) {
       console.log({ props, context });
-      return {}
+      return {};
     },
-  }
+  };
 </script>
 
 <style>

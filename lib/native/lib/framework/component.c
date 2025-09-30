@@ -1,110 +1,124 @@
+/**
+ * @file component.c
+ * @brief Implements the component instance lifecycle.
+ */
 #include "component.h"
-#include "../core/map.h"
-#include "../core/object.h"
 #include "../webs_api.h"
-#include "reactivity.h"
+#include "renderer.h"
+#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
-static int instance_id_counter = 0;
+static int next_uid = 0;
+
+static void update_component(void *user_data) {
+  ComponentInstance *instance = (ComponentInstance *)user_data;
+
+  Value *template_val = W->objectGetRef(instance->type, "template");
+  if (!template_val || W->valueGetType(template_val) != VALUE_STRING) {
+    return;
+  }
+
+  Status template_status;
+  Value *template_ast =
+      W->parseTemplate(W->valueAsString(template_val), &template_status);
+  if (template_status != OK || !template_ast) {
+    if (template_ast)
+      W->freeValue(template_ast);
+    return;
+  }
+
+  VNode *new_sub_tree = render_template(template_ast, instance->ctx);
+  W->freeValue(template_ast);
+
+  if (instance->sub_tree) {
+    W->freeVNode(instance->sub_tree);
+  }
+  instance->sub_tree = new_sub_tree;
+}
 
 ComponentInstance *component(Engine *engine, VNode *vnode,
                              ComponentInstance *parent) {
-  if (!engine || !vnode) {
-    return NULL;
-  }
-
   ComponentInstance *instance = calloc(1, sizeof(ComponentInstance));
   if (!instance)
     return NULL;
 
-  instance->uid = instance_id_counter++;
+  instance->uid = next_uid++;
   instance->vnode = vnode;
   instance->parent = parent;
-  instance->is_mounted = false;
 
-  if (!engine->components) {
+  Value *component_def =
+      engine->components->get(engine->components, vnode->type);
+  if (!component_def) {
     free(instance);
     return NULL;
   }
-  instance->type = engine->components->get(engine->components, vnode->type);
-  if (!instance->type) {
-    webs()->log->error("Component '%s' is not registered.", vnode->type);
-    free(instance);
-    return NULL;
+  instance->type = W->valueClone(component_def);
+  instance->props = W->valueClone(vnode->props);
+
+  // Initialize new fields
+  instance->slots = W->object();
+  instance->provides = W->object();
+  instance->attrs = W->object();
+  instance->on_mount_hooks = W->array();
+  instance->on_unmount_hooks = W->array();
+
+  Value *internal_ctx = NULL;
+
+  // --- Setup function logic ---
+  Value *setup_fn_val = W->objectGetRef(instance->type, "setup");
+  if (setup_fn_val && W->valueGetType(setup_fn_val) == VALUE_POINTER) {
+    typedef Value *(*SetupFunc)(Value *props, Value *context);
+    SetupFunc setup = (SetupFunc)setup_fn_val->as.pointer;
+
+    Value *setup_context =
+        W->objectOf("attrs", W->valueClone(instance->attrs), "slots",
+                    W->valueClone(instance->slots), NULL);
+
+    engine->current_instance = instance;
+    internal_ctx = setup(instance->props, setup_context);
+    engine->current_instance = NULL;
+
+    W->freeValue(setup_context);
   }
 
-  Value *vnode_props = vnode->props;
-  Value *props_options =
-      instance->type->as.object->get(instance->type->as.object, "props");
+  // Create the final reactive render context
+  Value *render_ctx = W->object();
 
-  Value *resolved_props = object_value();
-  instance->attrs = object_value();
-
-  if (vnode_props && vnode_props->type == VALUE_OBJECT) {
-    Map *table = vnode_props->as.object->map;
-    for (size_t i = 0; i < table->capacity; ++i) {
-      for (MapEntry *entry = table->entries[i]; entry; entry = entry->next) {
-        bool is_prop =
-            props_options &&
-            props_options->as.object->get(props_options->as.object, entry->key);
-        if (is_prop) {
-          resolved_props->as.object->set(resolved_props->as.object, entry->key,
-                                         value_clone(entry->value));
-        } else {
-          instance->attrs->as.object->set(instance->attrs->as.object,
-                                          entry->key,
-                                          value_clone(entry->value));
-        }
+  // 1. Add state from setup()
+  if (internal_ctx && W->valueGetType(internal_ctx) == VALUE_OBJECT) {
+    Value *setup_keys = W->objectKeys(internal_ctx);
+    if (setup_keys) {
+      for (size_t i = 0; i < W->arrayCount(setup_keys); i++) {
+        Value *key_val = W->arrayGetRef(setup_keys, i);
+        const char *key = W->valueAsString(key_val);
+        Value *val = W->objectGetRef(internal_ctx, key);
+        W->objectSet(render_ctx, key, W->valueClone(val));
       }
+      W->freeValue(setup_keys);
     }
   }
+  if (internal_ctx) {
+    W->freeValue(internal_ctx);
+  }
 
-  if (props_options && props_options->type == VALUE_OBJECT) {
-    Map *table = props_options->as.object->map;
-    for (size_t i = 0; i < table->capacity; ++i) {
-      for (MapEntry *entry = table->entries[i]; entry; entry = entry->next) {
-        if (!resolved_props->as.object->get(resolved_props->as.object,
-                                            entry->key)) {
-          Value *prop_def = entry->value;
-          Value *default_val =
-              prop_def->as.object->get(prop_def->as.object, "default");
-          if (default_val) {
-            resolved_props->as.object->set(resolved_props->as.object,
-                                           entry->key,
-                                           value_clone(default_val));
-          }
-        }
-      }
+  // 2. Add props (props have priority over setup state if names collide)
+  Value *prop_keys = W->objectKeys(instance->props);
+  if (prop_keys) {
+    for (size_t i = 0; i < W->arrayCount(prop_keys); i++) {
+      Value *key_val = W->arrayGetRef(prop_keys, i);
+      const char *key = W->valueAsString(key_val);
+      Value *val = W->objectGetRef(instance->props, key);
+      W->objectSet(render_ctx, key, W->valueClone(val));
     }
+    W->freeValue(prop_keys);
   }
 
-  instance->internal_ctx = object_value();
-  instance->props = resolved_props;
+  // Make the final context reactive
+  instance->ctx = render_ctx; // No longer reactive for SSR
 
-  instance->ctx = object_value();
-  Map *props_table = instance->props->as.object->map;
-  for (size_t i = 0; i < props_table->capacity; ++i) {
-    for (MapEntry *entry = props_table->entries[i]; entry;
-         entry = entry->next) {
-      instance->ctx->as.object->set(instance->ctx->as.object, entry->key,
-                                    value_clone(entry->value));
-    }
-  }
+  instance->effect = effect(update_component, instance);
 
-  instance->on_mount = NULL;
-  instance->on_before_unmount = NULL;
-
-  Value *on_mount_fn =
-      instance->type->as.object->get(instance->type->as.object, "onMount");
-  if (on_mount_fn) {
-    instance->on_mount = value_clone(on_mount_fn);
-  }
-  Value *on_before_unmount_fn = instance->type->as.object->get(
-      instance->type->as.object, "onBeforeUnmount");
-  if (on_before_unmount_fn) {
-    instance->on_before_unmount = value_clone(on_before_unmount_fn);
-  }
+  effect_run(engine, instance->effect);
 
   return instance;
 }
@@ -113,12 +127,20 @@ void component_destroy(ComponentInstance *instance) {
   if (!instance)
     return;
 
-  value_free(instance->props);
-  value_free(instance->attrs);
-  value_free(instance->ctx);
-  value_free(instance->internal_ctx);
-  value_free(instance->on_mount);
-  value_free(instance->on_before_unmount);
-  vnode_free(instance->sub_tree);
+  effect_stop(instance->effect);
+  effect_free(instance->effect);
+
+  W->freeVNode(instance->sub_tree);
+  W->freeValue(instance->type);
+  W->freeValue(instance->props);
+  W->freeValue(instance->ctx);
+
+  // --- Free new fields ---
+  W->freeValue(instance->slots);
+  W->freeValue(instance->provides);
+  W->freeValue(instance->attrs);
+  W->freeValue(instance->on_mount_hooks);
+  W->freeValue(instance->on_unmount_hooks);
+
   free(instance);
 }

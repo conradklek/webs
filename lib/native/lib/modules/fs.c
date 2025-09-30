@@ -1,11 +1,10 @@
 #include "fs.h"
 #include "../core/array.h"
-#include "../core/boolean.h"
 #include "../core/json.h"
-#include "../core/number.h"
 #include "../core/object.h"
 #include "../core/string.h"
 #include "../core/value.h"
+#include "../webs_api.h"
 #include <dirent.h>
 #include <errno.h>
 #include <glob.h>
@@ -16,19 +15,19 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-char *read_file_sync(const char *path, Status *status) {
+Status read_file_sync(const char *path, char **out_content) {
   FILE *file = NULL;
   char *buffer = NULL;
-  *status = OK;
+  Status status = OK;
+  *out_content = NULL;
 
   if (!path) {
-    *status = ERROR_INVALID_ARG;
-    return NULL;
+    return ERROR_INVALID_ARG;
   }
 
   file = fopen(path, "rb");
   if (!file) {
-    *status = ERROR_IO;
+    status = ERROR_IO;
     goto cleanup;
   }
 
@@ -37,32 +36,34 @@ char *read_file_sync(const char *path, Status *status) {
   fseek(file, 0, SEEK_SET);
 
   if (length < 0) {
-    *status = ERROR_IO;
+    status = ERROR_IO;
     goto cleanup;
   }
 
   buffer = malloc(length + 1);
   if (!buffer) {
-    *status = ERROR_MEMORY;
+    status = ERROR_MEMORY;
     goto cleanup;
   }
 
   if (length > 0 && fread(buffer, 1, length, file) != (size_t)length) {
-    *status = ERROR_IO;
+    status = ERROR_IO;
     goto cleanup;
   }
 
   buffer[length] = '\0';
+  *out_content = buffer;
+  fclose(file);
+  return OK;
 
 cleanup:
   if (file) {
     fclose(file);
   }
-  if (*status != OK && buffer) {
+  if (buffer) {
     free(buffer);
-    buffer = NULL;
   }
-  return buffer;
+  return status;
 }
 
 Status write_file_sync(const char *path, const char *content) {
@@ -132,11 +133,13 @@ Status delete_dir_sync(const char *path) {
 
   struct dirent *entry;
   while ((entry = readdir(dir)) != NULL) {
-    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+    if (W->stringCompare(entry->d_name, ".") == 0 ||
+        W->stringCompare(entry->d_name, "..") == 0) {
       continue;
     }
 
     size_t full_path_len = strlen(path) + 1 + strlen(entry->d_name) + 1;
+
     full_path = malloc(full_path_len);
     if (!full_path) {
       status = ERROR_MEMORY;
@@ -157,6 +160,7 @@ Status delete_dir_sync(const char *path) {
         status = ERROR_IO;
       }
     }
+
     free(full_path);
     full_path = NULL;
 
@@ -199,8 +203,14 @@ char *list_dir_sync(const char *path, Status *status) {
 
   struct dirent *entry;
   while ((entry = readdir(dir)) != NULL) {
-    if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
-      arr->as.array->push(arr->as.array, string_value(entry->d_name));
+    if (W->stringCompare(entry->d_name, ".") != 0 &&
+        W->stringCompare(entry->d_name, "..") != 0) {
+      Value *name_val = string_value(entry->d_name);
+      if (!name_val) {
+        *status = ERROR_MEMORY;
+        goto cleanup;
+      }
+      arr->as.array->push(arr->as.array, name_val);
     }
   }
 
@@ -241,25 +251,40 @@ char *stat_sync(const char *path, Status *status) {
     goto cleanup;
   }
 
-  obj = object_value();
+  obj = W->object();
   if (!obj) {
     *status = ERROR_MEMORY;
     goto cleanup;
   }
 
   Object *obj_val = obj->as.object;
-  obj_val->set(obj_val, "size", number((double)statbuf.st_size));
-  obj_val->set(obj_val, "isFile", boolean(S_ISREG(statbuf.st_mode)));
-  obj_val->set(obj_val, "isDirectory", boolean(S_ISDIR(statbuf.st_mode)));
+  Value *size_val = W->number((double)statbuf.st_size);
+  Value *isFile_val = W->boolean(S_ISREG(statbuf.st_mode));
+  Value *isDirectory_val = W->boolean(S_ISDIR(statbuf.st_mode));
 
-  json_string = json_encode(obj);
+  if (!size_val || !isFile_val || !isDirectory_val) {
+    if (size_val)
+      W->freeValue(size_val);
+    if (isFile_val)
+      W->freeValue(isFile_val);
+    if (isDirectory_val)
+      W->freeValue(isDirectory_val);
+    *status = ERROR_MEMORY;
+    goto cleanup;
+  }
+
+  obj_val->set(obj_val, "size", size_val);
+  obj_val->set(obj_val, "isFile", isFile_val);
+  obj_val->set(obj_val, "isDirectory", isDirectory_val);
+
+  json_string = W->json->encode(obj);
   if (!json_string) {
     *status = ERROR_MEMORY;
   }
 
 cleanup:
   if (obj) {
-    value_free(obj);
+    W->freeValue(obj);
   }
   if (*status != OK && json_string) {
     free(json_string);
@@ -278,13 +303,17 @@ char *glob_sync(const char *pattern, Status *status) {
   if (return_value != 0) {
     globfree(&glob_result);
     if (return_value == GLOB_NOMATCH) {
-      return strdup("[]");
+      char *empty_array = strdup("[]");
+      if (!empty_array) {
+        *status = ERROR_MEMORY;
+      }
+      return empty_array;
     }
     *status = ERROR_IO;
     return NULL;
   }
 
-  Value *results = array_value();
+  Value *results = W->array();
   if (!results) {
     *status = ERROR_MEMORY;
     globfree(&glob_result);
@@ -292,19 +321,20 @@ char *glob_sync(const char *pattern, Status *status) {
   }
 
   for (size_t i = 0; i < glob_result.gl_pathc; i++) {
-    Value *path_val = string_value(glob_result.gl_pathv[i]);
+    Value *path_val = W->string(glob_result.gl_pathv[i]);
     if (!path_val) {
       *status = ERROR_MEMORY;
-      value_free(results);
+      W->freeValue(results);
       globfree(&glob_result);
       return NULL;
     }
-    results->as.array->push(results->as.array, path_val);
+    W->arrayPush(results, path_val);
   }
 
-  char *json_string = json_encode(results);
-  value_free(results);
   globfree(&glob_result);
+
+  char *json_string = W->json->encode(results);
+  W->freeValue(results);
 
   if (!json_string) {
     *status = ERROR_MEMORY;
